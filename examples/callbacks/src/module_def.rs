@@ -22,4 +22,6 @@ pub const MODULE: ModuleDef = ModuleDef {
     name: "callbacks",
     fns: FUNCTIONS,
     classes: &[],
+    records: &[],
+    enums: &[],
 };

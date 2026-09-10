@@ -24,4 +24,6 @@ pub const MODULE: ModuleDef = ModuleDef {
     name: "async",
     fns: FUNCTIONS,
     classes: &[],
+    records: &[],
+    enums: &[],
 };

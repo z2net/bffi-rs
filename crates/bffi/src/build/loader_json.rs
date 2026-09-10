@@ -196,7 +196,7 @@ fn push_field(field: &FieldDef, out: &mut String, last: bool) {
     out.push_str(",\n");
     push_docs(out, 5, field.docs);
     out.push_str(",\n");
-    push_key_string(out, 5, "ts", field.ty.as_str());
+    push_key_string(out, 5, "ts", &field.ty.as_str());
     out.push_str(",\n");
     push_key_string(out, 5, "out", field.out.as_str());
     out.push('\n');
@@ -250,7 +250,7 @@ fn push_params(out: &mut String, depth: usize, params: &[ParamDef], abi: &AbiSig
         out.push_str("{\n");
         push_key_string(out, depth + 2, "name", param.name);
         out.push_str(",\n");
-        push_key_string(out, depth + 2, "ts", param.ty.as_str());
+        push_key_string(out, depth + 2, "ts", &param.ty.as_str());
         out.push_str(",\n");
         push_key_string(out, depth + 2, "abi", abi.params[index].as_str());
         out.push('\n');
@@ -272,7 +272,7 @@ fn push_params(out: &mut String, depth: usize, params: &[ParamDef], abi: &AbiSig
 fn push_ret(out: &mut String, depth: usize, ret: TsType, abi: &AbiSig) {
     push_indent(out, depth);
     out.push_str("\"ret\": {\n");
-    push_key_string(out, depth + 1, "ts", ret.as_str());
+    push_key_string(out, depth + 1, "ts", &ret.as_str());
     out.push_str(",\n");
     push_key_string(out, depth + 1, "abi", ret_abi_str(ret, abi));
     out.push('\n');
@@ -392,6 +392,8 @@ mod tests {
             name: "probe",
             fns: &[],
             classes: &[],
+            records: &[],
+            enums: &[],
         };
         assert_eq!(
             to_json(&module),
@@ -406,6 +408,8 @@ mod tests {
             name: "esc\"ape",
             fns: &[],
             classes: &[],
+            records: &[],
+            enums: &[],
         };
         // Reuse the emitter through a docs-shaped key: the module name
         // travels through the same escaper.

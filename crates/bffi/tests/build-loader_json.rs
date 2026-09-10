@@ -201,6 +201,8 @@ fn fixture_module() -> ModuleDef {
         name: "matrix",
         fns: FNS,
         classes: CLASSES,
+        records: &[],
+        enums: &[],
     }
 }
 
@@ -314,6 +316,8 @@ fn strings_survive_escaping() {
         name: "esc",
         fns: FNS,
         classes: &[],
+        records: &[],
+        enums: &[],
     };
     let rendered = bffi::bffi_build::loader_json::to_json(&module);
     let parsed: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");

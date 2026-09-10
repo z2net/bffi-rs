@@ -73,7 +73,7 @@ fn push_function(function: &FunctionDef, out: &mut String) {
     out.push('(');
     push_params(function.params, out);
     out.push_str("): ");
-    out.push_str(function.ret.as_str());
+    out.push_str(&function.ret.as_str());
     out.push_str(";\n");
 }
 
@@ -104,7 +104,7 @@ fn push_method(keyword: &str, method: &MethodDef, out: &mut String) {
     out.push(')');
     if keyword != "constructor" {
         out.push_str(": ");
-        out.push_str(method.ret.as_str());
+        out.push_str(&method.ret.as_str());
     }
     out.push_str(";\n");
 }
@@ -115,7 +115,7 @@ fn push_field(field: &FieldDef, out: &mut String) {
     out.push_str("  get ");
     out.push_str(&sanitize(field.js_name));
     out.push_str("(): ");
-    out.push_str(field.ty.as_str());
+    out.push_str(&field.ty.as_str());
     out.push_str(";\n");
 }
 
@@ -129,7 +129,7 @@ fn push_params(params: &[super::ir::ParamDef], out: &mut String) {
         first = false;
         out.push_str(&sanitize(param.name));
         out.push_str(": ");
-        out.push_str(param.ty.as_str());
+        out.push_str(&param.ty.as_str());
     }
 }
 

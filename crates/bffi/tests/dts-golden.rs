@@ -210,6 +210,76 @@ static SHAPES: ModuleDef = ModuleDef {
     enums: &[],
 };
 
+static B1_XY_PARAMS: &[ParamDef] = &[
+    ParamDef {
+        name: "x",
+        ty: TsType::Number,
+    },
+    ParamDef {
+        name: "y",
+        ty: TsType::Number,
+    },
+];
+
+static B1_FNS: &[FunctionDef] = &[
+    FunctionDef {
+        js_name: "make_point",
+        export_name: "bffi_make_point",
+        docs: &["Builds a point."],
+        params: B1_XY_PARAMS,
+        ret: TsType::Record("Point"),
+        abi: HANDLE_ABI,
+    },
+    FunctionDef {
+        js_name: "all_points",
+        export_name: "bffi_all_points",
+        docs: &["All the points."],
+        params: &[],
+        ret: TsType::RecordArray("Point"),
+        abi: HANDLE_ABI,
+    },
+];
+
+static B1: ModuleDef = ModuleDef {
+    name: "b1",
+    fns: B1_FNS,
+    classes: &[],
+    records: &[bffi::bffi_dts::RecordDef {
+        js_name: "Point",
+        docs: &["A point in 2D space."],
+        fields: &[
+            bffi::bffi_dts::RecordFieldDef {
+                name: "x",
+                docs: &["The x coordinate."],
+                ty: TsType::Number,
+            },
+            bffi::bffi_dts::RecordFieldDef {
+                name: "y",
+                docs: &[],
+                ty: TsType::Number,
+            },
+        ],
+    }],
+    enums: &[bffi::bffi_dts::EnumDef {
+        js_name: "JobStatus",
+        docs: &["The status of a job."],
+        variants: &[
+            bffi::bffi_dts::EnumVariantDef {
+                name: "Idle",
+                docs: &[],
+            },
+            bffi::bffi_dts::EnumVariantDef {
+                name: "Running",
+                docs: &[],
+            },
+            bffi::bffi_dts::EnumVariantDef {
+                name: "Done",
+                docs: &[],
+            },
+        ],
+    }],
+};
+
 /// Normalizes CRLF line endings to LF, undoing any `core.autocrlf`
 /// normalization `include_str!` picked up from the working tree.
 fn normalize_lf(contents: &str) -> String {
@@ -241,8 +311,14 @@ fn golden_classes_match() {
 }
 
 #[test]
+fn golden_b1_matches() {
+    let expected = normalize_lf(include_str!("golden/b1.d.ts"));
+    assert_eq!(render(&B1), expected);
+}
+
+#[test]
 fn render_is_deterministic() {
-    for module in [&MATH, &KITCHEN, &EMPTY, &SHAPES] {
+    for module in [&MATH, &KITCHEN, &EMPTY, &SHAPES, &B1] {
         let first = render(module);
         let second = render(module);
         assert_eq!(first, second, "re-rendering {module:?} must be identical");
@@ -256,6 +332,7 @@ fn golden_files_contain_no_carriage_returns() {
         include_str!("golden/kitchen.d.ts"),
         include_str!("golden/empty.d.ts"),
         include_str!("golden/classes.d.ts"),
+        include_str!("golden/b1.d.ts"),
     ] {
         assert!(!contents.contains('\r'), "golden file must be LF-only");
     }

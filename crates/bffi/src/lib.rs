@@ -119,8 +119,8 @@ pub use crate::bffi_core::{
 };
 #[cfg(feature = "dts")]
 pub use crate::bffi_dts::{
-    AbiOut, AbiPrim, AbiSig, AbiType, ClassDef, FieldDef, FunctionDef, MethodDef, ModuleDef,
-    ParamDef, TsType, render, sanitize,
+    AbiOut, AbiPrim, AbiSig, AbiType, ClassDef, EnumDef, EnumVariantDef, FieldDef, FunctionDef,
+    MethodDef, ModuleDef, ParamDef, RecordDef, RecordFieldDef, TsType, render, sanitize,
 };
 #[cfg(feature = "error")]
 pub use crate::bffi_error::{

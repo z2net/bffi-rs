@@ -354,11 +354,13 @@ pub struct ModuleDef {
     pub enums: &'static [EnumDef],
 }
 
-/// One field of a record: its JS-visible name and type.
+/// One field of a record: its JS-visible name, type and docs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RecordFieldDef {
     /// The field name as it appears in the generated interface.
     pub name: &'static str,
+    /// Doc comment lines, rendered as a JSDoc block.
+    pub docs: &'static [&'static str],
     /// The field type.
     pub ty: TsType,
 }
@@ -737,10 +739,12 @@ mod tests {
         static FIELDS: &[RecordFieldDef] = &[
             RecordFieldDef {
                 name: "x",
+                docs: &[],
                 ty: TsType::Number,
             },
             RecordFieldDef {
                 name: "label",
+                docs: &[],
                 ty: TsType::String,
             },
         ];

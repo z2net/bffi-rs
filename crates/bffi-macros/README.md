@@ -107,20 +107,26 @@ stores `BffiError` with code `DomainError`, message `e.to_string()` and `e` as t
 source. `E` must implement `std::error::Error + Send + Sync` - the trait bound
 surfaces in the expansion if violated.
 
-**Errors.** Every failure stores a `BffiError` via `::bffi_core::set_last_error` and
+**Errors.** Every failure stores a `BffiError` via `::bffi::core::set_last_error` and
 returns the matching `ErrorCode`; success returns `ErrorCode::Ok` and stores nothing.
 
 ## Attribute options: `crate = "..."`
 
 `#[bffi]` takes one optional option:
 
-- `#[bffi]` - default mode: the expansion names the direct dependencies
-  (`::bffi_core`, `::bffi_types`, `::bffi_dts`, `::bffi_build`).
-- `#[bffi(crate = "bffi")]` - **facade-only mode**: the expansion names
-  `::bffi::core`, `::bffi::types`, `::bffi::dts`, `::bffi::build`, the
-  re-export namespaces of the [`bffi`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi)
-  facade. A user crate whose only dependency is `bffi` can then use the
-  macro.
+- `#[bffi]` - default: the expansion names the [`bffi`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi)
+  facade namespaces (`::bffi::core`, `::bffi::types`, `::bffi::dts`,
+  `::bffi::build`, `::bffi::r#async`), so a dependency on `bffi`
+  alone suffices.
+- `#[bffi(crate = "<name>")]` - redirects the same namespaces to
+  another facade: the expansion names `::<name>::{core, types, dts,
+  build, r#async}`. `crate = "bffi"` is accepted and identical to
+  the default.
+- `#[bffi(crate = "direct")]` - **pre-merge roots**: the expansion
+  names the historical direct dependencies (`::bffi_core`,
+  `::bffi_types`, `::bffi_dts`, `::bffi_build`). The pre-merge
+  crates are not published; this mode exists for in-workspace
+  development.
 
 Anything else (unknown keys, non-literal or invalid `crate` values,
 duplicates) is rejected with `E004`.
@@ -176,15 +182,16 @@ job - the macro never depends on it.
 
 ## Requirements on the user crate
 
-- Default mode: dependencies on `bffi-core`, `bffi-types`, and `bffi-dts`:
-  the expansion names `::bffi_core`, `::bffi_types`, and `::bffi_dts` at
-  the call site. Buffer and `Result` returns additionally name
-  `::bffi_build` - add it when those returns are used (or
-  unconditionally).
-- Facade-only mode (`#[bffi(crate = "bffi")]`): the
-  [`bffi`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi)
-  facade alone - the expansion names `::bffi::core`, `::bffi::types`,
-  `::bffi::dts`, and `::bffi::build`, which the facade re-exports.
+- Default: a dependency on the [`bffi`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi)
+  facade - the expansion names `::bffi::core`, `::bffi::types`,
+  `::bffi::dts`, and `::bffi::build` (plus `::bffi::r#async` for
+  `#[bffi_async]`), which the facade re-exports.
+- `crate = "direct"`: dependencies on the pre-merge `bffi-core`,
+  `bffi-types`, and `bffi-dts` - the expansion names `::bffi_core`,
+  `::bffi_types`, and `::bffi_dts` at the call site. Buffer and
+  `Result` returns additionally name `::bffi_build` - add it when
+  those returns are used (or unconditionally). The pre-merge crates
+  are not published.
 - Unique function names: each shim is `#[unsafe(no_mangle)]`, so two `#[bffi]`
   functions with the same name collide at link time as duplicate symbols.
 - Rust **edition 2024**: the generated shims use `#[unsafe(no_mangle)]`, which
@@ -192,19 +199,21 @@ job - the macro never depends on it.
 
 ## Quick start
 
-Annotate plain functions and render `.d.ts` from the descriptors (as in
+In a downstream crate, depend on [`bffi`](https://crates.io/crates/bffi)
+(the facade re-exports these macros) and annotate plain functions;
+render `.d.ts` from the descriptors (as in
 [`tests/descriptor.rs`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/tests/descriptor.rs)):
 
 ```rust
-use bffi_dts::{FunctionDef, ModuleDef};
+use bffi::dts::{FunctionDef, ModuleDef};
 
-#[bffi_macros::bffi]
+#[bffi::bffi]
 /// Adds two numbers.
 fn add(a: u32, b: u32) -> u32 {
     a + b
 }
 
-#[bffi_macros::bffi]
+#[bffi::bffi]
 /// Handles a name.
 fn greet(who: &str) -> u32 {
     who.len() as u32
@@ -212,7 +221,7 @@ fn greet(who: &str) -> u32 {
 
 static FNS: &[FunctionDef] = &[bffi_meta_add::FUNCTION, bffi_meta_greet::FUNCTION];
 
-let rendered = bffi_dts::render(&ModuleDef { name: "math", fns: FNS });
+let rendered = bffi::dts::render(&ModuleDef { name: "math", fns: FNS });
 // /** Adds two numbers. */
 // export function add(a: number, b: number): number;
 // export function greet(who: string): number;

@@ -11,7 +11,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/z2net/bffi-rs"
@@ -26,6 +26,14 @@ syn = { version = "2", features = ["full"] }
 quote = "1"
 proc-macro2 = "1"
 trybuild = "1"
+
+# Dogfood: workspace members (examples, bffi-native) declare the
+# published registry versions so the manifests double as installation
+# examples; patch them onto the local crates so tests and e2e runs
+# exercise the working tree, not the last release.
+[patch.crates-io]
+bffi = { path = "crates/bffi" }
+bffi-macros = { path = "crates/bffi-macros" }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

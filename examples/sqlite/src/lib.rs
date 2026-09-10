@@ -91,7 +91,7 @@ impl From<bffi::ObjectError> for SqliteError {
 
 /// Opens (or creates) a database and returns its connection handle.
 /// Use `:memory:` for an in-memory database.
-#[bffi::bffi(crate = "bffi")]
+#[bffi::bffi]
 pub fn open(path: &str) -> Result<u64, SqliteError> {
     let conn = Connection::open(path)?;
     let handle = wrap().wrap(SharedConnection {
@@ -101,7 +101,7 @@ pub fn open(path: &str) -> Result<u64, SqliteError> {
 }
 
 /// Executes one or more SQL statements (no rows returned).
-#[bffi::bffi(crate = "bffi")]
+#[bffi::bffi]
 pub fn exec(handle: u64, sql: &str) -> Result<(), SqliteError> {
     with_connection(handle, |conn| conn.execute_batch(sql))
 }
@@ -109,7 +109,7 @@ pub fn exec(handle: u64, sql: &str) -> Result<(), SqliteError> {
 /// Runs a query and returns ALL rows as a JSON array of arrays.
 /// Values are TEXT-coerced (sqlite's dynamic typing makes this
 /// lossless for text/int/real round-trips through JS strings).
-#[bffi::bffi(crate = "bffi")]
+#[bffi::bffi]
 pub fn query(handle: u64, sql: &str) -> Result<String, SqliteError> {
     with_connection(handle, |conn| {
         let mut statement = conn.prepare(sql)?;
@@ -173,7 +173,7 @@ fn json_string(value: &str) -> String {
 }
 
 /// Closes (releases) a connection handle.
-#[bffi::bffi(crate = "bffi")]
+#[bffi::bffi]
 pub fn close(handle: u64) -> Result<(), SqliteError> {
     wrap()
         .release(Handle::from_raw(handle))
@@ -182,7 +182,7 @@ pub fn close(handle: u64) -> Result<(), SqliteError> {
 }
 
 /// The SQLite engine version (sanity check for the pipeline).
-#[bffi::bffi(crate = "bffi")]
+#[bffi::bffi]
 pub fn sqlite_version() -> String {
     rusqlite::version().to_owned()
 }

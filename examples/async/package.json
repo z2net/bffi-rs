@@ -2,7 +2,7 @@
   "name": "bffi-example-async",
   "version": "0.1.0",
   "private": true,
-  "description": "Example bffi-rs native module: the async surface (Rust futures as JS Promises, cancellation, timeouts) consumed through the @z2net/bffi pipeline. Dependencies come from the package registries (npm: @z2net/bffi, crates.io: bffi + bffi-macros).",
+  "description": "Example bffi-rs native module: the async surface (Rust futures as JS Promises, cancellation, timeouts) consumed through the @z2net/bffi pipeline. Dependencies come from the package registries (npm: @z2net/bffi, crates.io: bffi).",
   "license": "MIT",
   "type": "module",
   "scripts": {

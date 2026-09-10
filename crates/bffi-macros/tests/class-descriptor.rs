@@ -7,14 +7,14 @@
 
 use bffi::{AbiOut, AbiPrim, AbiSig, AbiType, ClassDef, MethodDef, ModuleDef, ParamDef, TsType};
 
-#[bffi_macros::bffi_class(tag = 0x0160, crate = "bffi")]
+#[bffi_macros::bffi_class(tag = 0x0160)]
 /// A wallet.
 pub struct Wallet {
     /// The balance.
     pub balance: u64,
 }
 
-#[bffi_macros::bffi_impl(crate = "bffi")]
+#[bffi_macros::bffi_impl]
 impl Wallet {
     #[bffi_macros::bffi_constructor]
     /// Creates a wallet.

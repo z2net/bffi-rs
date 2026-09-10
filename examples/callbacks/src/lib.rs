@@ -96,7 +96,7 @@ fn store_code(error: BffiError) -> u32 {
 
 /// Registers the native doubling callback `i32(i32)`; JS invokes it
 /// by handle through `invokeCallback` (the generic ABI).
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn callback_register() -> Result<u64, InvokeError> {
     let handle = register(doubling_sig(), Arc::new(doubling_body))?;
     Ok(handle.as_u64())
@@ -107,7 +107,7 @@ pub fn callback_register() -> Result<u64, InvokeError> {
 /// stored, so tests can pin exact codes (`0` = Ok, `12` =
 /// WrongThread, `4` = InvalidHandle). The typed invoke path is the
 /// generic ABI itself (`invokeCallback` on the JS side).
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn callback_invoke_status(handle: u64, a: i32) -> u32 {
     match invoke(Handle::from_raw(handle), &[Value::I32(a)]) {
         Ok(Value::I32(_)) => ErrorCode::Ok.as_u32(),
@@ -124,7 +124,7 @@ pub fn callback_invoke_status(handle: u64, a: i32) -> u32 {
 /// token is NEVER dereferenced by Rust - a LIVE call into JS through
 /// this pointer is the async delivery path's job (see the async
 /// example); here the e2e verifies storage, identity and revocation.
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn callback_ptr(handle: u64) -> Result<u64, InvokeError> {
     let info = js_callback(Handle::from_raw(handle))?;
     Ok(info.ptr as u64)
@@ -135,7 +135,7 @@ pub fn callback_ptr(handle: u64) -> Result<u64, InvokeError> {
 /// `ErrorCode` numeric value: `0` = bound, `12` = another thread
 /// already owns the binding. The worker of the e2e test calls this
 /// before entering the loop drain.
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn bind_js_thread() -> u32 {
     match set_js_thread() {
         Ok(()) => ErrorCode::Ok.as_u32(),
@@ -148,7 +148,7 @@ pub fn bind_js_thread() -> u32 {
 /// gate passes) and stores the result into the process-wide slot (see
 /// [`last_invoked`]). Returns the raw `ErrorCode` numeric value: `0` =
 /// accepted, `12` = `WrongThread` (no runner is up).
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn marshal_invoke(handle: u64, a: i32) -> u32 {
     let job: bffi::Job = Box::new(move || {
         if let Ok(Value::I32(value)) = invoke(Handle::from_raw(handle), &[Value::I32(a)]) {
@@ -163,7 +163,7 @@ pub fn marshal_invoke(handle: u64, a: i32) -> u32 {
 
 /// The value stored by the last executed marshal job (`0` before the
 /// first).
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn last_invoked() -> i32 {
     LAST_INVOKED.load(Ordering::Relaxed)
 }
@@ -172,13 +172,13 @@ pub fn last_invoked() -> i32 {
 /// returns the number of jobs executed by THIS runner. Intended for
 /// the worker thread of the e2e test (after `bind_js_thread`, so the
 /// marshalled callback invocations pass the JS-thread gate).
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn loop_run() -> u64 {
     run()
 }
 
 /// Stops the loop for good (sticky): `loop_run` returns.
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn loop_stop() {
     stop()
 }

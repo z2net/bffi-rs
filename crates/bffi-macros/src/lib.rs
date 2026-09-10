@@ -25,15 +25,16 @@
 //! ## The contract at a glance
 //!
 //! - **Syntax.** The attribute takes one optional option,
-//!   `crate = "<name>"` (facade-only mode); any other option is
-//!   rejected with `E004`.
+//!   `crate = "<name>"` (redirect the generated paths; `"direct"`
+//!   selects the pre-merge roots); any other option is rejected with
+//!   `E004`.
 //! - **Expansion.** On a plain `fn add(a: u32, b: u32) -> u32` the
 //!   macro emits the function unchanged, a `bffi_add` C ABI shim, and
 //!   a `bffi_meta_add` module holding the const
-//!   `::bffi_dts::FunctionDef`.
+//!   `::bffi::dts::FunctionDef`.
 //! - **Build-profile policy.** Debug builds run the body bare (a
 //!   panic escapes and aborts, DESIGN §6.5); release builds run it
-//!   inside `::bffi_core::boundary::run_extern_body`, which turns a
+//!   inside `::bffi::core::boundary::run_extern_body`, which turns a
 //!   panic into `ErrorCode::Panic` plus a stored last error.
 //! - **Type matrix (P1).** `i8|i16|i32|u8|u16|u32|f32|f64` ->
 //!   `number`, `i64|u64` -> `bigint`, `bool` -> `boolean`, `&str` ->
@@ -42,12 +43,13 @@
 //! - **Diagnostics.** Stable codes `E001` (shape), `E002` (parameter
 //!   type), `E003` (return type), `E004` (attribute options), each
 //!   with `help:`/`note:` lines pointing at DESIGN.md.
-//! - **User-crate requirements.** The expansion names `::bffi_core`,
-//!   `::bffi_types`, and `::bffi_dts` by default, so the user crate
-//!   must depend on them, and function names must be unique - the
-//!   `no_mangle` shims collide at link time otherwise. With
-//!   `crate = "<name>"` the expansion names `::<name>::{core, types,
-//!   dts, build}` instead (facade-only mode).
+//! - **User-crate requirements.** The expansion names the facade
+//!   namespaces `::bffi::{core, types, dts, build}` by default, so a
+//!   dependency on the `bffi` facade suffices, and function names
+//!   must be unique - the `no_mangle` shims collide at link time
+//!   otherwise. With `crate = "<name>"` the expansion names
+//!   `::<name>::{core, types, dts, build}` instead; with
+//!   `crate = "direct"` the pre-merge roots `::bffi_core`, ... .
 
 #![cfg_attr(test, allow(clippy::expect_used, clippy::panic, clippy::unwrap_used))]
 
@@ -71,12 +73,17 @@ use proc_macro::TokenStream;
 ///
 /// The attribute takes at most one option:
 ///
-/// - `#[bffi]` - the generated code names the direct dependencies
-///   (`::bffi_core`, `::bffi_types`, `::bffi_dts`, `::bffi_build`),
-///   so the user crate keeps them in its `Cargo.toml`;
-/// - `#[bffi(crate = "bffi")]` - facade-only mode: the generated code
-///   names `::bffi::core`, `::bffi::types`, `::bffi::dts` and
-///   `::bffi::build`, so the `bffi` facade alone suffices.
+/// - `#[bffi]` - the generated code names the `bffi` facade
+///   namespaces (`::bffi::core`, `::bffi::types`, `::bffi::dts`,
+///   `::bffi::build`, `::bffi::r#async`), so `bffi` alone suffices
+///   as a dependency;
+/// - `#[bffi(crate = "<name>")]` - redirects every generated path to
+///   another facade re-exporting the same namespaces;
+///   `crate = "bffi"` is accepted and identical to the default;
+/// - `#[bffi(crate = "direct")]` - names the pre-merge direct
+///   dependencies (`::bffi_core`, `::bffi_types`, `::bffi_dts`,
+///   `::bffi_build`); an in-workspace escape hatch (the pre-merge
+///   crates are not published).
 ///
 /// Any other option (`#[bffi(rename = "x")]`, a non-literal or
 /// invalid `crate` value) is rejected with `E004`.
@@ -97,16 +104,16 @@ use proc_macro::TokenStream;
 /// //    emitted twice under complementary cfgs (see below):
 /// #[unsafe(no_mangle)]
 /// pub extern "C" fn bffi_add(a: u32, b: u32, __ret: *mut u32)
-///     -> ::bffi_core::ErrorCode { /* ... */ }
+///     -> ::bffi::core::ErrorCode { /* ... */ }
 ///
 /// // 3. The const descriptor consumed by bffi-dts / bffi-build:
 /// pub mod bffi_meta_add {
-///     pub const FUNCTION: ::bffi_dts::FunctionDef = ::bffi_dts::FunctionDef {
+///     pub const FUNCTION: ::bffi::dts::FunctionDef = ::bffi::dts::FunctionDef {
 ///         js_name: "add",
 ///         export_name: "bffi_add",
 ///         docs: &["Adds two numbers."],
 ///         params: &[/* ParamDef { name: "a", ty: TsType::Number }, ... */],
-///         ret: ::bffi_dts::TsType::Number,
+///         ret: ::bffi::dts::TsType::Number,
 ///     };
 /// }
 /// ```
@@ -118,8 +125,8 @@ use proc_macro::TokenStream;
 /// arrives as `*const c_char` (NUL-terminated cstring per the
 /// `bun:ffi` convention, DESIGN §6.3); the shim null-checks it,
 /// converts with `CStr::from_ptr`, and validates UTF-8 through
-/// `bffi_types::unsafe_zero_copy::str_view`. Every failure stores a
-/// `BffiError` via `::bffi_core::set_last_error` and returns the
+/// `bffi::types::unsafe_zero_copy::str_view`. Every failure stores a
+/// `BffiError` via `::bffi::core::set_last_error` and returns the
 /// matching `ErrorCode`; success returns `ErrorCode::Ok`.
 ///
 /// # Build-profile policy (DESIGN §6.5)
@@ -130,7 +137,7 @@ use proc_macro::TokenStream;
 ///   and aborts the process, keeping stack traces intact while
 ///   debugging.
 /// - `#[cfg(not(debug_assertions))]` - the body runs inside
-///   `::bffi_core::boundary::run_extern_body`. A panic unwinds no
+///   `::bffi::core::boundary::run_extern_body`. A panic unwinds no
 ///   further: it becomes `ErrorCode::Panic` plus a stored thread-local
 ///   last error.
 ///
@@ -177,13 +184,15 @@ use proc_macro::TokenStream;
 ///
 /// # Requirements on the user crate
 ///
-/// - Default mode: dependencies on `bffi-core`, `bffi-types`, and
-///   `bffi-dts` - the expansion names `::bffi_core`, `::bffi_types`,
-///   and `::bffi_dts` at the call site. Buffer and `Result` returns
-///   additionally name `::bffi_build`.
-/// - Facade-only mode (`#[bffi(crate = "bffi")]`): the `bffi` facade
-///   alone - the expansion names `::bffi::core`, `::bffi::types`,
-///   `::bffi::dts`, and `::bffi::build`, which the facade re-exports.
+/// - Default: a dependency on the `bffi` facade - the expansion
+///   names `::bffi::core`, `::bffi::types`, `::bffi::dts` and
+///   `::bffi::build`, which the facade re-exports.
+/// - `crate = "direct"`: dependencies on the pre-merge
+///   `bffi-core`, `bffi-types`, `bffi-dts` (and `bffi-build` for
+///   buffer and `Result` returns) - the expansion names
+///   `::bffi_core`, `::bffi_types`, and `::bffi_dts` at the call
+///   site. The pre-merge crates are not published; this mode exists
+///   for in-workspace development.
 /// - Function names must be unique: each shim is `#[unsafe(no_mangle)]`,
 ///   so two `#[bffi]` functions with the same name collide at link
 ///   time as duplicate symbols.
@@ -216,8 +225,9 @@ pub fn bffi(attrs: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// # Syntax
 ///
-/// `#[bffi_async]` (optionally with `crate = "<name>"`, facade-only
-/// mode) on a plain `async fn` whose parameters are the owned matrix
+/// `#[bffi_async]` (optionally with `crate = "<name>"` to redirect
+/// the generated paths, or `crate = "direct"` for the pre-merge
+/// roots) on a plain `async fn` whose parameters are the owned matrix
 /// (primitives, `i64`/`u64`, `bool`, `String`, `Vec<u8>`) and whose
 /// return is the P2 matrix (`()`, primitives, `i64`/`u64`,
 /// `String`, `Vec<u8>`, `CopiedBuf`, `Result<T, E>`). Borrowed
@@ -257,8 +267,9 @@ pub fn bffi_async(attrs: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// Syntax: `#[bffi_class(tag = 0x01xx)]` with a literal tag in the
 /// bffi-object range (`0x0100..=0x01FF`); one tag = one type per
-/// process. An optional `crate = "<name>"` switches the generated paths
-/// to the facade namespaces (facade-only mode).
+/// process. An optional `crate = "<name>"` redirects the generated
+/// paths (default: the `bffi` facade namespaces; `"direct"` selects
+/// the pre-merge roots).
 #[proc_macro_attribute]
 pub fn bffi_class(attrs: TokenStream, item: TokenStream) -> TokenStream {
     class::bffi_class(attrs.into(), item.into()).into()
@@ -271,9 +282,10 @@ pub fn bffi_class(attrs: TokenStream, item: TokenStream) -> TokenStream {
 /// Exactly one `#[bffi_constructor] pub fn new(...) -> Self` is
 /// required; every other `fn` must take `&self` (methods with `&mut
 /// self`/`self` cannot be served through the `Arc<T>` ownership
-/// model). An optional `crate = "<name>"` switches the generated paths
-/// to the facade namespaces (facade-only mode) - use the same value as
-/// on the matching `#[bffi_class]`.
+/// model). An optional `crate = "<name>"` redirects the generated
+/// paths (default: the `bffi` facade namespaces; `"direct"` selects
+/// the pre-merge roots) - use the same value as on the matching
+/// `#[bffi_class]`.
 #[proc_macro_attribute]
 pub fn bffi_impl(attrs: TokenStream, item: TokenStream) -> TokenStream {
     class::bffi_impl(attrs.into(), item.into()).into()

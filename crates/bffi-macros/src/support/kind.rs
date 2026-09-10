@@ -162,23 +162,23 @@ mod tests {
         let ctx = PathCtx::default();
         assert_eq!(
             TsKind::Number.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: Number"
+            ":: bffi :: dts :: TsType :: Number"
         );
         assert_eq!(
             TsKind::Uint8Array.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: Uint8Array"
+            ":: bffi :: dts :: TsType :: Uint8Array"
         );
         assert_eq!(
             TsKind::NullableString.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: NullableString"
+            ":: bffi :: dts :: TsType :: NullableString"
         );
         assert_eq!(
             TsKind::NullableUint8Array.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: NullableUint8Array"
+            ":: bffi :: dts :: TsType :: NullableUint8Array"
         );
         assert_eq!(
             TsKind::Void.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: Void"
+            ":: bffi :: dts :: TsType :: Void"
         );
     }
 

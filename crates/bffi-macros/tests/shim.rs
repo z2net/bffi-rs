@@ -14,50 +14,50 @@
 
 use bffi::{CopiedBuf, ErrorCode, take_last_error};
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 /// Adds two numbers.
 fn add(a: u32, b: u32) -> u32 {
     a + b
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 fn widen(x: i32) -> i64 {
     x as i64
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 fn flip(x: u64) -> bool {
     x == 0
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 fn shout(phrase: &str) -> u32 {
     phrase.len() as u32
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 /// Touches nothing.
 fn touch(x: u32) {
     let _ = x;
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 /// Echoes the word with an exclamations mark.
 fn echo_word(word: &str) -> String {
     format!("{word}!")
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 fn raw_bytes() -> Vec<u8> {
     vec![1, 2, 3]
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 fn copied() -> CopiedBuf {
     CopiedBuf::from_slice(b"owned")
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 fn maybe_word(flag: bool) -> Option<String> {
     if flag { Some("yes".to_owned()) } else { None }
 }
@@ -76,27 +76,27 @@ impl std::fmt::Display for DivError {
 
 impl std::error::Error for DivError {}
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 fn checked_div(a: u32, b: u32) -> Result<u32, DivError> {
     a.checked_div(b).ok_or(DivError { divisor: b })
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 fn unit_result(flag: bool) -> Result<(), DivError> {
     flag.then_some(()).ok_or(DivError { divisor: 1 })
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 fn wild(_: u32) -> u32 {
     7
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 fn slice_len(data: &[u8]) -> u32 {
     data.len() as u32
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 fn echo_bytes(data: &[u8]) -> CopiedBuf {
     CopiedBuf::from_slice(data)
 }

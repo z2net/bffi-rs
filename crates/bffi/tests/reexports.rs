@@ -1,8 +1,8 @@
 //! Compile-level checks of the facade surface: every documented name
-//! is reachable through `bffi::`, the macros resolve through it (in
-//! default mode and via the `crate = "bffi"` facade-only mode), the
-//! namespaced modules resolve, and the zero-copy view types live only
-//! behind the unsafe_zero_copy door.
+//! is reachable through `bffi::`, the macros resolve through it (the
+//! default facade paths, and the accepted-but-identical
+//! `crate = "bffi"` opt-in), the namespaced modules resolve, and the
+//! zero-copy view types live only behind the unsafe_zero_copy door.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 #![allow(missing_docs)]
 
@@ -123,8 +123,9 @@ fn dts_names_are_reexported() {
 }
 
 // The proc macros must resolve through the facade: a plain function
-// annotated with `#[bffi]` proves `bffi::bffi` resolves.
-#[bffi::bffi(crate = "bffi")]
+// annotated with `#[bffi]` - no attribute options - names the facade
+// namespaces `::bffi::{core, types, dts, build}` by default.
+#[bffi::bffi]
 fn facade_probe(a: u32) -> u32 {
     a + 1
 }
@@ -136,9 +137,8 @@ fn bffi_attribute_resolves_through_the_facade() {
     assert_eq!(out, 2);
 }
 
-// Facade-only mode: `crate = "bffi"` - the expansion names
-// `::bffi::{core, types, dts, build}`, so the facade alone resolves
-// every generated path.
+// Compatibility: `crate = "bffi"` must keep working and select
+// exactly the same roots as the default.
 #[bffi::bffi(crate = "bffi")]
 fn facade_only_probe(a: u32) -> u32 {
     a * 3
@@ -165,6 +165,11 @@ fn namespace_modules_resolve() {
     assert!(bffi::object::tag_in_range(bffi::core::TypeTag(
         bffi::object::TAG_MIN
     )));
+
+    // The async namespace is a raw identifier (`async` is a keyword);
+    // the `#[bffi_async]` shims name `::bffi::r#async::...`.
+    let _: bffi::r#async::AsyncValue = bffi::r#async::AsyncValue::Unit;
+    let _: bffi::r#async::AsyncError = bffi::r#async::AsyncError::InvalidHandle;
 
     // The buffer path the facade-mode shims take: store + free.
     let handle =

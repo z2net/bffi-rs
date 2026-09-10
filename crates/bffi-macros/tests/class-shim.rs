@@ -11,7 +11,7 @@
 
 use bffi::{ErrorCode, Handle, take_last_error};
 
-#[bffi_macros::bffi_class(tag = 0x0150, crate = "bffi")]
+#[bffi_macros::bffi_class(tag = 0x0150)]
 /// A counter.
 pub struct Counter {
     /// The current value.
@@ -21,7 +21,7 @@ pub struct Counter {
     secret: u8,
 }
 
-#[bffi_macros::bffi_impl(crate = "bffi")]
+#[bffi_macros::bffi_impl]
 impl Counter {
     #[bffi_macros::bffi_constructor]
     /// Creates a counter.
@@ -73,14 +73,14 @@ impl std::fmt::Display for DivError {
 impl std::error::Error for DivError {}
 
 /// A second class for wrong-tag tests (its own tag, own table).
-#[bffi_macros::bffi_class(tag = 0x0151, crate = "bffi")]
+#[bffi_macros::bffi_class(tag = 0x0151)]
 /// A gate.
 pub struct Gate {
     /// Open or closed.
     pub open: bool,
 }
 
-#[bffi_macros::bffi_impl(crate = "bffi")]
+#[bffi_macros::bffi_impl]
 impl Gate {
     #[bffi_macros::bffi_constructor]
     /// Creates a gate.

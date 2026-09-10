@@ -10,37 +10,37 @@
 
 use bffi::{AbiOut, AbiPrim, AbiSig, AbiType, FunctionDef, ModuleDef, ParamDef, TsType};
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 /// Adds two numbers.
 fn add(a: u32, b: u32) -> u32 {
     a + b
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 /// Handles a name.
 fn greet(who: &str) -> u32 {
     who.len() as u32
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 /// Builds a greeting.
 fn build_greeting(who: &str) -> String {
     format!("hello {who}")
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 /// Reads a payload.
 fn payload() -> Option<Vec<u8>> {
     None
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 /// Finds a name.
 fn find_name(hit: bool) -> Option<String> {
     if hit { Some("ada".to_owned()) } else { None }
 }
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 /// Sums the bytes.
 fn byte_sum(data: &[u8]) -> u32 {
     data.iter().map(|byte| u32::from(*byte)).sum()

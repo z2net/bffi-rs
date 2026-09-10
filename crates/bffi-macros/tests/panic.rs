@@ -7,7 +7,7 @@
 
 use bffi::{ErrorCode, take_last_error};
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 fn boom() -> u32 {
     panic!("boundary!");
 }

@@ -14,7 +14,6 @@ from TypeScript. One dependency, feature-gated:
 ```toml
 [dependencies]
 bffi = "0.1.0"
-bffi-macros = "0.1.0"   # the #[bffi] / #[bffi_async] / class macros
 ```
 
 ## Quick start
@@ -23,7 +22,7 @@ bffi-macros = "0.1.0"   # the #[bffi] / #[bffi_async] / class macros
 use bffi::bffi;
 
 /// Adds two numbers.
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn add(a: u32, b: u32) -> u32 {
     a.wrapping_add(b)
 }
@@ -32,7 +31,10 @@ pub fn add(a: u32, b: u32) -> u32 {
 The `#[bffi]` macro generates the C ABI shim (status + out-parameter,
 copy by default, panics converted to JS errors) plus a const
 descriptor consumed by the `@z2net/bffi` TypeScript loader - no
-hand-written bindings anywhere.
+hand-written bindings anywhere. The generated paths target this
+crate's namespaces (`::bffi::core`, ...) out of the box; an optional
+`crate = "<name>"` redirects them to another facade, and
+`crate = "direct"` selects the pre-merge crate roots.
 
 ## Features
 
@@ -63,7 +65,7 @@ use bffi::bffi_async::sleep;
 use std::time::Duration;
 
 /// Doubles after a short delay.
-#[bffi::bffi_async(crate = "bffi")]
+#[bffi::bffi_async]
 pub async fn double_async(x: u64) -> u64 {
     sleep(Duration::from_millis(15)).await;
     x * 2

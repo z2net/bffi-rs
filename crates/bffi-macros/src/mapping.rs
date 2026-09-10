@@ -64,23 +64,23 @@ mod tests {
         let ctx = crate::support::paths::PathCtx::default();
         assert_eq!(
             TsKind::Number.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: Number"
+            ":: bffi :: dts :: TsType :: Number"
         );
         assert_eq!(
             TsKind::Uint8Array.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: Uint8Array"
+            ":: bffi :: dts :: TsType :: Uint8Array"
         );
         assert_eq!(
             TsKind::NullableString.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: NullableString"
+            ":: bffi :: dts :: TsType :: NullableString"
         );
         assert_eq!(
             TsKind::NullableUint8Array.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: NullableUint8Array"
+            ":: bffi :: dts :: TsType :: NullableUint8Array"
         );
         assert_eq!(
             TsKind::Void.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: Void"
+            ":: bffi :: dts :: TsType :: Void"
         );
     }
 
@@ -300,8 +300,8 @@ mod tests {
         let model = FnModel::parse(&proc_macro2::TokenStream::new(), item).expect("accepted");
         assert_eq!(
             model.paths.core.to_string(),
-            ":: bffi_core",
-            "no attribute keeps the direct-dependency roots"
+            ":: bffi :: core",
+            "no attribute selects the facade roots"
         );
     }
 
@@ -313,6 +313,16 @@ mod tests {
         assert_eq!(model.paths.types.to_string(), ":: bffi :: types");
         assert_eq!(model.paths.dts.to_string(), ":: bffi :: dts");
         assert_eq!(model.paths.build.to_string(), ":: bffi :: build");
+    }
+
+    #[test]
+    fn crate_direct_selects_the_pre_merge_roots() {
+        let item = quote! { fn f(x: u32) -> u32 { x } };
+        let model = FnModel::parse(&quote! { crate = "direct" }, item).expect("accepted");
+        assert_eq!(model.paths.core.to_string(), ":: bffi_core");
+        assert_eq!(model.paths.types.to_string(), ":: bffi_types");
+        assert_eq!(model.paths.dts.to_string(), ":: bffi_dts");
+        assert_eq!(model.paths.build.to_string(), ":: bffi_build");
     }
 
     #[test]

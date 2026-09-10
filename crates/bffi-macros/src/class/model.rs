@@ -181,7 +181,7 @@ impl syn::parse::Parse for ClassArgs {
                             format!("invalid crate name `{name}`"),
                         ));
                     }
-                    paths = PathCtx::from_attr(&name);
+                    paths = crate::support::paths::from_option(&name);
                 }
                 other => {
                     return Err(syn::Error::new(
@@ -337,7 +337,7 @@ impl syn::parse::Parse for ImplPaths {
                     format!("invalid crate name `{name}`"),
                 ));
             }
-            paths = PathCtx::from_attr(&name);
+            paths = crate::support::paths::from_option(&name);
             if !input.is_empty() {
                 input.parse::<syn::Token![,]>()?;
             }
@@ -347,8 +347,9 @@ impl syn::parse::Parse for ImplPaths {
 }
 
 /// Resolves the `#[bffi_impl]` attribute options into the path
-/// context. No attribute selects the default direct-dependency roots;
-/// anything unparsable or invalid is the `E006` rejection.
+/// context. No attribute selects the default facade roots
+/// (`::bffi::core`, ...); anything unparsable or invalid is the
+/// `E006` rejection.
 fn parse_impl_paths(attrs: &TokenStream) -> syn::Result<PathCtx> {
     if attrs.is_empty() {
         return Ok(PathCtx::default());

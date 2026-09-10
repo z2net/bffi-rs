@@ -396,9 +396,18 @@ mod tests {
     }
 
     #[test]
-    fn default_context_emits_the_direct_dependency_paths() {
+    fn default_context_emits_the_facade_paths() {
         let tokens =
             value_tail(&PathCtx::default(), &RetKind::Buffer(BufferTy::ByteVec)).to_string();
+        assert!(tokens.contains(":: bffi :: build :: runtime :: store_bytes"));
+        assert!(tokens.contains(":: bffi :: types :: CopiedBuf :: from_vec"));
+        assert!(tokens.contains(":: bffi :: core :: ErrorCode :: TableFull"));
+    }
+
+    #[test]
+    fn direct_context_emits_the_pre_merge_paths() {
+        let tokens =
+            value_tail(&PathCtx::direct(), &RetKind::Buffer(BufferTy::ByteVec)).to_string();
         assert!(tokens.contains(":: bffi_build :: runtime :: store_bytes"));
         assert!(tokens.contains(":: bffi_types :: CopiedBuf :: from_vec"));
         assert!(tokens.contains(":: bffi_core :: ErrorCode :: TableFull"));

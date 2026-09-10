@@ -18,4 +18,4 @@ name = "emit-json"
 path = "src/bin/emit_json.rs"
 
 [dependencies]
-bffi = "0.1.1"
+bffi = "0.1.2"

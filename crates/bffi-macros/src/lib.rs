@@ -58,6 +58,7 @@ extern crate proc_macro;
 
 mod async_fn;
 mod class;
+mod derive;
 mod errors;
 mod mapping;
 mod meta;
@@ -297,4 +298,23 @@ pub fn bffi_impl(attrs: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn bffi_constructor(_attrs: TokenStream, item: TokenStream) -> TokenStream {
     class::bffi_constructor(_attrs.into(), item.into()).into()
+}
+
+/// Marks a named struct as a boundary-crossing record type (B1):
+/// generates the `BFFI_RECORD_DEF` descriptor entry and the
+/// `bffi_wire_encode` / `bffi_wire_decode` pair over the shared wire
+/// codec. See `derive` module docs for the supported field matrix and
+/// the `E009`/`E010` rejections.
+#[proc_macro_derive(BffiRecord)]
+pub fn bffi_record_derive(input: TokenStream) -> TokenStream {
+    derive::record(input)
+}
+
+/// Marks a unit enum as a boundary-crossing choice type (B1): the
+/// value encodes as its variant name, the TS side sees a union of
+/// string literals. `E011` rejects data-carrying variants and
+/// generics.
+#[proc_macro_derive(BffiEnum)]
+pub fn bffi_enum_derive(input: TokenStream) -> TokenStream {
+    derive::enumeration(input)
 }

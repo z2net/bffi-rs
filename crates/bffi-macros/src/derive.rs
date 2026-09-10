@@ -1,0 +1,431 @@
+//! The B1 derive macros: `#[derive(BffiRecord)]` and
+//! `#[derive(BffiEnum)]`.
+//!
+//! A derived record gains `BFFI_TS_TYPE` (`TsType::Record("Name")`),
+//! the `BFFI_RECORD_DEF` descriptor table entry, and the wire
+//! codec pair `bffi_wire_encode` / `bffi_wire_decode` over the
+//! value-level helpers of `bffi::types::wire`. A derived unit enum
+//! gains the same shape with `TsType::Enum("Name")`, encoding as its
+//! variant name.
+//!
+//! The expansions name the facade paths (`::bffi::types::wire`,
+//! `::bffi::dts`, `::bffi::core`) unconditionally: the published
+//! integration is `bffi` alone (the `crate = "direct"` escape hatch
+//! of the attribute macros does not extend to derives).
+//!
+//! Rejections carry the `E009`-`E011` codes:
+//!
+//! | Code  | Meaning                                               |
+//! | ----- | ----------------------------------------------------- |
+//! | `E009` | unsupported record shape (tuple/unit struct, generics) |
+//! | `E010` | unsupported record field type                          |
+//! | `E011` | unsupported enum shape (data-carrying variants, generics) |
+
+use proc_macro2::TokenStream as TokenStream2;
+use quote::quote;
+use syn::spanned::Spanned;
+
+use crate::support::util::extract_docs;
+
+/// The `#[derive(BffiRecord)]` entry point (declared in `lib.rs`,
+/// which owns the `proc_macro_derive` shims; this module holds the
+/// expansion).
+pub(crate) fn record(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let item: syn::DeriveInput = syn::parse_macro_input!(input as syn::DeriveInput);
+    match expand_record(&item) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+/// The `#[derive(BffiEnum)]` entry point.
+pub(crate) fn enumeration(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let item: syn::DeriveInput = syn::parse_macro_input!(input as syn::DeriveInput);
+    match expand_enum(&item) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+/// The record expansion.
+fn expand_record(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
+    let name = &item.ident;
+    if !item.generics.params.is_empty() || item.generics.where_clause.is_some() {
+        return Err(shape_error(
+            item.generics.span(),
+            &name.to_string(),
+            "generic records",
+        ));
+    }
+    let syn::Data::Struct(syn::DataStruct {
+        fields: syn::Fields::Named(named),
+        ..
+    }) = &item.data
+    else {
+        return Err(shape_error(
+            item.span(),
+            &name.to_string(),
+            "tuple/unit structs",
+        ));
+    };
+
+    let mut field_defs = Vec::new();
+    let mut encode_stmts = Vec::new();
+    let mut decode_stmts = Vec::new();
+    let mut construct_fields = Vec::new();
+
+    for field in &named.named {
+        // Unreachable for named fields; the shape match above
+        // guarantees the ident.
+        let Some(ident) = field.ident.as_ref() else {
+            continue;
+        };
+        let field_name = ident.to_string();
+        let kind = FieldKind::classify(&field.ty, ident)?;
+        let docs = extract_docs(&field.attrs);
+        let ty_expr = kind.ts_expr();
+
+        field_defs.push(quote! {
+            ::bffi::dts::RecordFieldDef {
+                name: #field_name,
+                docs: &[#(#docs),*],
+                ty: #ty_expr,
+            }
+        });
+        encode_stmts.push(kind.encode_stmt(ident));
+        decode_stmts.push(kind.decode_stmt(ident));
+        construct_fields.push(kind.construct_field(ident));
+    }
+
+    let js_name = name.to_string();
+    let docs = extract_docs(&item.attrs);
+    let field_count = named.named.len();
+
+    Ok(quote! {
+        #[automatically_derived]
+        impl #name {
+            /// The TS-facing reference to this record.
+            pub const BFFI_TS_TYPE: ::bffi::dts::TsType =
+                ::bffi::dts::TsType::Record(#js_name);
+
+            /// The descriptor table entry for `ModuleDef::records`.
+            pub const BFFI_RECORD_DEF: ::bffi::dts::RecordDef =
+                ::bffi::dts::RecordDef {
+                    js_name: #js_name,
+                    docs: &[#(#docs),*],
+                    fields: &[#(#field_defs),*],
+                };
+
+            /// Appends this value as one complete wire record.
+            pub fn bffi_wire_encode(&self, out: &mut ::std::vec::Vec<u8>) {
+                use ::bffi::types::wire as __w;
+                __w::encode_record_header(out, #field_count);
+                #(#encode_stmts)*
+            }
+
+            /// Decodes one wire record at `offset`; returns the value
+            /// and the offset past it.
+            pub fn bffi_wire_decode(
+                bytes: &[u8],
+                offset: usize,
+            ) -> ::core::result::Result<(Self, usize), ::bffi::core::BffiError> {
+                use ::bffi::types::wire as __w;
+                let (field_count, __off) = __w::decode_record_header(bytes, offset)?;
+                if field_count != #field_count {
+                    return ::core::result::Result::Err(
+                        ::bffi::core::BffiError::new(
+                            ::bffi::core::ErrorCode::InvalidArgument,
+                            "wire: record field count mismatch",
+                        ),
+                    );
+                }
+                #(#decode_stmts)*
+                ::core::result::Result::Ok((
+                    Self { #(#construct_fields,)* },
+                    __off,
+                ))
+            }
+        }
+    })
+}
+
+/// One supported field type of a record.
+enum FieldKind {
+    /// `i8 i16 i32 u8 u16` - wire `i32`, TS `number`.
+    NarrowInt,
+    /// `u32 f32 f64` - wire `f64`, TS `number`.
+    WideNumber,
+    /// `i64` - wire `i64`, TS `bigint`.
+    Int64,
+    /// `bool`.
+    Bool,
+    /// `String`.
+    Str,
+    /// `Vec<u8>`.
+    Bytes,
+    /// A nested `BffiRecord`/`BffiEnum` type.
+    Named(syn::Path),
+}
+
+impl FieldKind {
+    /// Classifies one field type or rejects it with `E010`.
+    fn classify(ty: &syn::Type, field: &syn::Ident) -> syn::Result<Self> {
+        let syn::Type::Path(syn::TypePath { qself: None, path }) = ty else {
+            return Err(field_type_error(ty, field));
+        };
+        let Some(last) = path.segments.last() else {
+            return Err(field_type_error(ty, field));
+        };
+        if path.segments.len() != 1 {
+            // A qualified path (`foo::Bar`) is a nested type.
+            return Ok(Self::Named(path.clone()));
+        }
+        if last.arguments.is_none() {
+            match last.ident.to_string().as_str() {
+                "i8" | "i16" | "i32" | "u8" | "u16" => return Ok(Self::NarrowInt),
+                "u32" | "f32" | "f64" => return Ok(Self::WideNumber),
+                "i64" => return Ok(Self::Int64),
+                "bool" => return Ok(Self::Bool),
+                "String" => return Ok(Self::Str),
+                "u64" => {
+                    return Err(syn::Error::new(
+                        ty.span(),
+                        format!(
+                            "bffi[E010]: field `{field}`: u64 record fields are not \
+                             supported yet (wire exactness); use i64"
+                        ),
+                    ));
+                }
+                _ => return Ok(Self::Named(path.clone())),
+            }
+        }
+        if last.ident == "Vec" {
+            if let syn::PathArguments::AngleBracketed(args) = &last.arguments
+                && args.args.len() == 1
+                && let syn::GenericArgument::Type(inner) = &args.args[0]
+                && is_u8(inner)
+            {
+                return Ok(Self::Bytes);
+            }
+            let ty_text = quote::ToTokens::to_token_stream(ty).to_string();
+            return Err(syn::Error::new(
+                ty.span(),
+                format!(
+                    "bffi[E010]: unsupported field type `{ty_text}` on `{field}`; only \
+                     Vec<u8> of the sequence types is supported (B1 v1)"
+                ),
+            ));
+        }
+        Err(field_type_error(ty, field))
+    }
+
+    /// The `TsType` expression of the field.
+    fn ts_expr(&self) -> TokenStream2 {
+        match self {
+            Self::NarrowInt | Self::WideNumber => {
+                quote! { ::bffi::dts::TsType::Number }
+            }
+            Self::Int64 => quote! { ::bffi::dts::TsType::BigInt },
+            Self::Bool => quote! { ::bffi::dts::TsType::Boolean },
+            Self::Str => quote! { ::bffi::dts::TsType::String },
+            Self::Bytes => quote! { ::bffi::dts::TsType::Uint8Array },
+            Self::Named(path) => quote! { #path::BFFI_TS_TYPE },
+        }
+    }
+
+    /// One encode statement for the field.
+    fn encode_stmt(&self, ident: &syn::Ident) -> TokenStream2 {
+        match self {
+            Self::NarrowInt => quote! { __w::encode_i32(out, i32::from(self.#ident)); },
+            Self::WideNumber => quote! { __w::encode_f64(out, self.#ident as f64); },
+            Self::Int64 => quote! { __w::encode_i64(out, self.#ident); },
+            Self::Bool => quote! { __w::encode_bool(out, self.#ident); },
+            Self::Str => quote! { __w::encode_str(out, &self.#ident); },
+            Self::Bytes => quote! { __w::encode_bytes(out, &self.#ident); },
+            Self::Named(path) => {
+                quote! { #path::bffi_wire_encode(&self.#ident, out); }
+            }
+        }
+    }
+
+    /// One decode statement for the field.
+    fn decode_stmt(&self, ident: &syn::Ident) -> TokenStream2 {
+        match self {
+            // The wire carries i32/f64; the construction site narrows
+            // back to the exact field width.
+            Self::NarrowInt => quote! {
+                let (#ident, __off) = __w::decode_i32(bytes, __off)?;
+            },
+            Self::WideNumber => quote! {
+                let (#ident, __off) = __w::decode_f64(bytes, __off)?;
+            },
+            Self::Int64 => quote! {
+                let (#ident, __off) = __w::decode_i64(bytes, __off)?;
+            },
+            Self::Bool => quote! {
+                let (#ident, __off) = __w::decode_bool(bytes, __off)?;
+            },
+            Self::Str => quote! {
+                let (__v, __off) = __w::decode_str(bytes, __off)?;
+                let #ident = ::std::string::String::from(__v);
+            },
+            Self::Bytes => quote! {
+                let (__v, __off) = __w::decode_bytes(bytes, __off)?;
+                let #ident = ::std::vec::Vec::from(__v);
+            },
+            Self::Named(path) => quote! {
+                let (#ident, __off) = #path::bffi_wire_decode(bytes, __off)?;
+            },
+        }
+    }
+
+    /// The construction field for `Self { ... }` (narrows the decoded
+    /// wire value back to the exact field width where needed).
+    fn construct_field(&self, ident: &syn::Ident) -> TokenStream2 {
+        match self {
+            Self::NarrowInt | Self::WideNumber => quote! { #ident: #ident as _ },
+            _ => quote! { #ident },
+        }
+    }
+}
+
+/// Whether the type is literally `u8`.
+fn is_u8(ty: &syn::Type) -> bool {
+    let syn::Type::Path(syn::TypePath { qself: None, path }) = ty else {
+        return false;
+    };
+    path.segments.len() == 1 && path.segments[0].ident == "u8"
+}
+
+/// The enum expansion.
+fn expand_enum(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
+    let name = &item.ident;
+    if !item.generics.params.is_empty() || item.generics.where_clause.is_some() {
+        return Err(enum_shape_error(
+            item.generics.span(),
+            &name.to_string(),
+            "generic enums",
+        ));
+    }
+    let syn::Data::Enum(syn::DataEnum { variants, .. }) = &item.data else {
+        return Err(enum_shape_error(
+            item.span(),
+            &name.to_string(),
+            "non-enum items",
+        ));
+    };
+
+    let mut variant_names: Vec<String> = Vec::new();
+    let mut variant_defs = Vec::new();
+    for variant in variants {
+        if !variant.fields.is_empty() {
+            return Err(syn::Error::new(
+                variant.span(),
+                format!(
+                    "bffi[E011]: enum `{name}`: only unit variants are supported \
+                     (B1 v1); `{}` carries data",
+                    variant.ident
+                ),
+            ));
+        }
+        let vname = variant.ident.to_string();
+        let docs = extract_docs(&variant.attrs);
+        variant_defs.push(quote! {
+            ::bffi::dts::EnumVariantDef {
+                name: #vname,
+                docs: &[#(#docs),*],
+            }
+        });
+        variant_names.push(vname);
+    }
+
+    let js_name = name.to_string();
+    let docs = extract_docs(&item.attrs);
+
+    let match_encode_arms = variants.iter().map(|variant| {
+        let ident = &variant.ident;
+        let vname = variant.ident.to_string();
+        quote! { Self::#ident => #vname, }
+    });
+    let match_decode_arms = variants.iter().map(|variant| {
+        let ident = &variant.ident;
+        let vname = variant.ident.to_string();
+        quote! { #vname => Self::#ident, }
+    });
+    let variant_list = quote! { &[#(#variant_names),*] };
+
+    Ok(quote! {
+        #[automatically_derived]
+        impl #name {
+            /// The TS-facing reference to this enum.
+            pub const BFFI_TS_TYPE: ::bffi::dts::TsType =
+                ::bffi::dts::TsType::Enum(#js_name);
+
+            /// The descriptor table entry for `ModuleDef::enums`.
+            pub const BFFI_ENUM_DEF: ::bffi::dts::EnumDef =
+                ::bffi::dts::EnumDef {
+                    js_name: #js_name,
+                    docs: &[#(#docs),*],
+                    variants: &[#(#variant_defs),*],
+                };
+
+            /// Appends this value as one complete wire record (its
+            /// variant name).
+            pub fn bffi_wire_encode(&self, out: &mut ::std::vec::Vec<u8>) {
+                use ::bffi::types::wire as __w;
+                let __name = match self { #(#match_encode_arms)* };
+                __w::encode_str(out, __name);
+            }
+
+            /// Decodes one wire record at `offset`; returns the value
+            /// and the offset past it.
+            pub fn bffi_wire_decode(
+                bytes: &[u8],
+                offset: usize,
+            ) -> ::core::result::Result<(Self, usize), ::bffi::core::BffiError> {
+                use ::bffi::types::wire as __w;
+                let (name, __off) = __w::decode_variant(bytes, offset, #variant_list)?;
+                let value = match name {
+                    #(#match_decode_arms)*
+                    // decode_variant guarantees the name is one of the
+                    // declared variants; the arm exists for exhaustiveness.
+                    _ => return ::core::result::Result::Err(
+                        ::bffi::core::BffiError::new(
+                            ::bffi::core::ErrorCode::InvalidArgument,
+                            "wire: unknown variant",
+                        ),
+                    ),
+                };
+                ::core::result::Result::Ok((value, __off))
+            }
+        }
+    })
+}
+
+/// The `E009` record-shape rejection.
+fn shape_error(span: proc_macro2::Span, name: &str, what: &str) -> syn::Error {
+    syn::Error::new(
+        span,
+        format!("bffi[E009]: record `{name}`: {what} are not supported (B1 v1)"),
+    )
+}
+
+/// The `E010` field-type rejection.
+fn field_type_error(ty: &syn::Type, field: &syn::Ident) -> syn::Error {
+    let ty_text = quote::ToTokens::to_token_stream(ty).to_string();
+    syn::Error::new(
+        ty.span(),
+        format!(
+            "bffi[E010]: unsupported field type `{ty_text}` on `{field}`; \
+             supported: i8|i16|i32|u8|u16|u32|f32|f64|i64|bool|String|Vec<u8>|nested records"
+        ),
+    )
+}
+
+/// The `E011` enum-shape rejection.
+fn enum_shape_error(span: proc_macro2::Span, name: &str, what: &str) -> syn::Error {
+    syn::Error::new(
+        span,
+        format!("bffi[E011]: enum `{name}`: {what} are not supported (B1 v1)"),
+    )
+}

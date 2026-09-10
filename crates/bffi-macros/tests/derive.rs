@@ -7,7 +7,7 @@
 #![allow(missing_docs)]
 
 use bffi::bffi_dts::TsType;
-use bffi::{BffiEnum, BffiRecord};
+use bffi::{BffiEnum, BffiRecord, BffiWire};
 
 /// The status of a job.
 #[derive(BffiEnum, Debug, PartialEq)]

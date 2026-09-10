@@ -115,9 +115,12 @@ fn expand_record(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
                     docs: &[#(#docs),*],
                     fields: &[#(#field_defs),*],
                 };
+        }
 
+        #[automatically_derived]
+        impl ::bffi::types::wire::BffiWire for #name {
             /// Appends this value as one complete wire record.
-            pub fn bffi_wire_encode(&self, out: &mut ::std::vec::Vec<u8>) {
+            fn bffi_wire_encode(&self, out: &mut ::std::vec::Vec<u8>) {
                 use ::bffi::types::wire as __w;
                 __w::encode_record_header(out, #field_count);
                 #(#encode_stmts)*
@@ -125,7 +128,7 @@ fn expand_record(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
 
             /// Decodes one wire record at `offset`; returns the value
             /// and the offset past it.
-            pub fn bffi_wire_decode(
+            fn bffi_wire_decode(
                 bytes: &[u8],
                 offset: usize,
             ) -> ::core::result::Result<(Self, usize), ::bffi::core::BffiError> {
@@ -368,10 +371,13 @@ fn expand_enum(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
                     docs: &[#(#docs),*],
                     variants: &[#(#variant_defs),*],
                 };
+        }
 
+        #[automatically_derived]
+        impl ::bffi::types::wire::BffiWire for #name {
             /// Appends this value as one complete wire record (its
             /// variant name).
-            pub fn bffi_wire_encode(&self, out: &mut ::std::vec::Vec<u8>) {
+            fn bffi_wire_encode(&self, out: &mut ::std::vec::Vec<u8>) {
                 use ::bffi::types::wire as __w;
                 let __name = match self { #(#match_encode_arms)* };
                 __w::encode_str(out, __name);
@@ -379,7 +385,7 @@ fn expand_enum(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
 
             /// Decodes one wire record at `offset`; returns the value
             /// and the offset past it.
-            pub fn bffi_wire_decode(
+            fn bffi_wire_decode(
                 bytes: &[u8],
                 offset: usize,
             ) -> ::core::result::Result<(Self, usize), ::bffi::core::BffiError> {

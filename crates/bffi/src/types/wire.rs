@@ -140,6 +140,18 @@ fn wire_error(what: &str) -> BffiError {
     BffiError::new(ErrorCode::InvalidArgument, what)
 }
 
+/// A type that crosses the boundary as one wire-encoded value: the
+/// `#[derive(BffiRecord)]` / `#[derive(BffiEnum)]` expansions
+/// implement this over the value-level helpers below.
+pub trait BffiWire: Sized {
+    /// Appends this value as one complete wire record.
+    fn bffi_wire_encode(&self, out: &mut Vec<u8>);
+
+    /// Decodes one wire record at `offset`; returns the value and the
+    /// offset past it.
+    fn bffi_wire_decode(bytes: &[u8], offset: usize) -> Result<(Self, usize), BffiError>;
+}
+
 /// Reads the tag byte at `offset` and checks it against `expected`;
 /// returns the payload offset (one past the tag).
 fn expect_tag(bytes: &[u8], offset: usize, expected: u8, what: &str) -> Result<usize, BffiError> {

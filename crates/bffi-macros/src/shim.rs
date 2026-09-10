@@ -38,7 +38,7 @@ pub(crate) fn expand(model: &FnModel) -> TokenStream {
         .params
         .iter()
         .enumerate()
-        .map(|(index, param)| shim_param(&param.name, param.kind, index))
+        .map(|(index, param)| shim_param(&param.name, param.kind.clone(), index))
         .collect();
     let out = out_param(&model.ret);
     let body = body(model);
@@ -96,13 +96,13 @@ fn body(model: &FnModel) -> TokenStream {
         model
             .params
             .iter()
-            .map(|param| (param.name.as_str(), param.kind)),
+            .map(|param| (param.name.as_str(), param.kind.clone())),
     ));
 
     let ident = &model.ident;
     let args = model.params.iter().enumerate().map(|(index, param)| {
         let name = param_ident(&param.name, index);
-        match param.kind {
+        match &param.kind {
             // `ZeroCopyStr` derefs to `str`.
             ShimKind::Str => {
                 let view = format_ident!("{name}_view");
@@ -113,7 +113,11 @@ fn body(model: &FnModel) -> TokenStream {
                 let view = format_ident!("{name}_view");
                 quote! { &#view }
             }
-            ShimKind::Prim(_) | ShimKind::BigInt(_) => quote! { #name },
+            // Records and sequences decode into the owned local named
+            // `#name` in the conversion preamble.
+            ShimKind::Prim(_) | ShimKind::BigInt(_) | ShimKind::Record(_) | ShimKind::Seq(_) => {
+                quote! { #name }
+            }
         }
     });
     let call = quote! { #ident(#(#args,)*) };

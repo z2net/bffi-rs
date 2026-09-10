@@ -9,8 +9,11 @@
 //! ([`ts_prim`]/[`ts_type`]/[`ts_return`]) complements the
 //! classifiers for the descriptor generators.
 
-use crate::support::kind::{BigIntTy, BufferTy, PrimTy, RetKind, ShimKind, TsKind};
-use proc_macro2::Span;
+use crate::support::kind::{
+    BigIntTy, BufferTy, KindPath, PrimTy, RetKind, SeqItem, ShimKind, TsKind,
+};
+use proc_macro2::{Span, TokenStream};
+use quote::quote;
 use syn::spanned::Spanned;
 
 /// A type rejected by a classifier: the neutral form each proc-macro
@@ -139,10 +142,69 @@ pub fn generic_args(ty: &syn::Type) -> Vec<&syn::Type> {
         .collect()
 }
 
+/// Names that look like bare user types but are rejected: they are
+/// either unsized/unsupported scalars or owned-buffer channels with
+/// dedicated rules. Their rejection texts are locked by the ui
+/// goldens, so they must not fall into the `Record` classification.
+const DENIED_BARE_NAMES: &[&str] = &[
+    "str",
+    "char",
+    "i128",
+    "u128",
+    "isize",
+    "usize",
+    "String",
+    "CopiedBuf",
+];
+
+/// The plain `syn::Path` of a type when it is argument-free on its
+/// last segment (qualified paths included: `my_module::Point` is a
+/// legitimate record reference). `None` for non-paths and paths whose
+/// last segment carries generic arguments.
+fn plain_path(ty: &syn::Type) -> Option<&syn::Path> {
+    let syn::Type::Path(path) = ty else {
+        return None;
+    };
+    if path.qself.is_some() {
+        return None;
+    }
+    let last = path.path.segments.last()?;
+    if !last.arguments.is_none() {
+        return None;
+    }
+    Some(&path.path)
+}
+
+/// Classifies the item of a `Vec<T>` sequence; `None` rejects.
+fn seq_item(inner: &syn::Type) -> Option<SeqItem> {
+    let syn::Type::Path(path) = inner else {
+        return None;
+    };
+    if path.qself.is_some() {
+        return None;
+    }
+    let last = path.path.segments.last()?;
+    if !last.arguments.is_none() {
+        return None;
+    }
+    let name = last.ident.to_string();
+    match name.as_str() {
+        "i8" | "i16" | "i32" | "u8" | "u16" => Some(SeqItem::Narrow),
+        "u32" | "f32" | "f64" => Some(SeqItem::Wide),
+        "i64" => Some(SeqItem::I64),
+        "bool" => Some(SeqItem::Bool),
+        "String" => Some(SeqItem::Str),
+        "str" | "char" | "i128" | "u128" | "isize" | "usize" | "u64" | "CopiedBuf" => None,
+        _ => Some(SeqItem::Record(KindPath(path.path.clone()))),
+    }
+}
+
 /// Classifies a parameter type: plain primitives and `i64`/`u64` as
 /// their kinds, `&str` (borrowed, not `mut`; lifetimes ignored) as
 /// [`ShimKind::Str`], `&[u8]` (borrowed, not `mut`; lifetimes
-/// ignored) as [`ShimKind::BufferView`], everything else rejected.
+/// ignored) as [`ShimKind::BufferView`], an owned record/enum type
+/// as [`ShimKind::Record`] and a `Vec<T>` of a non-`u8` supported
+/// item as [`ShimKind::Seq`]; everything else rejected.
 pub fn classify_param(ty: &syn::Type) -> Result<ShimKind, Unsupported<'_>> {
     if let Some(kind) = path_kind(ty) {
         return Ok(match kind {
@@ -160,6 +222,30 @@ pub fn classify_param(ty: &syn::Type) -> Result<ShimKind, Unsupported<'_>> {
             return Ok(ShimKind::BufferView);
         }
     }
+    if let Some((name, true)) = path_ident(ty)
+        && name == "Vec"
+    {
+        let args = generic_args(ty);
+        if let [inner] = args.as_slice()
+            && !is_u8(inner)
+            && let Some(item) = seq_item(inner)
+        {
+            return Ok(ShimKind::Seq(item));
+        }
+        // `Vec<u8>` params and unsupported items fall through to the
+        // rejection below (owned byte buffers are return-only).
+    }
+    if let Some(path) = plain_path(ty) {
+        if let Some(name) = path.segments.last().map(|seg| seg.ident.to_string())
+            && DENIED_BARE_NAMES.contains(&name.as_str())
+        {
+            return Err(Unsupported {
+                span: ty.span(),
+                ty,
+            });
+        }
+        return Ok(ShimKind::Record(KindPath(path.clone())));
+    }
     Err(Unsupported {
         span: ty.span(),
         ty,
@@ -168,8 +254,9 @@ pub fn classify_param(ty: &syn::Type) -> Result<ShimKind, Unsupported<'_>> {
 
 /// Classifies a return type: the plain primitives plus `i64`/`u64`,
 /// the empty tuple, the owned byte payloads (`String` / `Vec<u8>` /
-/// `CopiedBuf`), `Option` of a payload, and `Result<T, E>` over any of
-/// those. Everything else is rejected.
+/// `CopiedBuf`), `Option` of a payload, `Result<T, E>` over any of
+/// those, an owned record/enum type and a `Vec<T>` sequence of a
+/// supported non-`u8` item. Everything else is rejected.
 pub fn classify_return(ty: &syn::Type) -> Result<RetKind, Unsupported<'_>> {
     if let syn::Type::Tuple(tuple) = ty
         && tuple.elems.is_empty()
@@ -191,6 +278,11 @@ pub fn classify_return(ty: &syn::Type) -> Result<RetKind, Unsupported<'_>> {
         let args = generic_args(ty);
         match (name.as_str(), args.as_slice()) {
             ("Vec", [inner]) if is_u8(inner) => return Ok(RetKind::Buffer(BufferTy::ByteVec)),
+            ("Vec", [inner]) => {
+                if let Some(item) = seq_item(inner) {
+                    return Ok(RetKind::Seq(item));
+                }
+            }
             ("Option", [inner]) => {
                 if let Some(buffer) = classify_buffer_only(inner) {
                     return Ok(RetKind::Nullable(buffer));
@@ -212,6 +304,17 @@ pub fn classify_return(ty: &syn::Type) -> Result<RetKind, Unsupported<'_>> {
             }
             _ => {}
         }
+    }
+    if let Some(path) = plain_path(ty) {
+        if let Some(name) = path.segments.last().map(|seg| seg.ident.to_string())
+            && DENIED_BARE_NAMES.contains(&name.as_str())
+        {
+            return Err(Unsupported {
+                span: ty.span(),
+                ty,
+            });
+        }
+        return Ok(RetKind::Record(KindPath(path.clone())));
     }
     Err(Unsupported {
         span: ty.span(),
@@ -252,6 +355,23 @@ pub fn ts_prim(prim: PrimTy) -> TsKind {
     }
 }
 
+/// The descriptor-context form of a user path: descriptor consts live
+/// in a sibling `bffi_meta_*` module, where bare names of the
+/// annotated module do not resolve - relative paths gain a `super::`
+/// anchor (leading-`::` / `crate::` / `self::` / `super::` paths pass
+/// through unchanged).
+fn descriptor_path(path: &syn::Path) -> TokenStream {
+    if path.leading_colon.is_some() {
+        return quote! { #path };
+    }
+    if let Some(first) = path.segments.first()
+        && matches!(first.ident.to_string().as_str(), "crate" | "self" | "super")
+    {
+        return quote! { #path };
+    }
+    quote! { super:: #path }
+}
+
 /// TypeScript kind of an accepted parameter kind.
 pub fn ts_type(kind: &ShimKind) -> TsKind {
     match kind {
@@ -261,6 +381,33 @@ pub fn ts_type(kind: &ShimKind) -> TsKind {
         // The descriptor sees ONE `Uint8Array` parameter: the
         // `(ptr, len)` C pair is ABI-level only.
         ShimKind::BufferView => TsKind::Uint8Array,
+        // Records/enums carry their own exact `TsType` through the
+        // derive's `BFFI_TS_TYPE` (descriptor-anchored: see
+        // [`descriptor_path`]).
+        ShimKind::Record(path) => {
+            let p = descriptor_path(&path.0);
+            TsKind::Expr(quote! { #p::BFFI_TS_TYPE })
+        }
+        ShimKind::Seq(item) => ts_seq_item(item),
+    }
+}
+
+/// The `TsKind` of one sequence item kind (the array wrapper).
+fn ts_seq_item(item: &SeqItem) -> TsKind {
+    match item {
+        SeqItem::Narrow | SeqItem::Wide => TsKind::NumberArray,
+        SeqItem::I64 => TsKind::BigIntArray,
+        SeqItem::Bool => TsKind::BooleanArray,
+        SeqItem::Str => TsKind::StringArray,
+        SeqItem::Record(path) => {
+            let name = path
+                .0
+                .segments
+                .last()
+                .map(|seg| seg.ident.to_string())
+                .unwrap_or_default();
+            TsKind::RecordArray(name)
+        }
     }
 }
 
@@ -277,6 +424,11 @@ pub fn ts_return(ret: &RetKind) -> TsKind {
         RetKind::Nullable(BufferTy::String) => TsKind::NullableString,
         RetKind::Nullable(_) => TsKind::NullableUint8Array,
         RetKind::Result(inner) => ts_return(inner),
+        RetKind::Record(path) => {
+            let p = descriptor_path(&path.0);
+            TsKind::Expr(quote! { #p::BFFI_TS_TYPE })
+        }
+        RetKind::Seq(item) => ts_seq_item(item),
     }
 }
 
@@ -296,6 +448,10 @@ pub fn ts_promise(ret: &RetKind) -> TsKind {
         RetKind::Buffer(_) => TsKind::PromiseUint8Array,
         RetKind::Result(inner) => ts_promise(inner),
         RetKind::Nullable(inner) => ts_promise(&RetKind::Buffer(*inner)),
+        // Async records/sequences arrive with the next B1 slice; the
+        // async model rejects them before descriptors are emitted, so
+        // these arms are defensive only.
+        RetKind::Record(_) | RetKind::Seq(_) => TsKind::Void,
     }
 }
 
@@ -305,7 +461,7 @@ mod tests {
         PathKind, classify_param, classify_return, is_str_type, is_u8, path_ident, path_kind,
         ts_prim, ts_return, ts_type,
     };
-    use crate::support::kind::{BigIntTy, BufferTy, PrimTy, RetKind, ShimKind, TsKind};
+    use crate::support::kind::{BigIntTy, BufferTy, PrimTy, RetKind, SeqItem, ShimKind, TsKind};
 
     /// Parses a type source, panicking in tests only (allowed by the
     /// crate-root `cfg_attr(test)` escape hatch).
@@ -444,9 +600,8 @@ mod tests {
     }
 
     #[test]
-    fn vec_non_u8_and_single_arg_result_are_rejected() {
-        assert!(classify_return(&ty("Vec<u32>")).is_err());
-        assert!(classify_return(&ty("Vec<i8>")).is_err());
+    fn vec_of_unsupported_items_and_single_arg_result_are_rejected() {
+        assert!(classify_return(&ty("Vec<char>")).is_err());
         assert!(classify_return(&ty("Result<u32>")).is_err());
     }
 
@@ -515,5 +670,90 @@ mod tests {
         assert!(!is_str_type(&ty("u8")));
         assert!(is_u8(&ty("u8")));
         assert!(!is_u8(&ty("i8")));
+    }
+
+    #[test]
+    fn bare_named_types_classify_as_records() {
+        for src in ["Point", "JobStatus", "my_module::Point"] {
+            let kind = classify_param(&ty(src)).expect("accepted");
+            assert!(
+                matches!(kind, ShimKind::Record(_)),
+                "`{src}` must classify as Record"
+            );
+            let ret = classify_return(&ty(src)).expect("accepted");
+            assert!(
+                matches!(ret, RetKind::Record(_)),
+                "`{src}` must classify as a record return"
+            );
+        }
+    }
+
+    #[test]
+    fn owned_buffers_stay_return_only_params() {
+        // `String`/`CopiedBuf`/`Vec<u8>` params keep their rejection:
+        // the owned-buffer channel is return-only.
+        for src in ["String", "CopiedBuf", "Vec<u8>"] {
+            assert!(
+                classify_param(&ty(src)).is_err(),
+                "`{src}` stays a rejected param"
+            );
+        }
+    }
+
+    #[test]
+    fn vec_sequences_classify_with_their_item_kinds() {
+        let point: syn::Path = syn::parse_str("Point").expect("path");
+        let cases: &[(&str, SeqItem)] = &[
+            ("Vec<i32>", SeqItem::Narrow),
+            ("Vec<u16>", SeqItem::Narrow),
+            ("Vec<u32>", SeqItem::Wide),
+            ("Vec<f64>", SeqItem::Wide),
+            ("Vec<i64>", SeqItem::I64),
+            ("Vec<bool>", SeqItem::Bool),
+            ("Vec<String>", SeqItem::Str),
+            (
+                "Vec<Point>",
+                SeqItem::Record(crate::support::kind::KindPath(point)),
+            ),
+        ];
+        for (src, expected_item) in cases {
+            let kind = classify_param(&ty(src)).expect("accepted");
+            let ShimKind::Seq(item) = kind else {
+                panic!("`{src}` must classify as Seq");
+            };
+            assert_eq!(&item, expected_item, "item kind for `{src}`");
+            let ret = classify_return(&ty(src)).expect("accepted");
+            let RetKind::Seq(ret_item) = ret else {
+                panic!("`{src}` must classify as a seq return");
+            };
+            assert_eq!(&ret_item, expected_item, "ret item for `{src}`");
+        }
+    }
+
+    #[test]
+    fn vec_of_unsupported_items_is_rejected() {
+        for src in ["Vec<char>", "Vec<u64>", "Vec<Option<u32>>", "Vec<Vec<u8>>"] {
+            assert!(
+                classify_param(&ty(src)).is_err(),
+                "`{src}` param must be rejected"
+            );
+            assert!(
+                classify_return(&ty(src)).is_err(),
+                "`{src}` return must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn record_ts_kinds_are_pre_quoted_expressions() {
+        let kind = classify_param(&ty("Point")).expect("accepted");
+        let TsKind::Expr(tokens) = ts_type(&kind) else {
+            panic!("record params must map to TsKind::Expr");
+        };
+        let text = tokens.to_string().replace(' ', "");
+        assert!(text.contains("Point::BFFI_TS_TYPE"), "got: {text}");
+
+        let ret = classify_return(&ty("Vec<f64>")).expect("accepted");
+        assert_eq!(ts_return(&ret), TsKind::NumberArray);
     }
 }

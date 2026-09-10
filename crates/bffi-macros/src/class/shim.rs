@@ -195,11 +195,11 @@ fn constructor_shim(model: &ImplModel) -> TokenStream {
         .params
         .iter()
         .enumerate()
-        .map(|(index, param)| shim_param(&param.name, param.kind, index))
+        .map(|(index, param)| shim_param(&param.name, param.kind.clone(), index))
         .collect();
     let args = ctor.params.iter().enumerate().map(|(index, param)| {
         let name = param_ident(&param.name, index);
-        match param.kind {
+        match &param.kind {
             ShimKind::Str => {
                 let view = format_ident!("{name}_view");
                 quote! { &#view }
@@ -210,13 +210,14 @@ fn constructor_shim(model: &ImplModel) -> TokenStream {
                 quote! { &#view }
             }
             ShimKind::Prim(_) | ShimKind::BigInt(_) => quote! { #name },
+            ShimKind::Record(_) | ShimKind::Seq(_) => quote! { #name },
         }
     });
     let conversion = param_conversions(
         &model.paths,
         ctor.params
             .iter()
-            .map(|param| (param.name.as_str(), param.kind)),
+            .map(|param| (param.name.as_str(), param.kind.clone())),
     );
     let body = quote! {
         if __ret.is_null() {
@@ -269,12 +270,12 @@ fn method_shim(model: &ImplModel, method: &MethodModel) -> TokenStream {
         .params
         .iter()
         .enumerate()
-        .map(|(index, param)| shim_param(&param.name, param.kind, index))
+        .map(|(index, param)| shim_param(&param.name, param.kind.clone(), index))
         .collect();
     let out = out_param(&method.ret);
     let args = method.params.iter().enumerate().map(|(index, param)| {
         let name = param_ident(&param.name, index);
-        match param.kind {
+        match &param.kind {
             ShimKind::Str => {
                 let view = format_ident!("{name}_view");
                 quote! { &#view }
@@ -285,6 +286,7 @@ fn method_shim(model: &ImplModel, method: &MethodModel) -> TokenStream {
                 quote! { &#view }
             }
             ShimKind::Prim(_) | ShimKind::BigInt(_) => quote! { #name },
+            ShimKind::Record(_) | ShimKind::Seq(_) => quote! { #name },
         }
     });
     let conversion = param_conversions(
@@ -292,7 +294,7 @@ fn method_shim(model: &ImplModel, method: &MethodModel) -> TokenStream {
         method
             .params
             .iter()
-            .map(|param| (param.name.as_str(), param.kind)),
+            .map(|param| (param.name.as_str(), param.kind.clone())),
     );
     let call = quote! { #type_ident::#method_ident(&__arc, #(#args,)*) };
     let transport = ret_body(&model.paths, &method.ret, call);

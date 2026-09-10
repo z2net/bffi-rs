@@ -134,7 +134,8 @@ pub use crate::bffi_event_loop::{
 pub use crate::bffi_object::{ObjectError, ObjectWrap, TAG_MAX, TAG_MIN, tag_in_range};
 #[cfg(feature = "types")]
 pub use crate::bffi_types::{
-    ConversionError, CopiedBuf, JsNumber, buf_view, bytes_to_string, str_view, string_to_bytes,
+    BffiWire, ConversionError, CopiedBuf, JsNumber, buf_view, bytes_to_string, str_view,
+    string_to_bytes,
 };
 // The attribute macros come with the optional `bffi-macros`
 // dependency; the `#[bffi_async]` expansion additionally resolves

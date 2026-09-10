@@ -11,6 +11,27 @@ use crate::support::paths::PathCtx;
 use proc_macro2::TokenStream;
 use quote::quote;
 
+/// A `syn::Path` that compares and prints by its tokens: the kinds
+/// below embed it, and `syn::Path` itself implements neither `Debug`
+/// nor `Eq` without syn's `extra-traits` feature.
+#[derive(Clone)]
+pub struct KindPath(pub syn::Path);
+
+impl std::fmt::Debug for KindPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", quote::ToTokens::to_token_stream(&self.0))
+    }
+}
+
+impl PartialEq for KindPath {
+    fn eq(&self, other: &Self) -> bool {
+        quote::ToTokens::to_token_stream(&self.0).to_string()
+            == quote::ToTokens::to_token_stream(&other.0).to_string()
+    }
+}
+
+impl Eq for KindPath {}
+
 /// A 64-bit integer crossing the boundary (`i64`/`u64`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BigIntTy {
@@ -45,7 +66,7 @@ pub enum PrimTy {
 }
 
 /// The kind of one parameter (or return) at the boundary.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ShimKind {
     /// A small primitive (`number`-ish types and `bool`).
     Prim(PrimTy),
@@ -57,6 +78,32 @@ pub enum ShimKind {
     /// valid for the duration of the call (bun:ffi TypedArray
     /// pointer), never taking ownership.
     BufferView,
+    /// An owned `#[derive(BffiRecord)]`/`BffiEnum` type: crosses as a
+    /// `(ptr, len)` wire payload the shim decodes (copy by default).
+    Record(KindPath),
+    /// An owned `Vec<T>` of a non-`u8` item: crosses as a `(ptr, len)`
+    /// wire sequence the shim decodes item by item.
+    Seq(SeqItem),
+}
+
+/// The item kind of a `Vec<T>` boundary sequence: which wire record
+/// each item travels as.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SeqItem {
+    /// `i8 i16 i32 u8 u16` items - one `i32` wire record each
+    /// (narrowed back at decode).
+    Narrow,
+    /// `u32 f32 f64` items - one `f64` wire record each (exact for
+    /// the whole range of those widths).
+    Wide,
+    /// `i64` items - one `i64` wire record each.
+    I64,
+    /// `bool` items.
+    Bool,
+    /// `String` items - one string record each.
+    Str,
+    /// Nested record/enum items - one complete nested record each.
+    Record(KindPath),
 }
 
 /// An owned byte-carrying return type: stored in the `bffi-build`
@@ -88,12 +135,20 @@ pub enum RetKind {
     /// `Result<T, E>`: `Ok` transports `T`, `Err` reports the domain
     /// error through the last-error channel (`ErrorCode::DomainError`).
     Result(Box<RetKind>),
+    /// An owned `#[derive(BffiRecord)]`/`BffiEnum` value returned as
+    /// a wire-encoded transient-buffer handle.
+    Record(KindPath),
+    /// An owned `Vec<T>` of a non-`u8` item, returned as a
+    /// wire-encoded transient-buffer handle.
+    Seq(SeqItem),
 }
 
 /// The TypeScript type of an accepted boundary item, as a
 /// `<dts>::TsType` variant token stream (the `dts` root comes from
 /// the [`PathCtx`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// Not `Copy`: `Expr` carries a token stream.
+// Not `Copy`: `Expr` carries a token stream.
+#[derive(Clone, Debug)]
 pub enum TsKind {
     /// `number`
     Number,
@@ -126,12 +181,38 @@ pub enum TsKind {
     /// `Promise<Uint8Array>` (`#[bffi_async]` returns of `Vec<u8>` /
     /// `CopiedBuf`).
     PromiseUint8Array,
+    /// A pre-quoted `TsType` expression: the B1 named composites
+    /// (`#path::BFFI_TS_TYPE` of a record/enum) carry their exact IR
+    /// tokens with no path context of their own.
+    Expr(TokenStream),
+    /// `number[]` (a `Vec` sequence of number-ish items).
+    NumberArray,
+    /// `bigint[]` (`Vec<i64>`).
+    BigIntArray,
+    /// `boolean[]` (`Vec<bool>`).
+    BooleanArray,
+    /// `string[]` (`Vec<String>`).
+    StringArray,
+    /// `<Name>[]` (a `Vec` sequence of a named record/enum).
+    RecordArray(String),
+}
+
+/// Manual: `Expr` compares by its token text, the array wrappers by
+/// payload, everything else by variant (all fieldless).
+impl PartialEq for TsKind {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Expr(a), Self::Expr(b)) => a.to_string() == b.to_string(),
+            (Self::RecordArray(a), Self::RecordArray(b)) => a == b,
+            (a, b) => std::mem::discriminant(a) == std::mem::discriminant(b),
+        }
+    }
 }
 
 impl TsKind {
     /// The `<dts>::TsType` variant tokens for this kind, rooted at
     /// `ctx`'s `dts` crate path.
-    pub fn tokens(self, ctx: &PathCtx) -> TokenStream {
+    pub fn tokens(&self, ctx: &PathCtx) -> TokenStream {
         let dts = &ctx.dts;
         match self {
             TsKind::Number => quote! { #dts::TsType::Number },
@@ -148,6 +229,12 @@ impl TsKind {
             TsKind::PromiseBoolean => quote! { #dts::TsType::PromiseBoolean },
             TsKind::PromiseString => quote! { #dts::TsType::PromiseString },
             TsKind::PromiseUint8Array => quote! { #dts::TsType::PromiseUint8Array },
+            TsKind::Expr(tokens) => tokens.clone(),
+            TsKind::NumberArray => quote! { #dts::TsType::NumberArray },
+            TsKind::BigIntArray => quote! { #dts::TsType::BigIntArray },
+            TsKind::BooleanArray => quote! { #dts::TsType::BooleanArray },
+            TsKind::StringArray => quote! { #dts::TsType::StringArray },
+            TsKind::RecordArray(name) => quote! { #dts::TsType::RecordArray(#name) },
         }
     }
 }

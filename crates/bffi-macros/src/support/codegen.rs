@@ -10,7 +10,7 @@
 //! `::bffi_build`), the `crate = "..."` context emits the facade
 //! namespaces.
 
-use crate::support::kind::{BigIntTy, BufferTy, PrimTy, RetKind, ShimKind};
+use crate::support::kind::{BigIntTy, BufferTy, PrimTy, RetKind, SeqItem, ShimKind};
 use crate::support::paths::PathCtx;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -30,7 +30,10 @@ pub fn shim_param(name: &str, kind: ShimKind, index: usize) -> TokenStream {
             let ptr = format_ident!("{name}_ptr");
             quote! { #ptr: *const ::std::os::raw::c_char }
         }
-        ShimKind::BufferView => {
+        // Records and sequences cross as one borrowed `(ptr, len)`
+        // wire payload (copy by default: the shim decodes into owned
+        // data before the call).
+        ShimKind::BufferView | ShimKind::Record(_) | ShimKind::Seq(_) => {
             let ptr = format_ident!("{name}_ptr");
             let len = format_ident!("{name}_len");
             quote! { #ptr: *const u8, #len: u64 }
@@ -61,6 +64,9 @@ pub fn out_param(ret: &RetKind) -> Vec<TokenStream> {
             vec![quote! { __ret: *mut #ty }]
         }
         RetKind::Buffer(_) | RetKind::Nullable(_) => vec![quote! { __ret: *mut u64 }],
+        // Records and sequences travel as one wire-encoded
+        // transient-buffer handle.
+        RetKind::Record(_) | RetKind::Seq(_) => vec![quote! { __ret: *mut u64 }],
         RetKind::Result(inner) => out_param(inner),
     }
 }
@@ -155,8 +161,70 @@ pub fn value_tail(ctx: &PathCtx, ret: &RetKind) -> TokenStream {
                 }
             }
         }
+        RetKind::Record(_) | RetKind::Seq(_) => {
+            let build = &ctx.build;
+            let types = &ctx.types;
+            let encode = wire_encode_value(ctx, ret, format_ident!("__value"));
+            quote! {
+                #[allow(unused_imports)]
+                use #types::wire::BffiWire as _;
+                let mut __buf = ::std::vec::Vec::<u8>::new();
+                #encode
+                match #build::runtime::store_bytes(#types::CopiedBuf::from_vec(__buf)) {
+                    ::std::result::Result::Ok(__handle) => {
+                        // SAFETY: `__ret` is non-null (checked above) and valid
+                        // for one `u64` write per the bun:ffi out-parameter contract.
+                        unsafe { ::std::ptr::write(__ret, __handle.as_u64()); }
+                        #core::ErrorCode::Ok
+                    }
+                    ::std::result::Result::Err(__e) => {
+                        #core::set_last_error(#core::BffiError::from(__e));
+                        #core::ErrorCode::TableFull
+                    }
+                }
+            }
+        }
         // Unreachable: `ret_body` unwraps `Result` first.
         RetKind::Result(_) => quote! { #core::ErrorCode::Ok },
+    }
+}
+
+/// Appends the wire encoding of a bound `value` (by the given ident)
+/// for a record/seq return into `__buf`.
+fn wire_encode_value(ctx: &PathCtx, ret: &RetKind, value: syn::Ident) -> TokenStream {
+    let types = &ctx.types;
+    let wire = quote! { #types::wire };
+    match ret {
+        RetKind::Record(path) => {
+            let path = &path.0;
+            quote! { #path::bffi_wire_encode(&#value, &mut __buf); }
+        }
+        RetKind::Seq(item) => {
+            let push = seq_item_encode(&wire, item);
+            quote! {
+                #wire::encode_seq_header(&mut __buf, #value.len());
+                for __item in &#value {
+                    #push
+                }
+            }
+        }
+        _ => TokenStream::new(),
+    }
+}
+
+/// One item-encode statement inside a sequence loop (the item is
+/// bound to `__item`).
+fn seq_item_encode(wire: &TokenStream, item: &SeqItem) -> TokenStream {
+    match item {
+        SeqItem::Narrow => quote! { #wire::encode_i32(&mut __buf, *__item as i32); },
+        SeqItem::Wide => quote! { #wire::encode_f64(&mut __buf, *__item as f64); },
+        SeqItem::I64 => quote! { #wire::encode_i64(&mut __buf, *__item); },
+        SeqItem::Bool => quote! { #wire::encode_bool(&mut __buf, *__item); },
+        SeqItem::Str => quote! { #wire::encode_str(&mut __buf, __item); },
+        SeqItem::Record(path) => {
+            let path = &path.0;
+            quote! { #path::bffi_wire_encode(__item, &mut __buf); }
+        }
     }
 }
 
@@ -243,6 +311,84 @@ where
                     };
                 });
             }
+            ShimKind::Record(path) => {
+                let ptr = format_ident!("{name}_ptr");
+                let len = format_ident!("{name}_len");
+                let slice = format_ident!("{name}_wire");
+                let path = &path.0;
+                body.extend(quote! {
+                    #[allow(unused_imports)]
+                    use #types::wire::BffiWire as _;
+                    if #len == 0_u64 || #ptr.is_null() {
+                        let error = #core::BffiError::new(
+                            #core::ErrorCode::NullPointer,
+                            "record argument payload is null",
+                        );
+                        #core::set_last_error(error);
+                        return #core::ErrorCode::NullPointer;
+                    }
+                    // SAFETY: bun:ffi keeps the TypedArray pointer valid
+                    // for the duration of the call; the wire decode below
+                    // only reads and copies into owned data.
+                    let #slice = unsafe {
+                        ::std::slice::from_raw_parts(#ptr, #len as usize)
+                    };
+                    let #name = match #path::bffi_wire_decode(#slice, 0) {
+                        ::std::result::Result::Ok((value, _)) => value,
+                        ::std::result::Result::Err(error) => {
+                            let code = error.code;
+                            #core::set_last_error(error);
+                            return code;
+                        }
+                    };
+                });
+            }
+            ShimKind::Seq(item) => {
+                let ptr = format_ident!("{name}_ptr");
+                let len = format_ident!("{name}_len");
+                let slice = format_ident!("{name}_wire");
+                let slice_ref = slice.clone();
+                let decode = seq_item_decode(ctx, &item, &slice_ref);
+                body.extend(quote! {
+                    #[allow(unused_imports)]
+                    use #types::wire::BffiWire as _;
+                    if #len == 0_u64 || #ptr.is_null() {
+                        let error = #core::BffiError::new(
+                            #core::ErrorCode::NullPointer,
+                            "sequence argument payload is null",
+                        );
+                        #core::set_last_error(error);
+                        return #core::ErrorCode::NullPointer;
+                    }
+                    // SAFETY: bun:ffi keeps the TypedArray pointer valid
+                    // for the duration of the call; the wire decode below
+                    // only reads and copies into owned data.
+                    let #slice = unsafe {
+                        ::std::slice::from_raw_parts(#ptr, #len as usize)
+                    };
+                    let #name = match (|| -> ::std::result::Result<
+                        ::std::vec::Vec<_>,
+                        #core::BffiError,
+                    > {
+                        let (count, mut offset) =
+                            #types::wire::decode_seq_header(#slice, 0)?;
+                        let mut items = ::std::vec::Vec::with_capacity(
+                            (count as usize).min(4096),
+                        );
+                        for _ in 0..count {
+                            #decode
+                        }
+                        ::std::result::Result::Ok(items)
+                    })() {
+                        ::std::result::Result::Ok(value) => value,
+                        ::std::result::Result::Err(error) => {
+                            let code = error.code;
+                            #core::set_last_error(error);
+                            return code;
+                        }
+                    };
+                });
+            }
             ShimKind::Prim(_) | ShimKind::BigInt(_) => {}
         }
     }
@@ -257,6 +403,49 @@ where
 /// back to the positional `__arg<index>`.
 pub fn param_ident(name: &str, index: usize) -> Ident {
     syn::parse_str::<Ident>(name).unwrap_or_else(|_| format_ident!("__arg{index}"))
+}
+
+/// One item-decode statement inside the sequence loop (the payload is
+/// bound to `slice`, the running offset to `offset`, the destination
+/// to `items`).
+fn seq_item_decode(ctx: &PathCtx, item: &SeqItem, slice: &Ident) -> TokenStream {
+    let types = &ctx.types;
+    let wire = quote! { #types::wire };
+    match item {
+        SeqItem::Narrow => quote! {
+            let (value, next) = #wire::decode_i32(#slice, offset)?;
+            offset = next;
+            items.push(value as _);
+        },
+        SeqItem::Wide => quote! {
+            let (value, next) = #wire::decode_f64(#slice, offset)?;
+            offset = next;
+            items.push(value as _);
+        },
+        SeqItem::I64 => quote! {
+            let (value, next) = #wire::decode_i64(#slice, offset)?;
+            offset = next;
+            items.push(value as _);
+        },
+        SeqItem::Bool => quote! {
+            let (value, next) = #wire::decode_bool(#slice, offset)?;
+            offset = next;
+            items.push(value);
+        },
+        SeqItem::Str => quote! {
+            let (value, next) = #wire::decode_str(#slice, offset)?;
+            offset = next;
+            items.push(::std::string::String::from(value));
+        },
+        SeqItem::Record(path) => {
+            let path = &path.0;
+            quote! {
+                let (value, next) = #path::bffi_wire_decode(#slice, offset)?;
+                offset = next;
+                items.push(value);
+            }
+        }
+    }
 }
 
 /// The Rust primitive type of a small boundary primitive.

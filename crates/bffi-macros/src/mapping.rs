@@ -207,9 +207,10 @@ mod tests {
     }
 
     #[test]
-    fn vec_non_u8_and_single_arg_result_are_rejected() {
-        assert!(classify_return(&ty("Vec<u32>")).is_err());
-        assert!(classify_return(&ty("Vec<i8>")).is_err());
+    fn vec_of_unsupported_items_and_single_arg_result_are_rejected() {
+        // `Vec<char>` items stay outside the sequence matrix; a
+        // single-argument `Result` is a shape error.
+        assert!(classify_return(&ty("Vec<char>")).is_err());
         assert!(classify_return(&ty("Result<u32>")).is_err());
     }
 

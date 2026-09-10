@@ -97,7 +97,7 @@ borrowed: it never outlives the call, so owned returns copy
 `ParamDef` - the `(ptr, len)` pair is ABI-level only.
 
 **Buffer returns (P2).** `String` / `Vec<u8>` / `CopiedBuf` / `Option` of these are
-copied into the [`bffi-build`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-build)
+copied into the [`bffi-build`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/build)
 transient-buffer table; the shim returns a handle the JS side reads through the
 `bffi_buffer` / `bffi_buffer_length` pair and releases with `bffi_types_free`
 (the full ABI contract lives in that crate's CALLING-CONVENTION.md).
@@ -176,8 +176,8 @@ error: bffi[E002]: unsupported type `Vec < u8 >` for parameter `data`
 ```
 
 This is the compile-time counterpart of the runtime `BffiError` scheme
-(code + message + source, in [`bffi-core`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-core));
-mapping runtime errors to JS is [`bffi-error`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-error)'s
+(code + message + source, in [`bffi-core`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/core));
+mapping runtime errors to JS is [`bffi-error`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/error)'s
 job - the macro never depends on it.
 
 ## Requirements on the user crate
@@ -251,15 +251,17 @@ Suites:
 
 ## What does _not_ belong here
 
-Per DESIGN §8-9 (one responsibility per crate):
+Per DESIGN §8-9 (one responsibility per module) - the homes are the
+feature-gated modules of the [`bffi`](https://crates.io/crates/bffi)
+facade:
 
-| Concern                                          | Home              |
-| ------------------------------------------------ | ----------------- |
-| Runtime ABI exports (dealloc, buffer pairs, loader) | `bffi-build`   |
-| Event-loop marshalling                           | `bffi-event-loop` |
-| Object ownership                                 | `bffi-object`     |
-| Callbacks                                        | `bffi-callback`   |
-| TS IR (ModuleDef / FunctionDef / render)         | `bffi-dts`        |
+| Concern                                          | Home                        |
+| ------------------------------------------------ | --------------------------- |
+| Runtime ABI exports (dealloc, buffer pairs, loader) | `bffi::build`            |
+| Event-loop marshalling                           | `bffi::bffi_event_loop`      |
+| Object ownership                                 | `bffi::object`               |
+| Callbacks                                        | `bffi::bffi_callback`        |
+| TS IR (ModuleDef / FunctionDef / render)         | `bffi::dts`                  |
 
 ## Requirements
 

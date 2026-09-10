@@ -163,7 +163,7 @@ pub mod unsafe_zero_copy {
 /// `bffi::core::*` 1:1. These are the paths the `crate = "bffi"`
 /// macros emit for the core roots (`::bffi::core::ErrorCode`, ...).
 ///
-/// [`bffi-core`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi-core
+/// [`bffi-core`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/core
 pub mod core {
     pub use crate::bffi_core::*;
 }
@@ -171,7 +171,7 @@ pub mod core {
 /// Namespaced re-export of [`bffi-types`]: `bffi::types::*` mirrors
 /// `bffi::types::*` 1:1, including `unsafe_zero_copy`.
 ///
-/// [`bffi-types`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi-types
+/// [`bffi-types`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/types
 pub mod types {
     pub use crate::bffi_types::*;
 }
@@ -180,7 +180,7 @@ pub mod types {
 /// `bffi::dts::*` 1:1. The descriptor consts the macros emit resolve
 /// here in facade-only mode (`::bffi::dts::FunctionDef`, ...).
 ///
-/// [`bffi-dts`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi-dts
+/// [`bffi-dts`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/dts
 pub mod dts {
     pub use crate::bffi_dts::*;
 }
@@ -189,7 +189,7 @@ pub mod dts {
 /// `bffi::object::*` 1:1. The class shims resolve here in facade-only
 /// mode (`::bffi::object::ObjectWrap`, ...).
 ///
-/// [`bffi-object`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi-object
+/// [`bffi-object`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/object
 pub mod object {
     pub use crate::bffi_object::*;
 }
@@ -206,7 +206,7 @@ pub mod r#async {
 /// `bffi::build::*` 1:1. The buffer-return shims resolve here in
 /// facade-only mode (`::bffi::build::runtime::store_bytes`, ...).
 ///
-/// [`bffi-build`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi-build
+/// [`bffi-build`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/build
 pub mod build {
     pub use crate::bffi_build::*;
 }

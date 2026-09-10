@@ -102,7 +102,7 @@ not revalidated.
 
 ## 7. Type tag ranges
 
-See the table in `crates/bffi-core/src/handle.rs` (`TypeTag` docs).
+See the table in `crates/bffi/src/core/handle.rs` (`TypeTag` docs).
 Today: `0x0100-0x01FF` bffi-object, `0x0200-0x02FF` bffi-callback,
 `0x0300-0x03FF` bffi-class (reserved), `0x0400-0x04FF` bffi-build
 (runtime tables: `0x0400` drained errors, `0x0401` transient buffers),
@@ -152,4 +152,4 @@ bffi_callback::bffi_callback_abi!();
 (the crate depends on `bffi-core`, `bffi-callback`, `bffi-build`,
 `bffi-types`).
 
-[`ErrorCode`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi-core
+[`ErrorCode`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/core

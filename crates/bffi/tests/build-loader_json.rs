@@ -159,6 +159,40 @@ fn fixture_module() -> ModuleDef {
                 out: Some(AbiOut::Handle),
             },
         },
+        FunctionDef {
+            js_name: "recenter",
+            export_name: "bffi_recenter",
+            docs: &["Recenters a sample."],
+            params: &[
+                ParamDef {
+                    name: "sample",
+                    ty: TsType::Record("Sample"),
+                },
+                ParamDef {
+                    name: "dx",
+                    ty: TsType::Number,
+                },
+            ],
+            ret: TsType::Record("Sample"),
+            abi: AbiSig {
+                params: &[AbiType::PtrLen, AbiType::F64],
+                out: Some(AbiOut::Handle),
+            },
+        },
+        FunctionDef {
+            js_name: "distances",
+            export_name: "bffi_distances",
+            docs: &[],
+            params: &[ParamDef {
+                name: "samples",
+                ty: TsType::RecordArray("Sample"),
+            }],
+            ret: TsType::NumberArray,
+            abi: AbiSig {
+                params: &[AbiType::PtrLen],
+                out: Some(AbiOut::Handle),
+            },
+        },
     ];
     static CLASSES: &[ClassDef] = &[ClassDef {
         js_name: "counter",
@@ -197,12 +231,47 @@ fn fixture_module() -> ModuleDef {
             },
         }],
     }];
+    static RECORDS: &[bffi::bffi_dts::RecordDef] = &[bffi::bffi_dts::RecordDef {
+        js_name: "Sample",
+        docs: &["A sample point."],
+        fields: &[
+            bffi::bffi_dts::RecordFieldDef {
+                name: "at",
+                docs: &["The position."],
+                ty: TsType::Number,
+            },
+            bffi::bffi_dts::RecordFieldDef {
+                name: "label",
+                docs: &[],
+                ty: TsType::String,
+            },
+            bffi::bffi_dts::RecordFieldDef {
+                name: "axis",
+                docs: &[],
+                ty: TsType::Enum("Axis"),
+            },
+        ],
+    }];
+    static ENUMS: &[bffi::bffi_dts::EnumDef] = &[bffi::bffi_dts::EnumDef {
+        js_name: "Axis",
+        docs: &[],
+        variants: &[
+            bffi::bffi_dts::EnumVariantDef {
+                name: "Horizontal",
+                docs: &[],
+            },
+            bffi::bffi_dts::EnumVariantDef {
+                name: "Vertical",
+                docs: &[],
+            },
+        ],
+    }];
     ModuleDef {
         name: "matrix",
         fns: FNS,
         classes: CLASSES,
-        records: &[],
-        enums: &[],
+        records: RECORDS,
+        enums: ENUMS,
     }
 }
 
@@ -255,9 +324,33 @@ fn output_is_valid_json_with_every_matrix_shape() {
     assert_eq!(parsed["bffi"].as_u64(), Some(1));
     assert_eq!(parsed["module"], "matrix");
     let functions = parsed["functions"].as_array().expect("functions array");
-    assert_eq!(functions.len(), 9);
+    assert_eq!(functions.len(), 11);
     let classes = parsed["classes"].as_array().expect("classes array");
     assert_eq!(classes.len(), 1);
+    let records = parsed["records"].as_array().expect("records array");
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["name"], "Sample");
+    assert_eq!(records[0]["fields"].as_array().expect("fields").len(), 3);
+    let enums = parsed["enums"].as_array().expect("enums array");
+    assert_eq!(enums.len(), 1);
+    assert_eq!(enums[0]["name"], "Axis");
+    assert_eq!(enums[0]["variants"].as_array().expect("variants").len(), 2);
+
+    // The B1 composite ts strings appear on the recenter/distances
+    // entries.
+    let recenter = functions
+        .iter()
+        .find(|f| f["name"] == "recenter")
+        .expect("recenter");
+    assert_eq!(recenter["params"][0]["ts"], "Sample");
+    assert_eq!(recenter["ret"]["ts"], "Sample");
+    assert_eq!(recenter["ret"]["abi"], "buffer");
+    let distances = functions
+        .iter()
+        .find(|f| f["name"] == "distances")
+        .expect("distances");
+    assert_eq!(distances["params"][0]["ts"], "Sample[]");
+    assert_eq!(distances["ret"]["ts"], "number[]");
 
     // The full AbiType parameter matrix appears in the fixture.
     let mut param_abis = std::collections::BTreeSet::new();

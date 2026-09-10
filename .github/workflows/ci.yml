@@ -53,6 +53,17 @@ jobs:
           cargo clippy -p bffi --features tokio --all-targets -- -D warnings
           cargo test -p bffi --features tokio
 
+      # minimal feature slices must compile: the facade re-exports are
+      # feature-gated, and this step keeps them from rotting (one OS,
+      # checks only - no new matrix entries)
+      - name: cargo check bffi (feature slices)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cargo check -p bffi --no-default-features
+          cargo check -p bffi --no-default-features --features core
+          cargo check -p bffi --no-default-features --features class
+          cargo check -p bffi --no-default-features --features macros,async
+
   js:
     runs-on: ubuntu-latest
     steps:

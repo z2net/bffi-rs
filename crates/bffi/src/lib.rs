@@ -95,34 +95,51 @@ pub mod bffi_object;
 #[path = "types/mod.rs"]
 pub mod bffi_types;
 
+// Every re-export below is gated on the feature that owns the
+// module: a minimal build (`--no-default-features` plus the slices
+// you need) must compile with exactly the enabled surface and no
+// dangling paths.
+#[cfg(feature = "async")]
 pub use crate::bffi_async::{
     AsyncError, AsyncValue, Sleep, Timeout, TimeoutError, attach, cancel, pending_tasks, sleep,
     spawn,
 };
+#[cfg(feature = "build")]
 pub use crate::bffi_build::BuildError;
+#[cfg(feature = "callback")]
 pub use crate::bffi_callback::{
     CallbackError, CallbackSig, JsCallbackInfo, Value, ValueType, bind_js_callback,
     ensure_js_thread, invoke, js_callback, register, revoke, set_js_thread,
 };
+#[cfg(feature = "core")]
 pub use crate::bffi_core::{
     BffiError, ErrorCode, Handle, MAX_GENERATION, MAX_INDEX, Registry, RegistryError, TableError,
     TypeTag, boundary, catch_panic, panic_message, run_extern_body, run_extern_body_or,
     set_last_error, take_last_error,
 };
+#[cfg(feature = "dts")]
 pub use crate::bffi_dts::{
     AbiOut, AbiPrim, AbiSig, AbiType, ClassDef, FieldDef, FunctionDef, MethodDef, ModuleDef,
     ParamDef, TsType, render, sanitize,
 };
+#[cfg(feature = "error")]
 pub use crate::bffi_error::{
     JsErrorExt, JsErrorName, JsErrorShape, js_error_name, take_last_error_shape,
 };
+#[cfg(feature = "event-loop")]
 pub use crate::bffi_event_loop::{
     EventLoopError, Job, enqueue, executed_total, is_running, marshal, pending, pump, run, stop,
 };
+#[cfg(feature = "object")]
 pub use crate::bffi_object::{ObjectError, ObjectWrap, TAG_MAX, TAG_MIN, tag_in_range};
+#[cfg(feature = "types")]
 pub use crate::bffi_types::{
     ConversionError, CopiedBuf, JsNumber, buf_view, bytes_to_string, str_view, string_to_bytes,
 };
+// The attribute macros come with the optional `bffi-macros`
+// dependency; the `#[bffi_async]` expansion additionally resolves
+// `::bffi::r#async`, so enable the `async` feature to use it.
+#[cfg(feature = "macros")]
 pub use bffi_macros::{bffi, bffi_async, bffi_class, bffi_constructor, bffi_impl};
 
 /// THE single zero-copy door (DESIGN §6.3). Zero-copy is allowed only
@@ -148,6 +165,7 @@ pub use bffi_macros::{bffi, bffi_async, bffi_class, bffi_constructor, bffi_impl}
 /// let typed: bffi::unsafe_zero_copy::ZeroCopyStr<'_> = text;
 /// let _buf: bffi::unsafe_zero_copy::ZeroCopyBuf<'_> = view;
 /// ```
+#[cfg(feature = "types")]
 pub mod unsafe_zero_copy {
     // The view TYPES are exported only through this module - the
     // module name is the warning label. The constructor functions
@@ -164,6 +182,7 @@ pub mod unsafe_zero_copy {
 /// macros emit for the core roots (`::bffi::core::ErrorCode`, ...).
 ///
 /// [`bffi-core`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/core
+#[cfg(feature = "core")]
 pub mod core {
     pub use crate::bffi_core::*;
 }
@@ -172,6 +191,7 @@ pub mod core {
 /// `bffi::types::*` 1:1, including `unsafe_zero_copy`.
 ///
 /// [`bffi-types`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/types
+#[cfg(feature = "types")]
 pub mod types {
     pub use crate::bffi_types::*;
 }
@@ -181,6 +201,7 @@ pub mod types {
 /// here in facade-only mode (`::bffi::dts::FunctionDef`, ...).
 ///
 /// [`bffi-dts`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/dts
+#[cfg(feature = "dts")]
 pub mod dts {
     pub use crate::bffi_dts::*;
 }
@@ -190,6 +211,7 @@ pub mod dts {
 /// mode (`::bffi::object::ObjectWrap`, ...).
 ///
 /// [`bffi-object`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/object
+#[cfg(feature = "object")]
 pub mod object {
     pub use crate::bffi_object::*;
 }
@@ -198,6 +220,7 @@ pub mod object {
 /// mirrors the pre-merge `bffi-async` crate 1:1. The `#[bffi_async]`
 /// shims resolve here (`::bffi::r#async::spawn`, ...); the module
 /// name is a raw identifier because `async` is a keyword.
+#[cfg(feature = "async")]
 pub mod r#async {
     pub use crate::bffi_async::*;
 }
@@ -207,6 +230,7 @@ pub mod r#async {
 /// facade-only mode (`::bffi::build::runtime::store_bytes`, ...).
 ///
 /// [`bffi-build`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/build
+#[cfg(feature = "build")]
 pub mod build {
     pub use crate::bffi_build::*;
 }

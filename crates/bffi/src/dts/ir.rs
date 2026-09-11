@@ -66,6 +66,25 @@ pub enum TsType {
     /// The TypeScript `Uint8Array | null` type (`Option<Vec<u8>>` /
     /// `Option<CopiedBuf>` returns).
     NullableUint8Array,
+    /// The TypeScript `<name> | null` type (`Option` of a named
+    /// record/enum return).
+    NullableRecord(&'static str),
+    /// The TypeScript `number[] | null` type (`Option<Vec>` of
+    /// number-ish items).
+    NullableNumberArray,
+    /// The TypeScript `bigint[] | null` type (`Option<Vec<i64>>` /
+    /// `Option<Vec<u64>>`).
+    NullableBigIntArray,
+    /// The TypeScript `boolean[] | null` type (`Option<Vec<bool>>`).
+    NullableBooleanArray,
+    /// The TypeScript `string[] | null` type (`Option<Vec<String>>`).
+    NullableStringArray,
+    /// The TypeScript `Uint8Array[] | null` type
+    /// (`Option<Vec<Vec<u8>>>`).
+    NullableUint8ArrayArray,
+    /// The TypeScript `<name>[] | null` type (`Option<Vec>` of a
+    /// named record/enum).
+    NullableRecordArray(&'static str),
     /// The TypeScript `Promise<void>` type (`#[bffi_async]` exports).
     PromiseVoid,
     /// The TypeScript `Promise<number>` type (`#[bffi_async]` returns
@@ -151,6 +170,13 @@ impl TsType {
             Self::Uint8Array => Cow::Borrowed("Uint8Array"),
             Self::NullableString => Cow::Borrowed("string | null"),
             Self::NullableUint8Array => Cow::Borrowed("Uint8Array | null"),
+            Self::NullableRecord(name) => Cow::Owned(format!("{name} | null")),
+            Self::NullableNumberArray => Cow::Borrowed("number[] | null"),
+            Self::NullableBigIntArray => Cow::Borrowed("bigint[] | null"),
+            Self::NullableBooleanArray => Cow::Borrowed("boolean[] | null"),
+            Self::NullableStringArray => Cow::Borrowed("string[] | null"),
+            Self::NullableUint8ArrayArray => Cow::Borrowed("Uint8Array[] | null"),
+            Self::NullableRecordArray(name) => Cow::Owned(format!("{name}[] | null")),
             Self::PromiseVoid => Cow::Borrowed("Promise<void>"),
             Self::PromiseNumber => Cow::Borrowed("Promise<number>"),
             Self::PromiseBigInt => Cow::Borrowed("Promise<bigint>"),

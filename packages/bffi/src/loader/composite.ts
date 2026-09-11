@@ -29,16 +29,17 @@ export function tablesOf(json: ModuleJson): CompositeTables {
 }
 
 /** Whether `ts` rides the wire channel (a named record/enum, their
- * array forms, or the flat arrays). `Uint8Array` is excluded: it is
- * the raw borrowed-buffer path. */
+ * array and `| null` forms, or the flat arrays). `Uint8Array` is
+ * excluded: it is the raw borrowed-buffer path. */
 export function isCompositeTs(ts: string, tables: CompositeTables): boolean {
+  const stripped = ts.endsWith(" | null") ? ts.slice(0, -" | null".length) : ts;
   if (
-    ts === "number[]" || ts === "bigint[]" || ts === "boolean[]" ||
-    ts === "string[]" || ts === "Uint8Array[]"
+    stripped === "number[]" || stripped === "bigint[]" ||
+    stripped === "boolean[]" || stripped === "string[]" || stripped === "Uint8Array[]"
   ) {
     return true;
   }
-  const name = ts.endsWith("[]") ? ts.slice(0, -2) : ts;
+  const name = stripped.endsWith("[]") ? stripped.slice(0, -2) : stripped;
   return (
     tables.records.some((record) => record.name === name)
     || tables.enums.some((enumeration) => enumeration.name === name)

@@ -143,6 +143,26 @@ const moduleJson = {
       "out": "handle"
     },
     {
+      "name": "heaviest",
+      "export": "bffi_heaviest",
+      "docs": [
+        "The heaviest sample, or `None` on an empty sequence (`Option`",
+        "of a named composite: `Sample | null` on the JS side)."
+      ],
+      "params": [
+        {
+          "name": "samples",
+          "ts": "Sample[]",
+          "abi": "ptr_len"
+        }
+      ],
+      "ret": {
+        "ts": "Sample | null",
+        "abi": "buffer"
+      },
+      "out": "handle"
+    },
+    {
       "name": "classify",
       "export": "bffi_classify",
       "docs": [

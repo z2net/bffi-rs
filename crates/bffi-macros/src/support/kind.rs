@@ -137,6 +137,13 @@ pub enum RetKind {
     Buffer(BufferTy),
     /// `Option` of a buffer payload: `None` writes the `0` handle.
     Nullable(BufferTy),
+    /// `Option` of a named composite (`User | null`): `None` writes
+    /// the `0` handle, `Some` rides the wire channel like a plain
+    /// record return.
+    NullableRecord(KindPath),
+    /// `Option` of a sequence (`number[] | null`): the same
+    /// empty-buffer `None` convention over the wire channel.
+    NullableSeq(SeqItem),
     /// `Result<T, E>`: `Ok` transports `T`, `Err` reports the domain
     /// error through the last-error channel (`ErrorCode::DomainError`).
     Result(Box<RetKind>),
@@ -170,6 +177,20 @@ pub enum TsKind {
     /// `Uint8Array | null` (`Option<Vec<u8>>` / `Option<CopiedBuf>`
     /// returns).
     NullableUint8Array,
+    /// `<Name> | null` (`Option` of a named record/enum).
+    NullableRecord(String),
+    /// `number[] | null` (`Option<Vec>` of number-ish items).
+    NullableNumberArray,
+    /// `bigint[] | null` (`Option<Vec<i64>>` / `Option<Vec<u64>>`).
+    NullableBigIntArray,
+    /// `boolean[] | null` (`Option<Vec<bool>>`).
+    NullableBooleanArray,
+    /// `string[] | null` (`Option<Vec<String>>`).
+    NullableStringArray,
+    /// `Uint8Array[] | null` (`Option<Vec<Vec<u8>>>`).
+    NullableUint8ArrayArray,
+    /// `<Name>[] | null` (`Option<Vec>` of a named record/enum).
+    NullableRecordArray(String),
     /// `void`
     Void,
     /// `Promise<void>` (`#[bffi_async]` returns of `()`).
@@ -226,6 +247,8 @@ impl PartialEq for TsKind {
         match (self, other) {
             (Self::Expr(a), Self::Expr(b)) => a.to_string() == b.to_string(),
             (Self::RecordArray(a), Self::RecordArray(b)) => a == b,
+            (Self::NullableRecord(a), Self::NullableRecord(b)) => a == b,
+            (Self::NullableRecordArray(a), Self::NullableRecordArray(b)) => a == b,
             (a, b) => std::mem::discriminant(a) == std::mem::discriminant(b),
         }
     }
@@ -244,6 +267,15 @@ impl TsKind {
             TsKind::Uint8Array => quote! { #dts::TsType::Uint8Array },
             TsKind::NullableString => quote! { #dts::TsType::NullableString },
             TsKind::NullableUint8Array => quote! { #dts::TsType::NullableUint8Array },
+            TsKind::NullableRecord(name) => quote! { #dts::TsType::NullableRecord(#name) },
+            TsKind::NullableNumberArray => quote! { #dts::TsType::NullableNumberArray },
+            TsKind::NullableBigIntArray => quote! { #dts::TsType::NullableBigIntArray },
+            TsKind::NullableBooleanArray => quote! { #dts::TsType::NullableBooleanArray },
+            TsKind::NullableStringArray => quote! { #dts::TsType::NullableStringArray },
+            TsKind::NullableUint8ArrayArray => quote! { #dts::TsType::NullableUint8ArrayArray },
+            TsKind::NullableRecordArray(name) => {
+                quote! { #dts::TsType::NullableRecordArray(#name) }
+            }
             TsKind::Void => quote! { #dts::TsType::Void },
             TsKind::PromiseVoid => quote! { #dts::TsType::PromiseVoid },
             TsKind::PromiseNumber => quote! { #dts::TsType::PromiseNumber },

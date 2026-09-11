@@ -140,7 +140,10 @@ impl AsyncFnModel {
             syn::ReturnType::Type(_, ty) => {
                 let ret = support::classify::classify_return(ty)
                     .map_err(|unsupported| errors::return_type(unsupported.span, unsupported.ty))?;
-                if matches!(ret, RetKind::Nullable(_)) {
+                if matches!(
+                    ret,
+                    RetKind::Nullable(_) | RetKind::NullableRecord(_) | RetKind::NullableSeq(_)
+                ) {
                     return Err(errors::async_nullable_return(ty.span(), ty));
                 }
                 ret

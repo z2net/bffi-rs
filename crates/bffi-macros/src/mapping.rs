@@ -32,7 +32,7 @@ mod tests {
     use super::{RetKind, ShimKind, classify_param, classify_return, ts_return, ts_type};
     use crate::model::FnModel;
     use crate::support::classify::ts_prim;
-    use crate::support::kind::{BigIntTy, BufferTy, PrimTy, TsKind};
+    use crate::support::kind::{BigIntTy, BufferTy, KindPath, PrimTy, SeqItem, TsKind};
     use quote::quote;
 
     /// Parses a type source, panicking in tests only (allowed by the
@@ -166,6 +166,48 @@ mod tests {
                 "`{src}` must classify as Nullable"
             );
             assert_eq!(ts_return(&ret), ts, "ts kind for `{src}`");
+        }
+    }
+
+    #[test]
+    fn option_composite_returns_classify_nullable_wire() {
+        let point: syn::Path = syn::parse_str("Point").expect("path");
+        let cases: &[(&str, RetKind, TsKind)] = &[
+            (
+                "Option<Point>",
+                RetKind::NullableRecord(KindPath(point.clone())),
+                TsKind::NullableRecord("Point".to_owned()),
+            ),
+            (
+                "Option<Vec<f64>>",
+                RetKind::NullableSeq(SeqItem::Wide),
+                TsKind::NullableNumberArray,
+            ),
+            (
+                "Option<Vec<u64>>",
+                RetKind::NullableSeq(SeqItem::U64),
+                TsKind::NullableBigIntArray,
+            ),
+            (
+                "Option<Vec<String>>",
+                RetKind::NullableSeq(SeqItem::Str),
+                TsKind::NullableStringArray,
+            ),
+            (
+                "Option<Vec<Vec<u8>>>",
+                RetKind::NullableSeq(SeqItem::Bytes),
+                TsKind::NullableUint8ArrayArray,
+            ),
+            (
+                "Option<Vec<Point>>",
+                RetKind::NullableSeq(SeqItem::Record(KindPath(point))),
+                TsKind::NullableRecordArray("Point".to_owned()),
+            ),
+        ];
+        for (src, expected, ts) in cases {
+            let ret = classify_return(&ty(src)).expect("accepted");
+            assert_eq!(&ret, expected, "return type `{src}`");
+            assert_eq!(ts_return(&ret), *ts, "ts kind for `{src}`");
         }
     }
 

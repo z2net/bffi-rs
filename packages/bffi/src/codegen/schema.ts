@@ -333,6 +333,10 @@ export function validateModule(raw: unknown): ModuleJsonLike {
       }
       return named(inner);
     }
+    // A nullable return wraps one element type (`<T> | null`).
+    if (ts.endsWith(" | null")) {
+      return named(ts.slice(0, -" | null".length));
+    }
     const name = ts.endsWith("[]") ? ts.slice(0, -2) : ts;
     if (TS_NAMES.has(name)) {
       return true;

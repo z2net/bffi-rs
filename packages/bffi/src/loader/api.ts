@@ -74,7 +74,33 @@ export type TsOf<S extends TsName, M extends ModuleJson = ModuleJson> =
                     ? string[]
                     : S extends "Uint8Array[]"
                       ? Uint8Array[]
-                      : S extends "AsyncIterableIterator<number>"
+                      : S extends "number[] | null"
+                        ? number[] | null
+                        : S extends "bigint[] | null"
+                          ? bigint[] | null
+                          : S extends "boolean[] | null"
+                            ? boolean[] | null
+                            : S extends "string[] | null"
+                              ? string[] | null
+                              : S extends "Uint8Array[] | null"
+                                ? Uint8Array[] | null
+                                : S extends `${infer N} | null`
+                                  ? N extends TsName
+                                    ? [NamedRecord<M, N>] extends [never]
+                                      ? [NamedEnum<M, N>] extends [never]
+                                        ? S
+                                        : NamedEnum<M, N> extends infer E
+                                          ? E extends { variants: { name: string }[] }
+                                            ? EnumUnion<E> | null
+                                            : S
+                                          : S
+                                      : NamedRecord<M, N> extends infer Rec
+                                        ? Rec extends { fields: { name: string; ts: TsName }[] }
+                                          ? RecordShape<Rec, M> | null
+                                          : S
+                                        : S
+                                    : S
+                                  : S extends "AsyncIterableIterator<number>"
                             ? AsyncIterableIterator<number>
                             : S extends "AsyncIterableIterator<bigint>"
                               ? AsyncIterableIterator<bigint>
@@ -379,10 +405,16 @@ function decodeReturn(
     if (typeof raw !== "bigint") {
       throw new TypeError(`${fn.name}: expected a buffer handle, got ${typeof raw}`);
     }
+    // A `0` handle is the documented null marker of the nullable
+    // (`| null`) return forms.
+    if (raw === 0n && fn.ret.ts.endsWith(" | null")) {
+      return null;
+    }
     const bytes = readBuffer(raw);
     const tables = tablesOf(json);
     if (isCompositeTs(fn.ret.ts, tables)) {
-      return wireToJs(tables, fn.ret.ts, decodeAt(bytes, 0).value, `${fn.name}()`);
+      const ts = fn.ret.ts.endsWith(" | null") ? fn.ret.ts.slice(0, -" | null".length) : fn.ret.ts;
+      return wireToJs(tables, ts, decodeAt(bytes, 0).value, `${fn.name}()`);
     }
     if (fn.ret.ts === "string") {
       return decoder.decode(bytes);

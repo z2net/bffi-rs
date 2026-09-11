@@ -64,9 +64,12 @@ pub fn out_param(ret: &RetKind) -> Vec<TokenStream> {
             vec![quote! { __ret: *mut #ty }]
         }
         RetKind::Buffer(_) | RetKind::Nullable(_) => vec![quote! { __ret: *mut u64 }],
-        // Records and sequences travel as one wire-encoded
-        // transient-buffer handle.
-        RetKind::Record(_) | RetKind::Seq(_) => vec![quote! { __ret: *mut u64 }],
+        // Records and sequences (plain or nullable) travel as one
+        // wire-encoded transient-buffer handle.
+        RetKind::Record(_)
+        | RetKind::Seq(_)
+        | RetKind::NullableRecord(_)
+        | RetKind::NullableSeq(_) => vec![quote! { __ret: *mut u64 }],
         RetKind::Result(inner) => out_param(inner),
     }
 }
@@ -152,17 +155,15 @@ pub fn value_tail(ctx: &PathCtx, ret: &RetKind) -> TokenStream {
         }
         RetKind::Nullable(ty) => {
             let some_tail = value_tail(ctx, &RetKind::Buffer(*ty));
-            quote! {
-                match __value {
-                    ::std::option::Option::Some(__value) => { #some_tail }
-                    ::std::option::Option::None => {
-                        // SAFETY: `__ret` is non-null (checked above) and valid for
-                        // one `u64` write; `0` is the documented null handle.
-                        unsafe { ::std::ptr::write(__ret, 0_u64); }
-                        #core::ErrorCode::Ok.as_u32()
-                    }
-                }
-            }
+            nullable_tail(ctx, some_tail)
+        }
+        RetKind::NullableRecord(path) => {
+            let some_tail = value_tail(ctx, &RetKind::Record(path.clone()));
+            nullable_tail(ctx, some_tail)
+        }
+        RetKind::NullableSeq(item) => {
+            let some_tail = value_tail(ctx, &RetKind::Seq(item.clone()));
+            nullable_tail(ctx, some_tail)
         }
         RetKind::Record(_) | RetKind::Seq(_) => {
             let build = &ctx.build;
@@ -189,6 +190,23 @@ pub fn value_tail(ctx: &PathCtx, ret: &RetKind) -> TokenStream {
         }
         // Unreachable: `ret_body` unwraps `Result` first.
         RetKind::Result(_) => quote! { #core::ErrorCode::Ok.as_u32() },
+    }
+}
+
+/// Wraps an already-built `Some(__value)` transport tail into the
+/// `Option` match: `None` writes the documented `0` null handle.
+fn nullable_tail(ctx: &PathCtx, some_tail: TokenStream) -> TokenStream {
+    let core = &ctx.core;
+    quote! {
+        match __value {
+            ::std::option::Option::Some(__value) => { #some_tail }
+            ::std::option::Option::None => {
+                // SAFETY: `__ret` is non-null (checked above) and valid for
+                // one `u64` write; `0` is the documented null handle.
+                unsafe { ::std::ptr::write(__ret, 0_u64); }
+                #core::ErrorCode::Ok.as_u32()
+            }
+        }
     }
 }
 

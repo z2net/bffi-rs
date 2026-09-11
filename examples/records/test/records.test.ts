@@ -78,6 +78,20 @@ describe("records through the full pipeline", () => {
     expect((encoded[1] as Uint8Array).length).toBe(0);
   });
 
+  test("nullable composite: heaviest sample or null (Option<Sample>)", () => {
+    const samples: Sample[] = [
+      { at: 1, weight: 7, label: "a", axis: "Horizontal" },
+      { at: 2, weight: 30, label: "b", axis: "Vertical" },
+    ];
+    expect(api.heaviest(samples)).toEqual({
+      at: 2,
+      weight: 30,
+      label: "b",
+      axis: "Vertical",
+    });
+    expect(api.heaviest([])).toBeNull();
+  });
+
   test("the enum result channel", () => {
     const samples: Sample[] = [
       { at: 0, weight: 1, label: "x", axis: "Vertical" },

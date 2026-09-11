@@ -90,11 +90,14 @@ pub fn abi_out(ret: &RetKind, ctx: &PathCtx) -> Option<TokenStream> {
         RetKind::Unit => None,
         RetKind::Prim(prim) => Some(prim_out(*prim, ctx)),
         RetKind::BigInt(big) => Some(bigint_out(*big, ctx)),
-        // Records and sequences travel as one wire-encoded
-        // transient-buffer handle.
-        RetKind::Buffer(_) | RetKind::Nullable(_) | RetKind::Record(_) | RetKind::Seq(_) => {
-            Some(quote! { #dts::AbiOut::Handle })
-        }
+        // Records and sequences (plain or nullable) travel as one
+        // wire-encoded transient-buffer handle.
+        RetKind::Buffer(_)
+        | RetKind::Nullable(_)
+        | RetKind::Record(_)
+        | RetKind::Seq(_)
+        | RetKind::NullableRecord(_)
+        | RetKind::NullableSeq(_) => Some(quote! { #dts::AbiOut::Handle }),
         RetKind::Result(inner) => abi_out(inner, ctx),
     }
 }

@@ -114,6 +114,13 @@ pub fn label_bytes(samples: Vec<Sample>) -> Vec<Vec<u8>> {
     samples.into_iter().map(|s| s.label.into_bytes()).collect()
 }
 
+/// The heaviest sample, or `None` on an empty sequence (`Option`
+/// of a named composite: `Sample | null` on the JS side).
+#[bffi]
+pub fn heaviest(samples: Vec<Sample>) -> Option<Sample> {
+    samples.into_iter().max_by_key(|s| s.weight)
+}
+
 /// The axis of the first sample; an empty sequence is a domain
 /// error.
 #[bffi]

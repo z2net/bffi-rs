@@ -299,6 +299,12 @@ pub fn classify_return(ty: &syn::Type) -> Result<RetKind, Unsupported<'_>> {
                 if let Some(buffer) = classify_buffer_only(inner) {
                     return Ok(RetKind::Nullable(buffer));
                 }
+                // A named composite or a sequence rides the same
+                // wire channel; `None` keeps the `0`-handle
+                // convention.
+                if let Some(nullable) = nullable_wire(inner) {
+                    return Ok(nullable);
+                }
             }
             ("Result", [ok, err]) => {
                 let inner = classify_return(ok)?;
@@ -340,6 +346,31 @@ fn classify_buffer_only(ty: &syn::Type) -> Option<BufferTy> {
         if args.len() == 1 && is_u8(args[0]) {
             return Some(BufferTy::ByteVec);
         }
+    }
+    None
+}
+
+/// Classifies the wire-channel inner of an `Option`: a named
+/// record/enum (`User`) or a supported sequence (`Vec<f64>`).
+/// Primitives and denied bare names stay `None` (rejected upstream).
+fn nullable_wire(ty: &syn::Type) -> Option<RetKind> {
+    if path_kind(ty).is_some() {
+        return None;
+    }
+    if let Some(path) = plain_path(ty) {
+        if let Some(name) = path.segments.last().map(|seg| seg.ident.to_string())
+            && DENIED_BARE_NAMES.contains(&name.as_str())
+        {
+            return None;
+        }
+        return Some(RetKind::NullableRecord(KindPath(path.clone())));
+    }
+    if let Some((name, true)) = path_ident(ty)
+        && name == "Vec"
+        && let [item] = generic_args(ty).as_slice()
+        && let Some(item) = seq_item(item)
+    {
+        return Some(RetKind::NullableSeq(item));
     }
     None
 }
@@ -429,12 +460,42 @@ pub fn ts_return(ret: &RetKind) -> TsKind {
         RetKind::Buffer(_) => TsKind::Uint8Array,
         RetKind::Nullable(BufferTy::String) => TsKind::NullableString,
         RetKind::Nullable(_) => TsKind::NullableUint8Array,
+        RetKind::NullableRecord(path) => {
+            let name = path
+                .0
+                .segments
+                .last()
+                .map(|seg| seg.ident.to_string())
+                .unwrap_or_default();
+            TsKind::NullableRecord(name)
+        }
+        RetKind::NullableSeq(item) => nullable_seq_kind(item),
         RetKind::Result(inner) => ts_return(inner),
         RetKind::Record(path) => {
             let p = descriptor_path(&path.0);
             TsKind::Expr(quote! { #p::BFFI_TS_TYPE })
         }
         RetKind::Seq(item) => ts_seq_item(item),
+    }
+}
+
+/// TypeScript kind of a nullable sequence (`<inner> | null`).
+fn nullable_seq_kind(item: &SeqItem) -> TsKind {
+    match item {
+        SeqItem::Narrow | SeqItem::Wide => TsKind::NullableNumberArray,
+        SeqItem::I64 | SeqItem::U64 => TsKind::NullableBigIntArray,
+        SeqItem::Bool => TsKind::NullableBooleanArray,
+        SeqItem::Str => TsKind::NullableStringArray,
+        SeqItem::Bytes => TsKind::NullableUint8ArrayArray,
+        SeqItem::Record(path) => {
+            let name = path
+                .0
+                .segments
+                .last()
+                .map(|seg| seg.ident.to_string())
+                .unwrap_or_default();
+            TsKind::NullableRecordArray(name)
+        }
     }
 }
 
@@ -454,10 +515,13 @@ pub fn ts_promise(ret: &RetKind) -> TsKind {
         RetKind::Buffer(_) => TsKind::PromiseUint8Array,
         RetKind::Result(inner) => ts_promise(inner),
         RetKind::Nullable(inner) => ts_promise(&RetKind::Buffer(*inner)),
-        // Async records/sequences arrive with the next B1 slice; the
-        // async model rejects them before descriptors are emitted, so
-        // these arms are defensive only.
-        RetKind::Record(_) | RetKind::Seq(_) => TsKind::Void,
+        // Async records/sequences (plain or nullable) arrive with the
+        // next B4 slice; the async model rejects them before
+        // descriptors are emitted, so these arms are defensive only.
+        RetKind::Record(_)
+        | RetKind::Seq(_)
+        | RetKind::NullableRecord(_)
+        | RetKind::NullableSeq(_) => TsKind::Void,
     }
 }
 

@@ -125,12 +125,13 @@ export const TS_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 /** Whether `ts` names a module composite (a record/enum table entry,
- * optionally as an array form). */
+ * optionally as an array or `| null` form). */
 export function isNamedTs(
   ts: string,
   json: Pick<ModuleJson, "records" | "enums">,
 ): boolean {
-  const name = ts.endsWith("[]") ? ts.slice(0, -2) : ts;
+  const stripped = ts.endsWith(" | null") ? ts.slice(0, -" | null".length) : ts;
+  const name = stripped.endsWith("[]") ? stripped.slice(0, -2) : stripped;
   if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) {
     return false;
   }

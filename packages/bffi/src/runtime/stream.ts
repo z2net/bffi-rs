@@ -49,43 +49,49 @@ export function wrapStream<T = unknown>(
   const token = {};
   registry.register(token, handle);
 
-  const pullChunk = (): void => {
-    const out = new BigUint64Array(1);
-    const status = nextSym(handle, max, out);
-    if (status !== ErrorCode.Ok) {
-      throw new Error(`bffi_stream_next failed: ${String(status)}`);
-    }
-    const chunkHandle = out[0] ?? 0n;
-    if (chunkHandle === 0n) {
-      done = true;
-      return;
-    }
-    const bytes = readBuffer(chunkHandle);
-    const decoded = decodeAt(bytes, 0).value;
-    if (!Array.isArray(decoded)) {
-      throw new Error("stream chunk payload is not a sequence");
-    }
-    for (const [index, raw] of decoded.entries()) {
-      queue.push(wireToJs(tables, itemTs, raw, `stream[${String(index)}]`));
-    }
-    if (decoded.length === max && max < MAX_BUDGET) {
-      max = Math.min(max * 2, MAX_BUDGET);
-    }
-  };
-
   const iterator: AsyncIterableIterator<T> = {
     [Symbol.asyncIterator](): AsyncIterableIterator<T> {
       return iterator;
     },
     next(): Promise<IteratorResult<T>> {
-      if (queue.length === 0 && !done) {
-        pullChunk();
-      }
-      if (queue.length > 0) {
-        const value = queue.shift() as T;
-        return Promise.resolve({ value, done: false });
-      }
-      return Promise.resolve({ value: undefined as T, done: true });
+      const pull = async (): Promise<IteratorResult<T>> => {
+        // Poll contract: an empty live buffer reports Pending - wait
+        // a tick and retry (the buffer is shared memory; the pull is
+        // the delivery).
+        while (queue.length === 0 && !done) {
+          const out = new BigUint64Array(1);
+          const status = nextSym(handle, max, out);
+          if (status === ErrorCode.Pending) {
+            await new Promise((resolve) => setTimeout(resolve, 1));
+            continue;
+          }
+          if (status !== ErrorCode.Ok) {
+            throw new Error(`bffi_stream_next failed: ${String(status)}`);
+          }
+          const chunkHandle = out[0] ?? 0n;
+          if (chunkHandle === 0n) {
+            done = true;
+            break;
+          }
+          const bytes = readBuffer(chunkHandle);
+          const decoded = decodeAt(bytes, 0).value;
+          if (!Array.isArray(decoded)) {
+            throw new Error("stream chunk payload is not a sequence");
+          }
+          for (const [index, raw] of decoded.entries()) {
+            queue.push(wireToJs(tables, itemTs, raw, `stream[${String(index)}]`));
+          }
+          if (decoded.length === max && max < MAX_BUDGET) {
+            max = Math.min(max * 2, MAX_BUDGET);
+          }
+        }
+        if (queue.length > 0) {
+          const value = queue.shift() as T;
+          return { value, done: false };
+        }
+        return { value: undefined as T, done: true };
+      };
+      return pull();
     },
     return(value?: T): Promise<IteratorResult<T>> {
       // Early exit: release the native stream; further next() calls

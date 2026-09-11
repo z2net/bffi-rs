@@ -82,11 +82,15 @@ export type TsOf<S extends TsName, M extends ModuleJson = ModuleJson> =
                                   ? AsyncIterableIterator<string>
                                   : S extends "AsyncIterableIterator<Uint8Array>"
                                     ? AsyncIterableIterator<Uint8Array>
-                                    : S extends `AsyncIterableIterator<${infer N}>`
-                                      ? N extends TsName
-                                        ? AsyncIterableIterator<TsOf<N, M>>
+                                    : S extends `AsyncIterableIterator<${infer N2} | Error>`
+                                      ? N2 extends TsName
+                                        ? AsyncIterableIterator<TsOf<N2, M> | Error>
                                         : S
-                                      : S extends `${infer N}[]`
+                                      : S extends `AsyncIterableIterator<${infer N}>`
+                                        ? N extends TsName
+                                          ? AsyncIterableIterator<TsOf<N, M>>
+                                          : S
+                                        : S extends `${infer N}[]`
                             ? N extends TsName
                               ? TsOf<N, M>[]
                               : S

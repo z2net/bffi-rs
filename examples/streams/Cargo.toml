@@ -18,4 +18,4 @@ name = "emit-json"
 path = "src/bin/emit_json.rs"
 
 [dependencies]
-bffi = { version = "0.1.2", features = ["macros", "stream"] }
+bffi = { version = "0.1.2", features = ["macros", "stream", "async"] }

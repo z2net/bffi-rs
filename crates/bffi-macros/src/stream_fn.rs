@@ -43,6 +43,10 @@ pub(crate) enum StreamItem {
     Str,
     /// `Vec<u8>` items - one raw-bytes record each.
     Bytes,
+    /// `Result<T, E>` items - `Ok` encodes the value, `Err` encodes
+    /// as an error record (TAG 11); the JS iterator yields
+    /// `T | Error`.
+    ResultItem(Box<StreamItem>),
     /// Nested `BffiRecord`/`BffiEnum` items.
     Record(syn::Path),
 }
@@ -51,6 +55,11 @@ impl StreamItem {
     /// Classifies the `Item` type of the returned iterator or
     /// rejects it with `E012`.
     fn classify(ty: &syn::Type) -> syn::Result<Self> {
+        // `Item = (Result<u64, String>)`: generic bindings in
+        // impl-trait position need the parens.
+        if let syn::Type::Paren(paren) = ty {
+            return Self::classify(&paren.elem);
+        }
         let syn::Type::Path(syn::TypePath { qself: None, path }) = ty else {
             return Err(item_type_error(ty));
         };
@@ -78,11 +87,20 @@ impl StreamItem {
             }
             return Err(item_type_error(ty));
         }
+        if path.segments.len() == 1 && last.ident == "Result" {
+            if let syn::PathArguments::AngleBracketed(args) = &last.arguments
+                && args.args.len() == 2
+                && let syn::GenericArgument::Type(ok_ty) = &args.args[0]
+            {
+                return Ok(Self::ResultItem(Box::new(Self::classify(ok_ty)?)));
+            }
+            return Err(item_type_error(ty));
+        }
         Ok(Self::Record(path.clone()))
     }
 
     /// The `TsKind` of the stream descriptor's return type.
-    fn ts_kind(&self) -> TsKind {
+    fn ts_kind(&self, dts: &TokenStream) -> TsKind {
         match self {
             Self::Narrow | Self::Wide => TsKind::StreamNumber,
             Self::Int64 | Self::UInt64 => TsKind::StreamBigInt,
@@ -95,7 +113,28 @@ impl StreamItem {
                     .last()
                     .map(|seg| seg.ident.to_string())
                     .unwrap_or_default();
-                TsKind::StreamExpr(quote! { ::bffi::dts::TsType::StreamRecord(#name) })
+                TsKind::StreamExpr(quote! { #dts::TsType::StreamRecord(#name) })
+            }
+            Self::ResultItem(inner) => {
+                let scalar = match inner.as_ref() {
+                    Self::Narrow | Self::Wide => quote! { #dts::TsType::StreamResultNumber },
+                    Self::Int64 | Self::UInt64 => quote! { #dts::TsType::StreamResultBigInt },
+                    Self::Bool => quote! { #dts::TsType::StreamResultBoolean },
+                    Self::Str => quote! { #dts::TsType::StreamResultString },
+                    Self::Bytes => quote! { #dts::TsType::StreamResultUint8Array },
+                    Self::Record(path) => {
+                        let name = path
+                            .segments
+                            .last()
+                            .map(|seg| seg.ident.to_string())
+                            .unwrap_or_default();
+                        quote! { #dts::TsType::StreamResultRecord(#name) }
+                    }
+                    Self::ResultItem(_) => {
+                        quote! { #dts::TsType::StreamResultUint8Array }
+                    }
+                };
+                TsKind::StreamExpr(scalar)
             }
         }
     }
@@ -111,6 +150,12 @@ impl StreamItem {
             Self::Bool => quote! { #wire::encode_bool(&mut rec, #ident); },
             Self::Str => quote! { #wire::encode_str(&mut rec, &#ident); },
             Self::Bytes => quote! { #wire::encode_bytes(&mut rec, &#ident); },
+            // `Result` items: `Ok` encodes the value, `Err` an error
+            // record - through the shared trait (the blanket impl in
+            // `bffi::bffi_stream`).
+            Self::ResultItem(_) => {
+                quote! { ::bffi::BffiStreamItem::encode_into(&#ident, &mut rec); }
+            }
             Self::Record(path) => {
                 quote! { #path::bffi_wire_encode(&#ident, &mut rec); }
             }
@@ -416,7 +461,7 @@ pub(crate) fn stream_meta(model: &StreamFnModel) -> TokenStream {
         let ty = classify::ts_type(kind).tokens(paths);
         quote! { #dts::ParamDef { name: #name, ty: #ty } }
     });
-    let ret = model.item.ts_kind().tokens(paths);
+    let ret = model.item.ts_kind(&paths.dts).tokens(paths);
     let param_shapes = model
         .params
         .iter()
@@ -480,7 +525,7 @@ pub(crate) fn push_meta(model: &PushModel) -> TokenStream {
         let ty = classify::ts_type(kind).tokens(paths);
         quote! { #dts::ParamDef { name: #name, ty: #ty } }
     });
-    let ret = model.item.ts_kind().tokens(paths);
+    let ret = model.item.ts_kind(&paths.dts).tokens(paths);
     let param_shapes = model
         .params
         .iter()

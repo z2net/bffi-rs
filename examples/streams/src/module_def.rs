@@ -11,6 +11,9 @@ pub const FUNCTIONS: &[bffi::FunctionDef] = &[
     crate::bffi_meta_numbers::FUNCTION,
     crate::bffi_meta_samples::FUNCTION,
     crate::bffi_meta_fizzbuzz::FUNCTION,
+    crate::bffi_meta_readings::FUNCTION,
+    crate::bffi_meta_flaky::FUNCTION,
+    crate::bffi_meta_big_values::FUNCTION,
 ];
 
 /// The record types of this example.

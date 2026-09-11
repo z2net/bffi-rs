@@ -64,6 +64,68 @@ const moduleJson = {
         "abi": "stream"
       },
       "out": "handle"
+    },
+    {
+      "name": "readings",
+      "export": "bffi_readings",
+      "docs": [
+        "A slow PUSH producer: one reading per 5 ms tick, delivered with",
+        "backpressure through the bounded buffer. JS pulls with",
+        "`for await` exactly like the pull streams above."
+      ],
+      "params": [
+        {
+          "name": "count",
+          "ts": "number",
+          "abi": "u32"
+        }
+      ],
+      "ret": {
+        "ts": "AsyncIterableIterator<number>",
+        "abi": "stream"
+      },
+      "out": "handle"
+    },
+    {
+      "name": "flaky",
+      "export": "bffi_flaky",
+      "docs": [
+        "Result items: even indexes arrive as values, odd ones as item",
+        "errors (the JS iterator throws at the first error item). The",
+        "parens are the documented workaround for generic bindings in",
+        "impl-trait position."
+      ],
+      "params": [
+        {
+          "name": "count",
+          "ts": "number",
+          "abi": "u32"
+        }
+      ],
+      "ret": {
+        "ts": "AsyncIterableIterator<bigint | Error>",
+        "abi": "stream"
+      },
+      "out": "handle"
+    },
+    {
+      "name": "big_values",
+      "export": "bffi_big_values",
+      "docs": [
+        "Values descending from the u64 maximum (exact BigInt delivery)."
+      ],
+      "params": [
+        {
+          "name": "count",
+          "ts": "number",
+          "abi": "u32"
+        }
+      ],
+      "ret": {
+        "ts": "AsyncIterableIterator<bigint>",
+        "abi": "stream"
+      },
+      "out": "handle"
     }
   ],
   "classes": [],

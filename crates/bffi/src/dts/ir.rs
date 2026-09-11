@@ -118,6 +118,21 @@ pub enum TsType {
     /// `AsyncIterableIterator<Name>` (a `#[bffi_stream]` of a named
     /// record/enum).
     StreamRecord(&'static str),
+    /// `AsyncIterableIterator<number | Error>` (a `#[bffi_stream]`
+    /// whose items are `Result` values - `Err` items arrive as
+    /// `Error` instances).
+    StreamResultNumber,
+    /// `AsyncIterableIterator<bigint | Error>`.
+    StreamResultBigInt,
+    /// `AsyncIterableIterator<boolean | Error>`.
+    StreamResultBoolean,
+    /// `AsyncIterableIterator<string | Error>`.
+    StreamResultString,
+    /// `AsyncIterableIterator<Uint8Array | Error>`.
+    StreamResultUint8Array,
+    /// `AsyncIterableIterator<Name | Error>` (a stream of `Result`
+    /// items over a named record/enum).
+    StreamResultRecord(&'static str),
 }
 
 impl TsType {
@@ -154,6 +169,16 @@ impl TsType {
             Self::StreamString => Cow::Borrowed("AsyncIterableIterator<string>"),
             Self::StreamUint8Array => Cow::Borrowed("AsyncIterableIterator<Uint8Array>"),
             Self::StreamRecord(name) => Cow::Owned(format!("AsyncIterableIterator<{name}>")),
+            Self::StreamResultNumber => Cow::Borrowed("AsyncIterableIterator<number | Error>"),
+            Self::StreamResultBigInt => Cow::Borrowed("AsyncIterableIterator<bigint | Error>"),
+            Self::StreamResultBoolean => Cow::Borrowed("AsyncIterableIterator<boolean | Error>"),
+            Self::StreamResultString => Cow::Borrowed("AsyncIterableIterator<string | Error>"),
+            Self::StreamResultUint8Array => {
+                Cow::Borrowed("AsyncIterableIterator<Uint8Array | Error>")
+            }
+            Self::StreamResultRecord(name) => {
+                Cow::Owned(format!("AsyncIterableIterator<{name} | Error>"))
+            }
         }
     }
 }

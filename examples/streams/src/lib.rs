@@ -29,6 +29,9 @@ bffi::bffi_stream_abi!();
 
 pub mod module_def;
 
+use std::time::Duration;
+
+use bffi::bffi_stream::Ctx;
 use bffi::{BffiEnum, BffiRecord, BffiWire};
 
 /// The measurement axis.
@@ -81,4 +84,37 @@ fn fizzbuzz(count: u32) -> impl Iterator<Item = String> + Send {
         (_, 0) => "buzz".to_owned(),
         _ => n.to_string(),
     })
+}
+
+/// A slow PUSH producer: one reading per 5 ms tick, delivered with
+/// backpressure through the bounded buffer. JS pulls with
+/// `for await` exactly like the pull streams above.
+#[bffi::bffi_stream]
+async fn readings(ctx: Ctx<f64>, count: u32) -> Result<(), bffi::StreamError> {
+    for index in 0..count {
+        bffi::sleep(Duration::from_millis(5)).await;
+        ctx.push(f64::from(index)).await?;
+    }
+    Ok(())
+}
+
+/// Result items: even indexes arrive as values, odd ones as item
+/// errors (the JS iterator throws at the first error item). The
+/// parens are the documented workaround for generic bindings in
+/// impl-trait position.
+#[bffi::bffi_stream]
+fn flaky(count: u32) -> impl Iterator<Item = Result<u64, String>> + Send {
+    (0..count).map(|index| {
+        if index % 2 == 0 {
+            Ok(u64::from(index))
+        } else {
+            Err(format!("odd index {index}"))
+        }
+    })
+}
+
+/// Values descending from the u64 maximum (exact BigInt delivery).
+#[bffi::bffi_stream]
+fn big_values(count: u32) -> impl Iterator<Item = u64> + Send {
+    (0..count).map(|index| u64::MAX - u64::from(index))
 }

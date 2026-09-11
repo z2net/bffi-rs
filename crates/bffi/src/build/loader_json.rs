@@ -484,7 +484,13 @@ fn ret_abi_str(ret: TsType, abi: &AbiSig) -> &'static str {
             | TsType::StreamBoolean
             | TsType::StreamString
             | TsType::StreamUint8Array
-            | TsType::StreamRecord(_) => "stream",
+            | TsType::StreamRecord(_)
+            | TsType::StreamResultNumber
+            | TsType::StreamResultBigInt
+            | TsType::StreamResultBoolean
+            | TsType::StreamResultString
+            | TsType::StreamResultUint8Array
+            | TsType::StreamResultRecord(_) => "stream",
             TsType::BigInt => "handle",
             _ => "buffer",
         },

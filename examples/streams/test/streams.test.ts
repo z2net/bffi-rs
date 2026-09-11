@@ -91,4 +91,36 @@ describe("streams through the full pipeline", () => {
     const items: number[] = await collect(api.numbers(2));
     expect(items.every((n) => typeof n === "number")).toBe(true);
   });
+
+  test("a slow push producer streams with backpressure", async () => {
+    const started = Date.now();
+    const items = await collect(api.readings(4));
+    const elapsed = Date.now() - started;
+    expect(items).toEqual([0, 1, 2, 3]);
+    // Four 5 ms producer ticks must have actually elapsed.
+    expect(elapsed).toBeGreaterThanOrEqual(15);
+  });
+
+  test("Result items arrive as values: T | Error", async () => {
+    // Even indexes are values (exact u64 bigints), odd indexes are
+    // error items - real Error instances yielded by the iterator.
+    const items = await collect(api.flaky(4));
+    expect(items).toHaveLength(4);
+    expect(items[0]).toBe(0n);
+    expect(items[1]).toBeInstanceOf(Error);
+    expect((items[1] as Error).message).toContain("odd index 1");
+    expect(items[2]).toBe(2n);
+    expect(items[3]).toBeInstanceOf(Error);
+    expect((items[3] as Error).message).toContain("odd index 3");
+  });
+
+  test("u64 items are exact bigints", async () => {
+    const items = await collect(api.big_values(3));
+    expect(items).toEqual([
+      18446744073709551615n,
+      18446744073709551614n,
+      18446744073709551613n,
+    ]);
+    expect(items.every((n) => typeof n === "bigint")).toBe(true);
+  });
 });

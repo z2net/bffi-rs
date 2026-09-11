@@ -79,7 +79,12 @@ export function wrapStream<T = unknown>(
             throw new Error("stream chunk payload is not a sequence");
           }
           for (const [index, raw] of decoded.entries()) {
-            queue.push(wireToJs(tables, itemTs, raw, `stream[${String(index)}]`));
+            // Error items arrive as Error instances - yielded as-is.
+            queue.push(
+              raw instanceof Error
+                ? raw
+                : wireToJs(tables, itemTs, raw, `stream[${String(index)}]`),
+            );
           }
           if (decoded.length === max && max < MAX_BUDGET) {
             max = Math.min(max * 2, MAX_BUDGET);
@@ -109,8 +114,16 @@ export function wrapStream<T = unknown>(
 }
 
 /** Extracts the item type from an `AsyncIterableIterator<T>` ts
- * name; `null` when the name is not a stream type. */
+ * name (also the Result form `...<T | Error>`); `null` when the
+ * name is not a stream type. */
 export function streamItemTs(ts: string): string | null {
-  const match = /^AsyncIterableIterator<(.+)>$/.exec(ts);
-  return match ? (match[1] ?? null) : null;
+  const match = /^AsyncIterableIterator<(.+?)>(?: \| Error)?$/.exec(ts);
+  if (!match) {
+    return null;
+  }
+  let item = match[1] ?? "";
+  if (item.endsWith(" | Error")) {
+    item = item.slice(0, -" | Error".length);
+  }
+  return item;
 }

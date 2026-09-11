@@ -49,7 +49,7 @@
 //!     },
 //! }];
 //!
-//! let module = ModuleDef { name: "math", fns: FNS, classes: &[], records: &[], enums: &[] };
+//! let module = ModuleDef { name: "math", fns: FNS, classes: &[], records: &[], enums: &[], errors: &[] };
 //! let dts = bffi::dts::render(&module);
 //! assert!(dts.contains("/** Adds two numbers. */"));
 //! assert!(dts.contains("export function add(a: number, b: number): number;"));

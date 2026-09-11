@@ -235,6 +235,62 @@ function checkEnums(issues: SchemaIssue[], path: string, value: unknown): void {
   }
 }
 
+/** The hex user-code shape carried by every error variant. */
+const HEX_CODE = /^0x[0-9A-F]{4}$/;
+
+function checkErrors(issues: SchemaIssue[], path: string, value: unknown): void {
+  if (!Array.isArray(value)) {
+    issues.push({ path, message: "expected an array of error entries" });
+    return;
+  }
+  for (const [index, entry] of value.entries()) {
+    const at = `${path}[${index}]`;
+    if (!isRecord(entry)) {
+      issues.push({ path: at, message: "expected an object" });
+      continue;
+    }
+    checkString(issues, `${at}.name`, entry.name);
+    checkStringArray(issues, `${at}.docs`, entry.docs);
+    if (!Array.isArray(entry.variants)) {
+      issues.push({ path: `${at}.variants`, message: "expected an array of variant entries" });
+    } else {
+      for (const [variantIndex, variant] of entry.variants.entries()) {
+        const variantAt = `${at}.variants[${variantIndex}]`;
+        if (!isRecord(variant)) {
+          issues.push({ path: variantAt, message: "expected an object" });
+          continue;
+        }
+        checkString(issues, `${variantAt}.name`, variant.name);
+        checkStringArray(issues, `${variantAt}.docs`, variant.docs);
+        if (
+          typeof variant.code !== "string" ||
+          !HEX_CODE.test(variant.code) ||
+          Number.parseInt(variant.code, 16) < 0x1000
+        ) {
+          issues.push({
+            path: `${variantAt}.code`,
+            message: "expected a hex user code in the reserved range (0x1000..=0xFFFF)",
+          });
+        }
+        if (variant.fields !== undefined && !Array.isArray(variant.fields)) {
+          issues.push({ path: `${variantAt}.fields`, message: "expected an array of fields" });
+        } else if (Array.isArray(variant.fields)) {
+          for (const [fieldIndex, field] of variant.fields.entries()) {
+            const fieldAt = `${variantAt}.fields[${fieldIndex}]`;
+            if (!isRecord(field)) {
+              issues.push({ path: fieldAt, message: "expected an object" });
+              continue;
+            }
+            checkString(issues, `${fieldAt}.name`, field.name);
+            checkStringArray(issues, `${fieldAt}.docs`, field.docs);
+            checkString(issues, `${fieldAt}.ts`, field.ts);
+          }
+        }
+      }
+    }
+  }
+}
+
 /**
  * Validates the raw parsed JSON against loader schema v1 and returns
  * it typed. Throws [`SchemaValidationError`] with every issue found.
@@ -303,6 +359,9 @@ export function validateModule(raw: unknown): ModuleJsonLike {
   if (raw.enums !== undefined) {
     checkEnums(issues, "$.enums", raw.enums);
   }
+  if (raw.errors !== undefined) {
+    checkErrors(issues, "$.errors", raw.errors);
+  }
   if (issues.length > 0) {
     throw new SchemaValidationError(issues);
   }
@@ -310,6 +369,7 @@ export function validateModule(raw: unknown): ModuleJsonLike {
     ...(raw as Record<string, unknown>),
     records: Array.isArray(raw.records) ? raw.records : [],
     enums: Array.isArray(raw.enums) ? raw.enums : [],
+    errors: Array.isArray(raw.errors) ? raw.errors : [],
   } as unknown as ModuleJsonLike;
 }
 
@@ -321,4 +381,5 @@ export interface ModuleJsonLike {
   classes: unknown[];
   records: unknown[];
   enums: unknown[];
+  errors: unknown[];
 }

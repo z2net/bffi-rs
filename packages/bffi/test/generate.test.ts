@@ -146,6 +146,51 @@ describe("renderModule", () => {
     }
     expect(() => renderModule(broken)).toThrow(/unknown name "int"/);
   });
+
+  test("accepts the errors table with codes and payload fields", () => {
+    const withErrors = {
+      ...FIXTURE,
+      errors: [
+        {
+          name: "UsersError",
+          docs: ["The typed errors."],
+          variants: [
+            {
+              name: "NotFound",
+              docs: [],
+              code: "0x1001",
+              fields: [{ name: "id", docs: [], ts: "bigint" }],
+            },
+            { name: "InvalidAge", docs: [], code: "0x1002", fields: [] },
+          ],
+        },
+      ],
+    };
+    const rendered = renderModule(withErrors);
+    expect(rendered).toContain('"code": "0x1001"');
+    expect(rendered).toContain('"errors"');
+  });
+
+  test("rejects error codes outside the reserved user range", () => {
+    const bad = {
+      ...FIXTURE,
+      errors: [
+        {
+          name: "UsersError",
+          docs: [],
+          variants: [{ name: "NotFound", docs: [], code: "0x0042", fields: [] }],
+        },
+      ],
+    };
+    try {
+      renderModule(bad);
+      throw new Error("must have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SchemaValidationError);
+      const issue = (error as SchemaValidationError).issues[0];
+      expect(issue?.path).toBe("$.errors[0].variants[0].code");
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

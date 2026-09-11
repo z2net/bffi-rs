@@ -91,7 +91,58 @@ const moduleJson = {
       ]
     }
   ],
-  "enums": []
+  "enums": [],
+  "errors": [
+    {
+      "name": "UsersError",
+      "docs": [
+        "The typed error enum of the module. Each variant carries a stable",
+        "code in the reserved user range; the JS side switches on `e.code`",
+        "and reads `e.name` / `e.payload`."
+      ],
+      "variants": [
+        {
+          "name": "NotFound",
+          "docs": [
+            "No user with the given id."
+          ],
+          "code": "0x1001",
+          "fields": [
+            {
+              "name": "id",
+              "docs": [
+                "The queried id."
+              ],
+              "ts": "bigint"
+            }
+          ]
+        },
+        {
+          "name": "InvalidAge",
+          "docs": [
+            "The age is outside the supported range."
+          ],
+          "code": "0x1002",
+          "fields": [
+            {
+              "name": "age",
+              "docs": [
+                "The rejected value."
+              ],
+              "ts": "number"
+            },
+            {
+              "name": "min",
+              "docs": [
+                "The lowest allowed age."
+              ],
+              "ts": "number"
+            }
+          ]
+        }
+      ]
+    }
+  ]
 } as const satisfies ModuleJson;
 
 /** Opens the native library at `libraryPath` and returns the typed API. */

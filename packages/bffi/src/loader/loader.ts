@@ -217,6 +217,32 @@ export interface ModuleJson {
   records?: RecordJson[];
   /** The B1 enum types. */
   enums?: EnumJson[];
+  /** The B3 derived error enums (always present in freshly emitted
+   * JSON; older JSON without the key reads as empty). */
+  errors?: ErrorJson[];
+}
+
+/** One payload field of an error variant. */
+export interface ErrorFieldJson {
+  name: string;
+  docs: string[];
+  ts: string;
+}
+
+/** One variant of a derived error enum: its name, docs, the hex user
+ * code and the payload fields. */
+export interface ErrorVariantJson {
+  name: string;
+  docs: string[];
+  code: string;
+  fields: ErrorFieldJson[];
+}
+
+/** A derived error enum as carried by the loader JSON. */
+export interface ErrorJson {
+  name: string;
+  docs: string[];
+  variants: ErrorVariantJson[];
 }
 
 /** Validates the schema header: unknown versions are rejected. */

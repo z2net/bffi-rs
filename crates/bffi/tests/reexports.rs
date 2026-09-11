@@ -116,6 +116,7 @@ fn dts_names_are_reexported() {
         }],
         records: &[],
         enums: &[],
+        errors: &[],
     };
     let rendered = bffi::render(&module);
     assert!(rendered.contains("export function add(a: number): number;"));

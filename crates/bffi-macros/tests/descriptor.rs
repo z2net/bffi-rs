@@ -231,6 +231,7 @@ fn descriptors_render_through_bffi_dts() {
         classes: &[],
         records: &[],
         enums: &[],
+        errors: &[],
     };
     let rendered = bffi::render(&module);
     assert!(rendered.contains("/** Adds two numbers. */"));

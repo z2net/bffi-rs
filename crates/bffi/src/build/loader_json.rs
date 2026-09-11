@@ -118,6 +118,16 @@ pub fn to_json(module: &ModuleDef) -> String {
     if !module.enums.is_empty() {
         push_indent(&mut out, 1);
     }
+    out.push_str("],\n  \"errors\": [");
+    for (index, error) in module.errors.iter().enumerate() {
+        if index == 0 {
+            out.push('\n');
+        }
+        push_error(error, &mut out, index == module.errors.len() - 1);
+    }
+    if !module.errors.is_empty() {
+        push_indent(&mut out, 1);
+    }
     out.push_str("]\n}\n");
     out
 }
@@ -397,6 +407,76 @@ fn push_enum(enumeration: &bffi_dts::EnumDef, out: &mut String, last: bool) {
     out.push('\n');
 }
 
+/// One error-enum entry, indented at depth 2 inside the `errors`
+/// array: `name`, `docs` and the `variants` table (name, docs, the
+/// hex `code` and the payload `fields` in declaration order).
+fn push_error(error: &bffi_dts::ErrorDef, out: &mut String, last: bool) {
+    push_indent(out, 2);
+    out.push_str("{\n");
+    push_key_string(out, 3, "name", error.js_name);
+    out.push_str(",\n");
+    push_docs(out, 3, error.docs);
+    out.push_str(",\n");
+    push_indent(out, 3);
+    out.push_str("\"variants\": [");
+    for (index, variant) in error.variants.iter().enumerate() {
+        if index == 0 {
+            out.push('\n');
+        }
+        push_indent(out, 4);
+        out.push_str("{\n");
+        push_key_string(out, 5, "name", variant.name);
+        out.push_str(",\n");
+        push_docs(out, 5, variant.docs);
+        out.push_str(",\n");
+        push_indent(out, 5);
+        out.push_str("\"code\": \"0x");
+        out.push_str(&format!("{:04X}", variant.code));
+        out.push_str("\",\n");
+        push_indent(out, 5);
+        out.push_str("\"fields\": [");
+        for (index, field) in variant.fields.iter().enumerate() {
+            if index == 0 {
+                out.push('\n');
+            }
+            push_indent(out, 6);
+            out.push_str("{\n");
+            push_key_string(out, 7, "name", field.name);
+            out.push_str(",\n");
+            push_docs(out, 7, field.docs);
+            out.push_str(",\n");
+            push_key_string(out, 7, "ts", &field.ty.as_str());
+            out.push('\n');
+            push_indent(out, 6);
+            out.push('}');
+            if index != variant.fields.len() - 1 {
+                out.push(',');
+            }
+            out.push('\n');
+        }
+        if !variant.fields.is_empty() {
+            push_indent(out, 5);
+        }
+        out.push_str("]\n");
+        push_indent(out, 4);
+        out.push('}');
+        if index != error.variants.len() - 1 {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    if !error.variants.is_empty() {
+        push_indent(out, 3);
+    }
+    out.push_str("]\n");
+    push_indent(out, 2);
+    out.push('}');
+    if !last {
+        out.push(',');
+    }
+    out.push('\n');
+}
+
 /// The docs array; rendered even when empty (fixed key order).
 fn push_docs(out: &mut String, depth: usize, docs: &[&str]) {
     push_indent(out, depth);
@@ -515,10 +595,11 @@ mod tests {
             classes: &[],
             records: &[],
             enums: &[],
+            errors: &[],
         };
         assert_eq!(
             to_json(&module),
-            "{\n  \"bffi\": 1,\n  \"module\": \"probe\",\n  \"functions\": [],\n  \"classes\": [],\n  \"records\": [],\n  \"enums\": []\n}\n"
+            "{\n  \"bffi\": 1,\n  \"module\": \"probe\",\n  \"functions\": [],\n  \"classes\": [],\n  \"records\": [],\n  \"enums\": [],\n  \"errors\": []\n}\n"
         );
     }
 
@@ -531,6 +612,7 @@ mod tests {
             classes: &[],
             records: &[],
             enums: &[],
+            errors: &[],
         };
         // Reuse the emitter through a docs-shaped key: the module name
         // travels through the same escaper.

@@ -26,4 +26,5 @@ pub const MODULE: ModuleDef = ModuleDef {
     classes: &[],
     records: &[],
     enums: &[],
+    errors: &[],
 };

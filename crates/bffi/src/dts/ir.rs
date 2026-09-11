@@ -400,6 +400,9 @@ pub struct ModuleDef {
     /// The unit enums (`#[derive(BffiEnum)]`) exported by this
     /// module, in declaration order.
     pub enums: &'static [EnumDef],
+    /// The error enums (`#[derive(BffiError)]`) exported by this
+    /// module, in declaration order.
+    pub errors: &'static [ErrorDef],
 }
 
 /// One field of a record: its JS-visible name, type and docs.
@@ -449,6 +452,36 @@ pub struct EnumDef {
     pub docs: &'static [&'static str],
     /// The variants, in declaration order.
     pub variants: &'static [EnumVariantDef],
+}
+
+/// One variant of a derived error enum: its JS `e.name`, the
+/// reserved user code crossing in the ABI status and the payload
+/// fields (the wire record delivered as `e.payload`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ErrorVariantDef {
+    /// The variant name (JS `e.name`).
+    pub name: &'static str,
+    /// Doc comment lines, rendered as a JSDoc block.
+    pub docs: &'static [&'static str],
+    /// The user code in the reserved range `0x1000..=0xFFFF`.
+    pub code: u32,
+    /// The payload fields, in declaration order (the wire record is
+    /// positional and must match this order).
+    pub fields: &'static [RecordFieldDef],
+}
+
+/// A derived error enum (`#[derive(BffiError)]`): the TS side sees
+/// a union of typed variant shapes plus a `code`/`name` base, and
+/// the loader JSON carries the code table for the `Errors` codegen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ErrorDef {
+    /// The enum name as seen from JavaScript (the identifier used by
+    /// [`TsType::Error`]).
+    pub js_name: &'static str,
+    /// Doc comment lines, rendered as a JSDoc block.
+    pub docs: &'static [&'static str],
+    /// The variants, in declaration order.
+    pub variants: &'static [ErrorVariantDef],
 }
 
 /// A class constructor or method: the `FunctionDef` shape as seen
@@ -705,6 +738,7 @@ mod tests {
             classes: &[],
             records: &[],
             enums: &[],
+            errors: &[],
         };
         let same = ModuleDef {
             name: "native",
@@ -712,6 +746,7 @@ mod tests {
             classes: &[],
             records: &[],
             enums: &[],
+            errors: &[],
         };
         let different = ModuleDef {
             name: "native",
@@ -719,6 +754,7 @@ mod tests {
             classes: &[],
             records: &[],
             enums: &[],
+            errors: &[],
         };
         assert_eq!(module, same, "identical modules must compare equal");
         assert_ne!(module, different, "different fns must not be equal");
@@ -756,6 +792,7 @@ mod tests {
             classes: &[],
             records: &[],
             enums: &[],
+            errors: &[],
         };
         let rendered = crate::bffi_dts::render::render(&module);
         assert!(rendered.contains("export function maybe_name(): string | null;"));
@@ -843,5 +880,6 @@ mod tests {
         classes: &[],
         records: &[],
         enums: &[],
+        errors: &[],
     };
 }

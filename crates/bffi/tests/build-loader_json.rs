@@ -272,6 +272,7 @@ fn fixture_module() -> ModuleDef {
         classes: CLASSES,
         records: RECORDS,
         enums: ENUMS,
+        errors: &[],
     }
 }
 
@@ -411,6 +412,7 @@ fn strings_survive_escaping() {
         classes: &[],
         records: &[],
         enums: &[],
+        errors: &[],
     };
     let rendered = bffi::bffi_build::loader_json::to_json(&module);
     let parsed: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");

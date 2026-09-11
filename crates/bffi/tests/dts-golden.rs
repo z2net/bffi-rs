@@ -80,6 +80,7 @@ static MATH: ModuleDef = ModuleDef {
     classes: &[],
     records: &[],
     enums: &[],
+    errors: &[],
 };
 
 static KITCHEN_FNS: &[FunctionDef] = &[
@@ -145,6 +146,7 @@ static KITCHEN: ModuleDef = ModuleDef {
     classes: &[],
     records: &[],
     enums: &[],
+    errors: &[],
 };
 
 static EMPTY: ModuleDef = ModuleDef {
@@ -153,6 +155,7 @@ static EMPTY: ModuleDef = ModuleDef {
     classes: &[],
     records: &[],
     enums: &[],
+    errors: &[],
 };
 
 /// A class fixture exercising the constructor, a field getter, a
@@ -208,6 +211,7 @@ static SHAPES: ModuleDef = ModuleDef {
     classes: COUNTER_CLASS,
     records: &[],
     enums: &[],
+    errors: &[],
 };
 
 static B1_XY_PARAMS: &[ParamDef] = &[
@@ -278,6 +282,7 @@ static B1: ModuleDef = ModuleDef {
             },
         ],
     }],
+    errors: &[],
 };
 
 /// Normalizes CRLF line endings to LF, undoing any `core.autocrlf`
@@ -341,6 +346,7 @@ static STREAMS: ModuleDef = ModuleDef {
     classes: &[],
     records: &[],
     enums: &[],
+    errors: &[],
 };
 
 #[test]

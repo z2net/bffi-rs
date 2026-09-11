@@ -64,7 +64,7 @@ pub mod render;
 
 pub use ident::sanitize;
 pub use ir::{
-    AbiOut, AbiPrim, AbiSig, AbiType, ClassDef, EnumDef, EnumVariantDef, FieldDef, FunctionDef,
-    MethodDef, ModuleDef, ParamDef, RecordDef, RecordFieldDef, TsType,
+    AbiOut, AbiPrim, AbiSig, AbiType, ClassDef, EnumDef, EnumVariantDef, ErrorDef, ErrorVariantDef,
+    FieldDef, FunctionDef, MethodDef, ModuleDef, ParamDef, RecordDef, RecordFieldDef, TsType,
 };
 pub use render::render;

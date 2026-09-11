@@ -16,6 +16,9 @@ pub const FUNCTIONS: &[bffi::FunctionDef] = &[
 /// The record types of this example.
 pub const RECORDS: &[RecordDef] = &[crate::User::BFFI_RECORD_DEF];
 
+/// The derived error enums of this example.
+pub const ERRORS: &[bffi::ErrorDef] = &[crate::UsersError::BFFI_ERROR_DEF];
+
 /// The full module definition.
 pub const MODULE: ModuleDef = ModuleDef {
     name: "errors",
@@ -23,4 +26,5 @@ pub const MODULE: ModuleDef = ModuleDef {
     classes: &[],
     records: RECORDS,
     enums: &[],
+    errors: ERRORS,
 };

@@ -125,6 +125,7 @@ fn class_descriptor_renders_through_bffi_dts() {
         classes: CLASSES,
         records: &[],
         enums: &[],
+        errors: &[],
     };
     let rendered = bffi::render(&module);
     assert!(rendered.contains("/** A wallet. */"));

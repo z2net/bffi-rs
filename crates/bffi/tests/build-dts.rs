@@ -52,6 +52,7 @@ fn add_module() -> ModuleDef {
         classes: &[],
         records: &[],
         enums: &[],
+        errors: &[],
     }
 }
 
@@ -62,6 +63,7 @@ fn ping_module() -> ModuleDef {
         classes: &[],
         records: &[],
         enums: &[],
+        errors: &[],
     }
 }
 

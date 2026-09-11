@@ -153,7 +153,7 @@ fn expand_record(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
 }
 
 /// One supported field type of a record.
-enum FieldKind {
+pub(crate) enum FieldKind {
     /// `i8 i16 i32 u8 u16` - wire `i32`, TS `number`.
     NarrowInt,
     /// `u32 f32 f64` - wire `f64`, TS `number`.
@@ -174,7 +174,7 @@ enum FieldKind {
 
 impl FieldKind {
     /// Classifies one field type or rejects it with `E010`.
-    fn classify(ty: &syn::Type, field: &syn::Ident) -> syn::Result<Self> {
+    pub(crate) fn classify(ty: &syn::Type, field: &syn::Ident) -> syn::Result<Self> {
         let syn::Type::Path(syn::TypePath { qself: None, path }) = ty else {
             return Err(field_type_error(ty, field));
         };
@@ -217,7 +217,7 @@ impl FieldKind {
     }
 
     /// The `TsType` expression of the field.
-    fn ts_expr(&self) -> TokenStream2 {
+    pub(crate) fn ts_expr(&self) -> TokenStream2 {
         match self {
             Self::NarrowInt | Self::WideNumber => {
                 quote! { ::bffi::dts::TsType::Number }

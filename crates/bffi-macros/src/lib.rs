@@ -333,9 +333,14 @@ pub fn bffi_stream(attrs: TokenStream, item: TokenStream) -> TokenStream {
     let item = proc_macro2::TokenStream::from(item);
     let item2 = item.clone();
     match stream_fn::parse(&attrs, item) {
-        Ok(model) => {
+        Ok(stream_fn::StreamModel::Pull(model)) => {
             let shim = stream_fn::expand(&model);
             let meta = stream_fn::stream_meta(&model);
+            quote::quote! { #item2 #shim #meta }.into()
+        }
+        Ok(stream_fn::StreamModel::Push(model)) => {
+            let shim = stream_fn::expand_push(&model);
+            let meta = stream_fn::push_meta(&model);
             quote::quote! { #item2 #shim #meta }.into()
         }
         Err(err) => err.to_compile_error().into(),

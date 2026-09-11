@@ -98,6 +98,8 @@ pub enum SeqItem {
     Wide,
     /// `i64` items - one `i64` wire record each.
     I64,
+    /// `u64` items - one exact `u64` wire record each.
+    U64,
     /// `bool` items.
     Bool,
     /// `String` items - one string record each.

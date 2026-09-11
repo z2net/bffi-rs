@@ -193,9 +193,10 @@ pub(crate) fn seq_item(inner: &syn::Type) -> Option<SeqItem> {
         "i8" | "i16" | "i32" | "u8" | "u16" => Some(SeqItem::Narrow),
         "u32" | "f32" | "f64" => Some(SeqItem::Wide),
         "i64" => Some(SeqItem::I64),
+        "u64" => Some(SeqItem::U64),
         "bool" => Some(SeqItem::Bool),
         "String" => Some(SeqItem::Str),
-        "str" | "char" | "i128" | "u128" | "isize" | "usize" | "u64" | "CopiedBuf" => None,
+        "str" | "char" | "i128" | "u128" | "isize" | "usize" | "CopiedBuf" => None,
         _ => Some(SeqItem::Record(KindPath(path.path.clone()))),
     }
 }
@@ -397,7 +398,7 @@ pub fn ts_type(kind: &ShimKind) -> TsKind {
 fn ts_seq_item(item: &SeqItem) -> TsKind {
     match item {
         SeqItem::Narrow | SeqItem::Wide => TsKind::NumberArray,
-        SeqItem::I64 => TsKind::BigIntArray,
+        SeqItem::I64 | SeqItem::U64 => TsKind::BigIntArray,
         SeqItem::Bool => TsKind::BooleanArray,
         SeqItem::Str => TsKind::StringArray,
         SeqItem::Record(path) => {
@@ -733,7 +734,8 @@ mod tests {
 
     #[test]
     fn vec_of_unsupported_items_is_rejected() {
-        for src in ["Vec<char>", "Vec<u64>", "Vec<Option<u32>>", "Vec<Vec<u8>>"] {
+        // `Vec<u64>` now rides the exact U64 wire tag (supported).
+        for src in ["Vec<char>", "Vec<Option<u32>>", "Vec<Vec<u8>>"] {
             assert!(
                 classify_param(&ty(src)).is_err(),
                 "`{src}` param must be rejected"

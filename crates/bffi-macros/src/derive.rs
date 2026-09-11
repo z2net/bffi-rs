@@ -160,6 +160,8 @@ enum FieldKind {
     WideNumber,
     /// `i64` - wire `i64`, TS `bigint`.
     Int64,
+    /// `u64` - wire `u64` (exact, TAG 10), TS `bigint`.
+    UInt64,
     /// `bool`.
     Bool,
     /// `String`.
@@ -188,17 +190,9 @@ impl FieldKind {
                 "i8" | "i16" | "i32" | "u8" | "u16" => return Ok(Self::NarrowInt),
                 "u32" | "f32" | "f64" => return Ok(Self::WideNumber),
                 "i64" => return Ok(Self::Int64),
+                "u64" => return Ok(Self::UInt64),
                 "bool" => return Ok(Self::Bool),
                 "String" => return Ok(Self::Str),
-                "u64" => {
-                    return Err(syn::Error::new(
-                        ty.span(),
-                        format!(
-                            "bffi[E010]: field `{field}`: u64 record fields are not \
-                             supported yet (wire exactness); use i64"
-                        ),
-                    ));
-                }
                 _ => return Ok(Self::Named(path.clone())),
             }
         }
@@ -229,6 +223,7 @@ impl FieldKind {
                 quote! { ::bffi::dts::TsType::Number }
             }
             Self::Int64 => quote! { ::bffi::dts::TsType::BigInt },
+            Self::UInt64 => quote! { ::bffi::dts::TsType::BigInt },
             Self::Bool => quote! { ::bffi::dts::TsType::Boolean },
             Self::Str => quote! { ::bffi::dts::TsType::String },
             Self::Bytes => quote! { ::bffi::dts::TsType::Uint8Array },
@@ -242,6 +237,7 @@ impl FieldKind {
             Self::NarrowInt => quote! { __w::encode_i32(out, i32::from(self.#ident)); },
             Self::WideNumber => quote! { __w::encode_f64(out, self.#ident as f64); },
             Self::Int64 => quote! { __w::encode_i64(out, self.#ident); },
+            Self::UInt64 => quote! { __w::encode_u64(out, self.#ident); },
             Self::Bool => quote! { __w::encode_bool(out, self.#ident); },
             Self::Str => quote! { __w::encode_str(out, &self.#ident); },
             Self::Bytes => quote! { __w::encode_bytes(out, &self.#ident); },
@@ -265,6 +261,9 @@ impl FieldKind {
             },
             Self::Int64 => quote! {
                 let (#ident, __off) = __w::decode_i64(bytes, __off)?;
+            },
+            Self::UInt64 => quote! {
+                let (#ident, __off) = __w::decode_u64(bytes, __off)?;
             },
             Self::Bool => quote! {
                 let (#ident, __off) = __w::decode_bool(bytes, __off)?;

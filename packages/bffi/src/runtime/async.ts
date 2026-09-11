@@ -42,9 +42,15 @@ export function wrapTask<T extends WireValue = WireValue>(
         try {
           const decoded = decodeValue(readBuffer(valueHandle));
           if (retTs !== undefined && json !== undefined) {
+            // The ret ts is the promised spelling (`Promise<Sample>`):
+            // the wire payload is the inner value's encoding.
+            const inner =
+              retTs.startsWith("Promise<") && retTs.endsWith(">")
+                ? retTs.slice("Promise<".length, -1)
+                : retTs;
             const tables = tablesOf(json);
-            if (isCompositeTs(retTs, tables)) {
-              resolve(wireToJs(tables, retTs, decoded, "task") as T);
+            if (isCompositeTs(inner, tables)) {
+              resolve(wireToJs(tables, inner, decoded, "task") as T);
               return;
             }
           }

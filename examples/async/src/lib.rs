@@ -35,10 +35,21 @@ pub mod module_def;
 
 use std::time::Duration;
 
+use bffi::BffiRecord;
 use bffi::Handle;
 use bffi::r#async::{
     AsyncValue, sleep as async_sleep, spawn as async_spawn, timeout as async_timeout,
 };
+
+/// A task's final report (delivered as `Promise<Report>` on the JS
+/// side).
+#[derive(BffiRecord, Debug, PartialEq)]
+pub struct Report {
+    /// The computed value.
+    pub value: u64,
+    /// A human-readable label.
+    pub label: String,
+}
 
 /// The domain error of the module: a plain message wrapper.
 #[derive(Debug)]
@@ -73,6 +84,26 @@ pub async fn double_async(x: u64) -> u64 {
 #[bffi::bffi_async]
 pub async fn shout_async(name: String) -> String {
     format!("HELLO {name}!")
+}
+
+/// Builds a report after a short sleep: composite results ride the
+/// wire channel (`Promise<Report>` on the JS side, decoded through
+/// the module's record table).
+#[bffi::bffi_async]
+pub async fn report_async(value: u64) -> Report {
+    async_sleep(Duration::from_millis(10)).await;
+    Report {
+        value,
+        label: format!("report-{value}"),
+    }
+}
+
+/// Collects a number sequence: `Vec<T>` async returns ride the same
+/// wire channel as sequences (`Promise<number[]>` on the JS side).
+#[bffi::bffi_async]
+pub async fn ticks_async(count: u32) -> Vec<f64> {
+    async_sleep(Duration::from_millis(10)).await;
+    (0..count).map(f64::from).collect()
 }
 
 /// A failing task: `Result` rejects the promise with the domain

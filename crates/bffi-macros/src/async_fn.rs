@@ -416,7 +416,11 @@ fn async_value_from(paths: &PathCtx, ret: &RetKind) -> TokenStream {
     match ret {
         RetKind::Unit => quote! { #async_root::AsyncValue::Unit },
         RetKind::Record(path) => {
-            let p = support::classify::descriptor_path(&path.0);
+            // The shim body is emitted in the annotated fn's own
+            // scope: the user path resolves as written (no
+            // `super::` anchor - that is a descriptor-module
+            // concern).
+            let p = &path.0;
             quote! {{
                 #[allow(unused_imports)]
                 use #types::wire::BffiWire as _;

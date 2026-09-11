@@ -10,6 +10,8 @@ use bffi::{FunctionDef, ModuleDef};
 pub const FUNCTIONS: &[FunctionDef] = &[
     crate::bffi_meta_double_async::FUNCTION,
     crate::bffi_meta_shout_async::FUNCTION,
+    crate::bffi_meta_report_async::FUNCTION,
+    crate::bffi_meta_ticks_async::FUNCTION,
     crate::bffi_meta_fail_async::FUNCTION,
     crate::bffi_meta_panic_async::FUNCTION,
     crate::bffi_meta_timed_async::FUNCTION,
@@ -24,7 +26,7 @@ pub const MODULE: ModuleDef = ModuleDef {
     name: "async",
     fns: FUNCTIONS,
     classes: &[],
-    records: &[],
+    records: &[crate::Report::BFFI_RECORD_DEF],
     enums: &[],
     errors: &[],
 };

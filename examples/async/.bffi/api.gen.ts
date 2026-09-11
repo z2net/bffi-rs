@@ -50,6 +50,47 @@ const moduleJson = {
       "out": "handle"
     },
     {
+      "name": "report_async",
+      "export": "bffi_report_async",
+      "docs": [
+        "Builds a report after a short sleep: composite results ride the",
+        "wire channel (`Promise<Report>` on the JS side, decoded through",
+        "the module's record table)."
+      ],
+      "params": [
+        {
+          "name": "value",
+          "ts": "bigint",
+          "abi": "u64"
+        }
+      ],
+      "ret": {
+        "ts": "Promise<Report>",
+        "abi": "task"
+      },
+      "out": "handle"
+    },
+    {
+      "name": "ticks_async",
+      "export": "bffi_ticks_async",
+      "docs": [
+        "Collects a number sequence: `Vec<T>` async returns ride the same",
+        "wire channel as sequences (`Promise<number[]>` on the JS side)."
+      ],
+      "params": [
+        {
+          "name": "count",
+          "ts": "number",
+          "abi": "u32"
+        }
+      ],
+      "ret": {
+        "ts": "Promise<number[]>",
+        "abi": "task"
+      },
+      "out": "handle"
+    },
+    {
       "name": "fail_async",
       "export": "bffi_fail_async",
       "docs": [
@@ -164,7 +205,31 @@ const moduleJson = {
     }
   ],
   "classes": [],
-  "records": [],
+  "records": [
+    {
+      "name": "Report",
+      "docs": [
+        "A task's final report (delivered as `Promise<Report>` on the JS",
+        "side)."
+      ],
+      "fields": [
+        {
+          "name": "value",
+          "docs": [
+            "The computed value."
+          ],
+          "ts": "bigint"
+        },
+        {
+          "name": "label",
+          "docs": [
+            "A human-readable label."
+          ],
+          "ts": "string"
+        }
+      ]
+    }
+  ],
   "enums": [],
   "errors": []
 } as const satisfies ModuleJson;

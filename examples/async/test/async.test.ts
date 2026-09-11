@@ -71,6 +71,17 @@ describe("async through the full pipeline", () => {
     await expect(withPump(api.shout_async("async"))).resolves.toBe("HELLO async!");
   });
 
+  test("composite results decode through the record table (Promise<Report>)", async () => {
+    await expect(withPump(api.report_async(7n))).resolves.toEqual({
+      value: 7n,
+      label: "report-7",
+    });
+  });
+
+  test("sequence results decode as arrays (Promise<number[]>)", async () => {
+    await expect(withPump(api.ticks_async(3))).resolves.toEqual([0, 1, 2]);
+  });
+
   test("a failing task rejects with the domain message", async () => {
     await expect(withPump(api.fail_async())).rejects.toThrow("domain failure");
   });

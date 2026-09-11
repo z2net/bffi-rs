@@ -51,7 +51,7 @@ pub(crate) fn expand(model: &FnModel) -> TokenStream {
         #[unsafe(no_mangle)]
         #[doc = #shim_doc]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
-        pub extern "C" fn #shim_ident(#(#params,)* #(#out)*) -> #core::ErrorCode {
+        pub extern "C" fn #shim_ident(#(#params,)* #(#out)*) -> u32 {
             #body
         }
     };
@@ -63,7 +63,7 @@ pub(crate) fn expand(model: &FnModel) -> TokenStream {
         #[unsafe(no_mangle)]
         #[doc = #shim_doc]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
-        pub extern "C" fn #shim_ident(#(#params,)* #(#out)*) -> #core::ErrorCode {
+        pub extern "C" fn #shim_ident(#(#params,)* #(#out)*) -> u32 {
             #core::boundary::run_extern_body(move || { #body })
         }
     };
@@ -86,7 +86,7 @@ fn body(model: &FnModel) -> TokenStream {
                     "output pointer is null",
                 );
                 #core::set_last_error(error);
-                return #core::ErrorCode::NullPointer;
+                return #core::ErrorCode::NullPointer.as_u32();
             }
         });
     }

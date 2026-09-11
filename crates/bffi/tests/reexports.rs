@@ -135,7 +135,7 @@ fn facade_probe(a: u32) -> u32 {
 #[test]
 fn bffi_attribute_resolves_through_the_facade() {
     let mut out = 0_u32;
-    assert_eq!(bffi_facade_probe(1, &mut out), bffi::ErrorCode::Ok);
+    assert_eq!(bffi_facade_probe(1, &mut out), bffi::ErrorCode::Ok.as_u32());
     assert_eq!(out, 2);
 }
 
@@ -149,7 +149,10 @@ fn facade_only_probe(a: u32) -> u32 {
 #[test]
 fn bffi_attribute_crate_option_resolves_through_the_facade() {
     let mut out = 0_u32;
-    assert_eq!(bffi_facade_only_probe(7, &mut out), bffi::ErrorCode::Ok);
+    assert_eq!(
+        bffi_facade_only_probe(7, &mut out),
+        bffi::ErrorCode::Ok.as_u32()
+    );
     assert_eq!(out, 21);
 }
 

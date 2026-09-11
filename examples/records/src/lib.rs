@@ -63,6 +63,12 @@ impl std::fmt::Display for RecordsError {
 
 impl std::error::Error for RecordsError {}
 
+impl From<RecordsError> for bffi::BffiError {
+    fn from(error: RecordsError) -> Self {
+        bffi::BffiError::new(bffi::ErrorCode::DomainError, error.0)
+    }
+}
+
 /// Builds a sample from primitives.
 #[bffi]
 pub fn make_sample(at: f64, weight: i32, label: &str, axis: Axis) -> Sample {

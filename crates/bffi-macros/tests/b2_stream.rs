@@ -63,7 +63,7 @@ fn read_buffer(handle: bffi::Handle) -> Vec<u8> {
 #[test]
 fn number_stream_round_trips_in_order() {
     let mut handle = 0_u64;
-    assert_eq!(bffi_numbers(&mut handle), bffi::ErrorCode::Ok);
+    assert_eq!(bffi_numbers(&mut handle), bffi::ErrorCode::Ok.as_u32());
     let mut seen = Vec::new();
     loop {
         let mut chunk_handle = 0_u64;
@@ -89,7 +89,7 @@ fn number_stream_round_trips_in_order() {
 #[test]
 fn record_stream_round_trips_with_params() {
     let mut handle = 0_u64;
-    assert_eq!(bffi_samples(3, &mut handle), bffi::ErrorCode::Ok);
+    assert_eq!(bffi_samples(3, &mut handle), bffi::ErrorCode::Ok.as_u32());
     let mut seen = Vec::new();
     loop {
         let mut chunk_handle = 0_u64;

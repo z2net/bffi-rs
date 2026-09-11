@@ -59,6 +59,7 @@ extern crate proc_macro;
 mod async_fn;
 mod class;
 mod derive;
+mod error_derive;
 mod errors;
 mod mapping;
 mod meta;
@@ -318,6 +319,16 @@ pub fn bffi_record_derive(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(BffiEnum)]
 pub fn bffi_enum_derive(input: TokenStream) -> TokenStream {
     derive::enumeration(input)
+}
+
+/// Marks an error enum as a typed domain error (B3): each variant
+/// carries `#[bffi(code = 0x10XX)]` (the reserved user range), and
+/// the generated `From<Self> for BffiError` crosses the code in the
+/// ABI status, the variant name as JS `e.name` and the named fields
+/// as the `e.payload` record. Rejections: `E013`/`E014`.
+#[proc_macro_derive(BffiError, attributes(bffi))]
+pub fn bffi_error_derive(input: TokenStream) -> TokenStream {
+    error_derive::error(input)
 }
 
 /// Marks a plain fn returning `impl Iterator<Item = T> + Send` as a

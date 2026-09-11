@@ -50,6 +50,12 @@ impl std::fmt::Display for LoopError {
 
 impl std::error::Error for LoopError {}
 
+impl From<LoopError> for bffi::BffiError {
+    fn from(error: LoopError) -> Self {
+        bffi::BffiError::new(bffi::ErrorCode::DomainError, error.0)
+    }
+}
+
 impl From<bffi::EventLoopError> for LoopError {
     fn from(error: bffi::EventLoopError) -> Self {
         Self(error.to_string())

@@ -60,6 +60,11 @@ fn classify(samples: Vec<Sample>) -> Result<Axis, SampleError> {
 }
 
 /// The domain error of the module.
+impl From<SampleError> for bffi::BffiError {
+    fn from(error: SampleError) -> Self {
+        bffi::BffiError::new(bffi::ErrorCode::DomainError, error.0)
+    }
+}
 #[derive(Debug)]
 pub struct SampleError(String);
 
@@ -160,7 +165,7 @@ fn record_params_and_returns_round_trip() {
     let wire = wire_of(&input);
     let mut out = 0_u64;
     let code = bffi_recenter(wire.as_ptr(), wire.len() as u64, 2.5, &mut out);
-    assert_eq!(code, bffi::ErrorCode::Ok);
+    assert_eq!(code, bffi::ErrorCode::Ok.as_u32());
     let output: Sample = decode_record(bffi::Handle::from_raw(out));
     assert_eq!(output, sample(4.0, 10, "a", Axis::Vertical));
 }
@@ -175,12 +180,12 @@ fn record_sequences_cross_both_ways() {
 
     let mut out = 0_i64;
     let code = bffi_total_weight(wire.as_ptr(), wire.len() as u64, &mut out);
-    assert_eq!(code, bffi::ErrorCode::Ok);
+    assert_eq!(code, bffi::ErrorCode::Ok.as_u32());
     assert_eq!(out, 42);
 
     let mut handle_val = 0_u64;
     let code = bffi_distances(wire.as_ptr(), wire.len() as u64, &mut handle_val);
-    assert_eq!(code, bffi::ErrorCode::Ok);
+    assert_eq!(code, bffi::ErrorCode::Ok.as_u32());
     let handle = bffi::Handle::from_raw(handle_val);
     let distances = decode_f64_seq(handle);
     assert_eq!(distances, vec![1.0, 3.0]);
@@ -195,7 +200,7 @@ fn string_sequences_round_trip() {
     let wire = wire_seq_of(&samples);
     let mut handle_val = 0_u64;
     let code = bffi_labels(wire.as_ptr(), wire.len() as u64, &mut handle_val);
-    assert_eq!(code, bffi::ErrorCode::Ok);
+    assert_eq!(code, bffi::ErrorCode::Ok.as_u32());
     let labels = decode_str_seq(bffi::Handle::from_raw(handle_val));
     assert_eq!(labels, ["x", "y"]);
 }
@@ -206,7 +211,7 @@ fn enum_result_return_resolves() {
     let wire = wire_seq_of(&samples);
     let mut out = 0_u64;
     let code = bffi_classify(wire.as_ptr(), wire.len() as u64, &mut out);
-    assert_eq!(code, bffi::ErrorCode::Ok);
+    assert_eq!(code, bffi::ErrorCode::Ok.as_u32());
     let axis: Axis = decode_record(bffi::Handle::from_raw(out));
     assert_eq!(axis, Axis::Vertical);
 }
@@ -216,7 +221,7 @@ fn enum_result_err_reports_the_domain_error() {
     let wire = wire_seq_of(&[]);
     let mut out = 0_u64;
     let code = bffi_classify(wire.as_ptr(), wire.len() as u64, &mut out);
-    assert_eq!(code, bffi::ErrorCode::DomainError);
+    assert_eq!(code, bffi::ErrorCode::DomainError.as_u32());
     let error = bffi::take_last_error().expect("stored");
     assert!(error.message.contains("no samples"));
 }
@@ -225,7 +230,7 @@ fn enum_result_err_reports_the_domain_error() {
 fn null_record_payload_is_rejected() {
     let mut out = 0_u64;
     let code = bffi_recenter(std::ptr::null(), 0, 0.0, &mut out);
-    assert_eq!(code, bffi::ErrorCode::NullPointer);
+    assert_eq!(code, bffi::ErrorCode::NullPointer.as_u32());
 }
 
 #[test]
@@ -234,7 +239,7 @@ fn malformed_record_payload_is_an_error() {
     let garbage = [0xFF_u8; 8];
     let mut out = 0_u64;
     let code = bffi_recenter(garbage.as_ptr(), garbage.len() as u64, 0.0, &mut out);
-    assert_ne!(code, bffi::ErrorCode::Ok);
+    assert_ne!(code, bffi::ErrorCode::Ok.as_u32());
 }
 
 #[test]

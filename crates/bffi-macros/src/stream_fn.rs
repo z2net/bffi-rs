@@ -407,13 +407,13 @@ pub(crate) fn expand(model: &StreamFnModel) -> TokenStream {
                 // for one `u64` write per the bun:ffi out-parameter
                 // contract.
                 unsafe { ::std::ptr::write(__ret, handle.as_u64()); }
-                #core::ErrorCode::Ok
+                #core::ErrorCode::Ok.as_u32()
             }
             ::std::result::Result::Err(error) => {
                 let converted: #core::BffiError = error.into();
-                let code = converted.code;
+                let status = converted.status_u32();
                 #core::set_last_error(converted);
-                code
+                status
             }
         }
     };
@@ -423,7 +423,7 @@ pub(crate) fn expand(model: &StreamFnModel) -> TokenStream {
         #[unsafe(no_mangle)]
         #[doc = #shim_doc]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
-        pub extern "C" fn #shim_ident(#(#shim_params,)* __ret: *mut u64) -> #core::ErrorCode {
+        pub extern "C" fn #shim_ident(#(#shim_params,)* __ret: *mut u64) -> u32 {
             #conversions
             #spawn
         }
@@ -433,7 +433,7 @@ pub(crate) fn expand(model: &StreamFnModel) -> TokenStream {
         #[unsafe(no_mangle)]
         #[doc = #shim_doc]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
-        pub extern "C" fn #shim_ident(#(#shim_params,)* __ret: *mut u64) -> #core::ErrorCode {
+        pub extern "C" fn #shim_ident(#(#shim_params,)* __ret: *mut u64) -> u32 {
             #core::boundary::run_extern_body(move || {
                 #conversions
                 #spawn
@@ -601,9 +601,9 @@ pub(crate) fn expand_push(model: &PushModel) -> TokenStream {
             ::std::result::Result::Ok(pair) => pair,
             ::std::result::Result::Err(error) => {
                 let converted: #core::BffiError = error.into();
-                let code = converted.code;
+                let status = converted.status_u32();
                 #core::set_last_error(converted);
-                return code;
+                return status;
             }
         };
         let __fut = async move {
@@ -631,13 +631,13 @@ pub(crate) fn expand_push(model: &PushModel) -> TokenStream {
                 // for one `u64` write per the bun:ffi out-parameter
                 // contract.
                 unsafe { ::std::ptr::write(__ret, __stream.as_u64()); }
-                #core::ErrorCode::Ok
+                #core::ErrorCode::Ok.as_u32()
             }
             ::std::result::Result::Err(error) => {
                 let converted: #core::BffiError = error.into();
-                let code = converted.code;
+                let status = converted.status_u32();
                 #core::set_last_error(converted);
-                code
+                status
             }
         }
     };
@@ -647,7 +647,7 @@ pub(crate) fn expand_push(model: &PushModel) -> TokenStream {
         #[unsafe(no_mangle)]
         #[doc = #shim_doc]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
-        pub extern "C" fn #shim_ident(#(#shim_params,)* __ret: *mut u64) -> #core::ErrorCode {
+        pub extern "C" fn #shim_ident(#(#shim_params,)* __ret: *mut u64) -> u32 {
             #conversions
             #spawn
         }
@@ -657,7 +657,7 @@ pub(crate) fn expand_push(model: &PushModel) -> TokenStream {
         #[unsafe(no_mangle)]
         #[doc = #shim_doc]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
-        pub extern "C" fn #shim_ident(#(#shim_params,)* __ret: *mut u64) -> #core::ErrorCode {
+        pub extern "C" fn #shim_ident(#(#shim_params,)* __ret: *mut u64) -> u32 {
             #core::boundary::run_extern_body(move || {
                 #conversions
                 #spawn

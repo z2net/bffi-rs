@@ -76,6 +76,12 @@ impl std::fmt::Display for DivError {
 
 impl std::error::Error for DivError {}
 
+impl From<DivError> for bffi::BffiError {
+    fn from(error: DivError) -> Self {
+        bffi::BffiError::with_source(bffi::ErrorCode::DomainError, error.to_string(), error)
+    }
+}
+
 #[bffi_macros::bffi]
 fn checked_div(a: u32, b: u32) -> Result<u32, DivError> {
     a.checked_div(b).ok_or(DivError { divisor: b })
@@ -163,7 +169,7 @@ fn read_buffer(handle: bffi::Handle) -> Vec<u8> {
 fn shim_writes_out_param_and_returns_ok() {
     let mut out = 0_u32;
     let code = bffi_add(1, 2, &mut out);
-    assert_eq!(code, ErrorCode::Ok);
+    assert_eq!(code, ErrorCode::Ok.as_u32());
     assert_eq!(out, 3);
     assert!(
         take_last_error().is_none(),
@@ -174,7 +180,7 @@ fn shim_writes_out_param_and_returns_ok() {
 #[test]
 fn shim_rejects_null_out_pointer() {
     let code = bffi_add(1, 2, std::ptr::null_mut());
-    assert_eq!(code, ErrorCode::NullPointer);
+    assert_eq!(code, ErrorCode::NullPointer.as_u32());
     let error = take_last_error().expect("null out-pointer must store a last error");
     assert_eq!(error.code, ErrorCode::NullPointer);
 }
@@ -182,11 +188,11 @@ fn shim_rejects_null_out_pointer() {
 #[test]
 fn shim_handles_bigint_paths() {
     let mut wide = 0_i64;
-    assert_eq!(bffi_widen(-5, &mut wide), ErrorCode::Ok);
+    assert_eq!(bffi_widen(-5, &mut wide), ErrorCode::Ok.as_u32());
     assert_eq!(wide, -5);
 
     let mut flag = false;
-    assert_eq!(bffi_flip(0, &mut flag), ErrorCode::Ok);
+    assert_eq!(bffi_flip(0, &mut flag), ErrorCode::Ok.as_u32());
     assert!(flag);
 }
 
@@ -194,11 +200,14 @@ fn shim_handles_bigint_paths() {
 fn shim_converts_cstrings_and_rejects_invalid_utf8() {
     let mut len = 0_u32;
     let hello = cstring(b"hello");
-    assert_eq!(bffi_shout(hello, &mut len), ErrorCode::Ok);
+    assert_eq!(bffi_shout(hello, &mut len), ErrorCode::Ok.as_u32());
     assert_eq!(len, 5);
 
     let invalid = cstring(&[0xFF_u8]);
-    assert_eq!(bffi_shout(invalid, &mut len), ErrorCode::InvalidUtf8);
+    assert_eq!(
+        bffi_shout(invalid, &mut len),
+        ErrorCode::InvalidUtf8.as_u32()
+    );
     let error = take_last_error().expect("invalid UTF-8 must store a last error");
     assert_eq!(error.code, ErrorCode::InvalidUtf8);
 }
@@ -207,14 +216,14 @@ fn shim_converts_cstrings_and_rejects_invalid_utf8() {
 fn shim_without_return_has_no_out_parameter() {
     // No out-parameter: the unit-returning shim takes only the fn's
     // own parameters.
-    assert_eq!(bffi_touch(7), ErrorCode::Ok);
+    assert_eq!(bffi_touch(7), ErrorCode::Ok.as_u32());
 }
 
 #[test]
 fn string_return_yields_a_buffer_handle_with_the_utf8_bytes() {
     let mut handle = 0_u64;
     let code = bffi_echo_word(cstring(b"hey"), &mut handle);
-    assert_eq!(code, ErrorCode::Ok);
+    assert_eq!(code, ErrorCode::Ok.as_u32());
     assert_ne!(handle, 0, "a stored string must produce a non-null handle");
     let bytes = read_buffer(bffi::Handle::from_raw(handle));
     assert_eq!(bytes, b"hey!");
@@ -223,21 +232,21 @@ fn string_return_yields_a_buffer_handle_with_the_utf8_bytes() {
 #[test]
 fn vec_and_copiedbuf_returns_yield_raw_byte_handles() {
     let mut vec_handle = 0_u64;
-    assert_eq!(bffi_raw_bytes(&mut vec_handle), ErrorCode::Ok);
+    assert_eq!(bffi_raw_bytes(&mut vec_handle), ErrorCode::Ok.as_u32());
     assert_eq!(read_buffer(bffi::Handle::from_raw(vec_handle)), [1, 2, 3]);
 
     let mut copied_handle = 0_u64;
-    assert_eq!(bffi_copied(&mut copied_handle), ErrorCode::Ok);
+    assert_eq!(bffi_copied(&mut copied_handle), ErrorCode::Ok.as_u32());
     assert_eq!(read_buffer(bffi::Handle::from_raw(copied_handle)), b"owned");
 }
 
 #[test]
 fn option_none_writes_the_null_handle_and_some_stores_the_bytes() {
     let mut handle = 0_u64;
-    assert_eq!(bffi_maybe_word(false, &mut handle), ErrorCode::Ok);
+    assert_eq!(bffi_maybe_word(false, &mut handle), ErrorCode::Ok.as_u32());
     assert_eq!(handle, 0, "None must write the documented 0 handle");
 
-    assert_eq!(bffi_maybe_word(true, &mut handle), ErrorCode::Ok);
+    assert_eq!(bffi_maybe_word(true, &mut handle), ErrorCode::Ok.as_u32());
     assert_ne!(handle, 0);
     assert_eq!(read_buffer(bffi::Handle::from_raw(handle)), b"yes");
 }
@@ -245,10 +254,13 @@ fn option_none_writes_the_null_handle_and_some_stores_the_bytes() {
 #[test]
 fn result_ok_transports_the_inner_value_and_err_reports_code_13() {
     let mut out = 0_u32;
-    assert_eq!(bffi_checked_div(10, 2, &mut out), ErrorCode::Ok);
+    assert_eq!(bffi_checked_div(10, 2, &mut out), ErrorCode::Ok.as_u32());
     assert_eq!(out, 5);
 
-    assert_eq!(bffi_checked_div(1, 0, &mut out), ErrorCode::DomainError);
+    assert_eq!(
+        bffi_checked_div(1, 0, &mut out),
+        ErrorCode::DomainError.as_u32()
+    );
     let error = take_last_error().expect("an Err must store the domain error");
     assert_eq!(error.code, ErrorCode::DomainError);
     assert_eq!(error.message, "division by 0");
@@ -260,8 +272,8 @@ fn result_ok_transports_the_inner_value_and_err_reports_code_13() {
 
 #[test]
 fn unit_result_has_no_out_parameter_and_reports_the_err_channel() {
-    assert_eq!(bffi_unit_result(true), ErrorCode::Ok);
-    assert_eq!(bffi_unit_result(false), ErrorCode::DomainError);
+    assert_eq!(bffi_unit_result(true), ErrorCode::Ok.as_u32());
+    assert_eq!(bffi_unit_result(false), ErrorCode::DomainError.as_u32());
     let error = take_last_error().expect("an Err must store the domain error");
     assert_eq!(error.message, "division by 1");
 }
@@ -269,7 +281,7 @@ fn unit_result_has_no_out_parameter_and_reports_the_err_channel() {
 #[test]
 fn wild_pattern_parameter_compiles_and_calls_cleanly() {
     let mut out = 0_u32;
-    assert_eq!(bffi_wild(123, &mut out), ErrorCode::Ok);
+    assert_eq!(bffi_wild(123, &mut out), ErrorCode::Ok.as_u32());
     assert_eq!(out, 7);
 }
 
@@ -284,7 +296,7 @@ fn buffer_view_param_borrows_the_caller_bytes() {
         let data = &storage[1..4];
         assert_eq!(
             bffi_slice_len(data.as_ptr(), data.len() as u64, &mut out),
-            ErrorCode::Ok
+            ErrorCode::Ok.as_u32()
         );
         assert_eq!(out, 3);
         assert!(
@@ -299,7 +311,7 @@ fn buffer_view_param_borrows_the_caller_bytes() {
     let data = &storage[1..4];
     assert_eq!(
         bffi_slice_len(data.as_ptr(), data.len() as u64, &mut out),
-        ErrorCode::Ok
+        ErrorCode::Ok.as_u32()
     );
     assert_eq!(out, 3);
 }
@@ -310,7 +322,7 @@ fn buffer_view_param_roundtrips_bytes_through_a_copiedbuf_handle() {
     let mut handle = 0_u64;
     assert_eq!(
         bffi_echo_bytes(payload.as_ptr(), payload.len() as u64, &mut handle),
-        ErrorCode::Ok
+        ErrorCode::Ok.as_u32()
     );
     assert_ne!(handle, 0);
     // `CopiedBuf::from_slice` copies: the returned bytes outlive the
@@ -321,7 +333,10 @@ fn buffer_view_param_roundtrips_bytes_through_a_copiedbuf_handle() {
 #[test]
 fn buffer_view_param_accepts_null_pointer_when_len_is_zero() {
     let mut out = 0_u32;
-    assert_eq!(bffi_slice_len(std::ptr::null(), 0, &mut out), ErrorCode::Ok);
+    assert_eq!(
+        bffi_slice_len(std::ptr::null(), 0, &mut out),
+        ErrorCode::Ok.as_u32()
+    );
     assert_eq!(out, 0);
     assert!(
         take_last_error().is_none(),
@@ -334,7 +349,7 @@ fn buffer_view_param_rejects_null_pointer_with_nonzero_len() {
     let mut out = 0_u32;
     assert_eq!(
         bffi_slice_len(std::ptr::null(), 5, &mut out),
-        ErrorCode::NullPointer
+        ErrorCode::NullPointer.as_u32()
     );
     let error = take_last_error().expect("a null data pointer must store a last error");
     assert_eq!(error.code, ErrorCode::NullPointer);
@@ -344,7 +359,7 @@ fn buffer_view_param_rejects_null_pointer_with_nonzero_len() {
 #[test]
 fn crate_option_shim_calls_through_the_probe_namespaces() {
     let mut out = 0_u32;
-    assert_eq!(bffi_triple(7, &mut out), ErrorCode::Ok);
+    assert_eq!(bffi_triple(7, &mut out), ErrorCode::Ok.as_u32());
     assert_eq!(out, 21);
 }
 
@@ -352,7 +367,7 @@ fn crate_option_shim_calls_through_the_probe_namespaces() {
 fn crate_option_shim_walks_the_string_and_buffer_paths() {
     let mut handle = 0_u64;
     let hey = cstring(b"hey");
-    assert_eq!(bffi_probe_shout(hey, &mut handle), ErrorCode::Ok);
+    assert_eq!(bffi_probe_shout(hey, &mut handle), ErrorCode::Ok.as_u32());
     assert_ne!(handle, 0);
     assert_eq!(read_buffer(bffi::Handle::from_raw(handle)), b"hey!");
 }

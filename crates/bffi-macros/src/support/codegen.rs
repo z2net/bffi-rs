@@ -81,13 +81,14 @@ pub fn has_out(ret: &RetKind) -> bool {
 }
 
 /// Generates the return-transport tail from the call expression: the
-/// final expression of the shim body, an `ErrorCode`.
+/// final expression of the shim body, the exported `u32` status
+/// (a user code replaces the framework code when present).
 pub fn ret_body(ctx: &PathCtx, ret: &RetKind, call: TokenStream) -> TokenStream {
     let core = &ctx.core;
     match ret {
         RetKind::Unit => quote! {
             #call;
-            #core::ErrorCode::Ok
+            #core::ErrorCode::Ok.as_u32()
         },
         RetKind::Result(inner) => {
             let ok_tail = value_tail(ctx, inner);
@@ -95,13 +96,15 @@ pub fn ret_body(ctx: &PathCtx, ret: &RetKind, call: TokenStream) -> TokenStream 
                 match #call {
                     ::std::result::Result::Ok(__value) => { #ok_tail }
                     ::std::result::Result::Err(__err) => {
-                        let __msg = ::std::string::ToString::to_string(&__err);
-                        #core::set_last_error(#core::BffiError::with_source(
-                            #core::ErrorCode::DomainError,
-                            __msg,
-                            ::std::boxed::Box::new(__err),
-                        ));
-                        #core::ErrorCode::DomainError
+                        // `E: Into<BffiError>`: derived error enums
+                        // carry their user code (crossing in the
+                        // status) and payload; plain Display errors
+                        // convert to a DomainError.
+                        let __converted: #core::BffiError =
+                            ::std::convert::Into::into(__err);
+                        let __status = __converted.status_u32();
+                        #core::set_last_error(__converted);
+                        return __status;
                     }
                 }
             }
@@ -121,12 +124,12 @@ pub fn ret_body(ctx: &PathCtx, ret: &RetKind, call: TokenStream) -> TokenStream 
 pub fn value_tail(ctx: &PathCtx, ret: &RetKind) -> TokenStream {
     let core = &ctx.core;
     match ret {
-        RetKind::Unit => quote! { #core::ErrorCode::Ok },
+        RetKind::Unit => quote! { #core::ErrorCode::Ok.as_u32() },
         RetKind::Prim(_) | RetKind::BigInt(_) => quote! {
             // SAFETY: `__ret` is non-null (checked above) and valid for one
             // `T` write per the bun:ffi out-parameter contract.
             unsafe { ::std::ptr::write(__ret, __value); }
-            #core::ErrorCode::Ok
+            #core::ErrorCode::Ok.as_u32()
         },
         RetKind::Buffer(ty) => {
             let conv = buffer_conv(ctx, *ty);
@@ -138,11 +141,11 @@ pub fn value_tail(ctx: &PathCtx, ret: &RetKind) -> TokenStream {
                         // SAFETY: `__ret` is non-null (checked above) and valid
                         // for one `u64` write per the bun:ffi out-parameter contract.
                         unsafe { ::std::ptr::write(__ret, __handle.as_u64()); }
-                        #core::ErrorCode::Ok
+                        #core::ErrorCode::Ok.as_u32()
                     }
                     ::std::result::Result::Err(__e) => {
                         #core::set_last_error(#core::BffiError::from(__e));
-                        #core::ErrorCode::TableFull
+                        #core::ErrorCode::TableFull.as_u32()
                     }
                 }
             }
@@ -156,7 +159,7 @@ pub fn value_tail(ctx: &PathCtx, ret: &RetKind) -> TokenStream {
                         // SAFETY: `__ret` is non-null (checked above) and valid for
                         // one `u64` write; `0` is the documented null handle.
                         unsafe { ::std::ptr::write(__ret, 0_u64); }
-                        #core::ErrorCode::Ok
+                        #core::ErrorCode::Ok.as_u32()
                     }
                 }
             }
@@ -175,17 +178,17 @@ pub fn value_tail(ctx: &PathCtx, ret: &RetKind) -> TokenStream {
                         // SAFETY: `__ret` is non-null (checked above) and valid
                         // for one `u64` write per the bun:ffi out-parameter contract.
                         unsafe { ::std::ptr::write(__ret, __handle.as_u64()); }
-                        #core::ErrorCode::Ok
+                        #core::ErrorCode::Ok.as_u32()
                     }
                     ::std::result::Result::Err(__e) => {
                         #core::set_last_error(#core::BffiError::from(__e));
-                        #core::ErrorCode::TableFull
+                        #core::ErrorCode::TableFull.as_u32()
                     }
                 }
             }
         }
         // Unreachable: `ret_body` unwraps `Result` first.
-        RetKind::Result(_) => quote! { #core::ErrorCode::Ok },
+        RetKind::Result(_) => quote! { #core::ErrorCode::Ok.as_u32() },
     }
 }
 
@@ -269,7 +272,7 @@ where
                             "string argument pointer is null",
                         );
                         #core::set_last_error(error);
-                        return #core::ErrorCode::NullPointer;
+                        return #core::ErrorCode::NullPointer.as_u32();
                     }
                     // SAFETY: bun:ffi hands out NUL-terminated cstrings for `&str`
                     // parameters (DESIGN.md §6.3); the pointer is null-checked above.
@@ -278,7 +281,7 @@ where
                         ::std::result::Result::Ok(v) => v,
                         ::std::result::Result::Err(e) => {
                             #core::set_last_error(e);
-                            return #core::ErrorCode::InvalidUtf8;
+                            return #core::ErrorCode::InvalidUtf8.as_u32();
                         }
                     };
                 });
@@ -294,7 +297,7 @@ where
                             "buffer argument pointer is null",
                         );
                         #core::set_last_error(error);
-                        return #core::ErrorCode::NullPointer;
+                        return #core::ErrorCode::NullPointer.as_u32();
                     }
                     // SAFETY: bun:ffi keeps the TypedArray pointer valid
                     // for the duration of the call (CALLING-CONVENTION.md
@@ -326,7 +329,7 @@ where
                             "record argument payload is null",
                         );
                         #core::set_last_error(error);
-                        return #core::ErrorCode::NullPointer;
+                        return #core::ErrorCode::NullPointer.as_u32();
                     }
                     // SAFETY: bun:ffi keeps the TypedArray pointer valid
                     // for the duration of the call; the wire decode below
@@ -337,7 +340,7 @@ where
                     let #name = match #path::bffi_wire_decode(#slice, 0) {
                         ::std::result::Result::Ok((value, _)) => value,
                         ::std::result::Result::Err(error) => {
-                            let code = error.code;
+                            let code = error.status_u32();
                             #core::set_last_error(error);
                             return code;
                         }
@@ -359,7 +362,7 @@ where
                             "sequence argument payload is null",
                         );
                         #core::set_last_error(error);
-                        return #core::ErrorCode::NullPointer;
+                        return #core::ErrorCode::NullPointer.as_u32();
                     }
                     // SAFETY: bun:ffi keeps the TypedArray pointer valid
                     // for the duration of the call; the wire decode below
@@ -383,7 +386,7 @@ where
                     })() {
                         ::std::result::Result::Ok(value) => value,
                         ::std::result::Result::Err(error) => {
-                            let code = error.code;
+                            let code = error.status_u32();
                             #core::set_last_error(error);
                             return code;
                         }
@@ -558,8 +561,14 @@ mod tests {
         .to_string();
         assert!(tokens.contains("Result :: Ok"));
         assert!(tokens.contains("Result :: Err"));
-        assert!(tokens.contains("DomainError"));
-        assert!(tokens.contains("with_source"));
+        assert!(
+            tokens.contains("Into :: into"),
+            "the Err goes through the E: Into<BffiError> contract"
+        );
+        assert!(
+            tokens.contains("status_u32"),
+            "a derived user code replaces the framework status"
+        );
     }
 
     #[test]

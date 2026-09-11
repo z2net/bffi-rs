@@ -64,6 +64,12 @@ impl std::fmt::Display for InvokeError {
 
 impl std::error::Error for InvokeError {}
 
+impl From<InvokeError> for bffi::BffiError {
+    fn from(error: InvokeError) -> Self {
+        bffi::BffiError::new(bffi::ErrorCode::DomainError, error.0)
+    }
+}
+
 impl From<CallbackError> for InvokeError {
     fn from(error: CallbackError) -> Self {
         Self(error.to_string())

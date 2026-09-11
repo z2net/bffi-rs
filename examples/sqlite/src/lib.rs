@@ -77,6 +77,12 @@ impl std::fmt::Display for SqliteError {
 
 impl std::error::Error for SqliteError {}
 
+impl From<SqliteError> for bffi::BffiError {
+    fn from(error: SqliteError) -> Self {
+        bffi::BffiError::new(bffi::ErrorCode::DomainError, error.0)
+    }
+}
+
 impl From<rusqlite::Error> for SqliteError {
     fn from(error: rusqlite::Error) -> Self {
         Self(error.to_string())

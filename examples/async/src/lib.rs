@@ -52,6 +52,12 @@ impl std::fmt::Display for ExampleError {
 
 impl std::error::Error for ExampleError {}
 
+impl From<ExampleError> for bffi::BffiError {
+    fn from(error: ExampleError) -> Self {
+        bffi::BffiError::new(bffi::ErrorCode::DomainError, error.0)
+    }
+}
+
 /// Doubles `x` after a short sleep: the `#[bffi_async]` macro turns
 /// this into a spawn shim returning a task handle; JS awaits
 /// `Promise<bigint>`.

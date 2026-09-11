@@ -9,6 +9,7 @@ members = [
     "examples/event-loop",
     "examples/callbacks",
     "examples/records",
+    "examples/streams",
 ]
 
 [workspace.package]

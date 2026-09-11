@@ -1,0 +1,118 @@
+{
+  "bffi": 1,
+  "module": "streams",
+  "functions": [
+    {
+      "name": "numbers",
+      "export": "bffi_numbers",
+      "docs": [
+        "Streams `1..=count` (an empty or huge count behaves as written)."
+      ],
+      "params": [
+        {
+          "name": "count",
+          "ts": "number",
+          "abi": "u32"
+        }
+      ],
+      "ret": {
+        "ts": "AsyncIterableIterator<number>",
+        "abi": "stream"
+      },
+      "out": "handle"
+    },
+    {
+      "name": "samples",
+      "export": "bffi_samples",
+      "docs": [
+        "Streams `count` alternating-axis samples."
+      ],
+      "params": [
+        {
+          "name": "count",
+          "ts": "number",
+          "abi": "u32"
+        }
+      ],
+      "ret": {
+        "ts": "AsyncIterableIterator<Sample>",
+        "abi": "stream"
+      },
+      "out": "handle"
+    },
+    {
+      "name": "fizzbuzz",
+      "export": "bffi_fizzbuzz",
+      "docs": [
+        "The classic transform: items of `1..=count` mapped to their",
+        "fizzbuzz word (a stream of strings)."
+      ],
+      "params": [
+        {
+          "name": "count",
+          "ts": "number",
+          "abi": "u32"
+        }
+      ],
+      "ret": {
+        "ts": "AsyncIterableIterator<string>",
+        "abi": "stream"
+      },
+      "out": "handle"
+    }
+  ],
+  "classes": [],
+  "records": [
+    {
+      "name": "Sample",
+      "docs": [
+        "One stream item."
+      ],
+      "fields": [
+        {
+          "name": "at",
+          "docs": [
+            "Where it was taken."
+          ],
+          "ts": "number"
+        },
+        {
+          "name": "label",
+          "docs": [
+            "The station label."
+          ],
+          "ts": "string"
+        },
+        {
+          "name": "axis",
+          "docs": [
+            "The axis it was taken along."
+          ],
+          "ts": "Axis"
+        }
+      ]
+    }
+  ],
+  "enums": [
+    {
+      "name": "Axis",
+      "docs": [
+        "The measurement axis."
+      ],
+      "variants": [
+        {
+          "name": "Horizontal",
+          "docs": [
+            "Along the X axis."
+          ]
+        },
+        {
+          "name": "Vertical",
+          "docs": [
+            "Along the Y axis."
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -217,6 +217,7 @@ When unsure about architecture, prefer asking (or opening a draft PR) instead of
 | License       | MIT                                          |
 | Facade        | `bffi`: flat re-exports of the stack; `unsafe_zero_copy` is the only zero-copy door; macro expansions name `::bffi::{core,types,dts,object,build,r#async}` by default (`crate = "<name>"` redirects, `crate = "direct"` selects the pre-merge roots) |
 | Async         | `#[bffi_async]`: spawn shim returns a task handle; N-worker executor; cooperative cancel + timeout; resolve via event-loop enqueue; tokio opt-in; tags 0x0500-0x05FF |
+| Streams       | `#[bffi_stream]` (B2): `impl Iterator<Item = T> + Send` as a JS `AsyncIterableIterator<T>`; pull-chunk via `bffi_stream_next(handle, max)` (TAG_SEQ buffer, 0 = done) + `bffi_stream_drop`; tag 0x0600; push model deferred (B2.2) |
 | Object ownership | `ObjectWrap<T>` over global `Registry` (tag 0x0100-0x01FF); release frees the slot |
 | Callbacks | `register`/`revoke` + `bind_js_callback`; tags 0x0200-0x0201; wrong-thread reject |
 | Build ABI | Runtime exports (`bffi_error_*`, `bffi_buffer` pair, `bffi_types_free`) via `bffi_runtime_abi!()` in the user crate; tags 0x0400-0x04FF; canonical contract: bffi/CALLING-CONVENTION.md |

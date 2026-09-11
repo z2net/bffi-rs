@@ -268,7 +268,14 @@ export function validateModule(raw: unknown): ModuleJsonLike {
       .filter((name): name is string => typeof name === "string"),
   );
   const named = (ts: string): boolean => {
+    // A stream return wraps one element type.
+    if (ts.startsWith("AsyncIterableIterator<") && ts.endsWith(">")) {
+      return named(ts.slice("AsyncIterableIterator<".length, -1));
+    }
     const name = ts.endsWith("[]") ? ts.slice(0, -2) : ts;
+    if (TS_NAMES.has(name)) {
+      return true;
+    }
     return recordNames.has(name) || enumNames.has(name);
   };
   if (!Array.isArray(raw.functions)) {

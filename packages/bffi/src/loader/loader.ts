@@ -37,10 +37,12 @@ export type OutName =
   | "handle";
 
 /** The return transport: a primitive width, a transient-buffer
- * handle, an async task handle, or the unit return. */
+ * handle, an async task handle, a stream handle, or the unit
+ * return. */
 export type RetAbiName =
   | OutName
   | "buffer"
+  | "stream"
   | "task"
   | "void";
 
@@ -90,6 +92,7 @@ export const OUT_NAMES: ReadonlySet<string> = OUT_NAMES_MUTABLE;
 
 const RET_ABI_NAMES_MUTABLE = new Set(OUT_NAMES_MUTABLE);
 RET_ABI_NAMES_MUTABLE.add("buffer");
+RET_ABI_NAMES_MUTABLE.add("stream");
 RET_ABI_NAMES_MUTABLE.add("task");
 RET_ABI_NAMES_MUTABLE.add("void");
 
@@ -271,6 +274,8 @@ export interface BuiltinFeatures {
   async?: boolean;
   /** `bffi_callback_abi!()` exports. Default: false. */
   callbacks?: boolean;
+  /** `bffi_stream_abi!()` exports (next/drop). Default: false. */
+  stream?: boolean;
 }
 
 const RUNTIME_DECLARATIONS: Record<string, { args: FfiType[]; returns: FfiType }> = {
@@ -307,6 +312,14 @@ const CALLBACK_DECLARATIONS: Record<string, { args: FfiType[]; returns: FfiType 
   bffi_callback_revoke: { args: ["u64"], returns: "u32" },
 };
 
+const STREAM_DECLARATIONS: Record<string, { args: FfiType[]; returns: FfiType }> = {
+  bffi_stream_next: {
+    args: ["u64", "u32", "pointer"],
+    returns: "u32",
+  },
+  bffi_stream_drop: { args: ["u64"], returns: "u32" },
+};
+
 /** Built-in declarations selected by [`BuiltinFeatures`]. */
 export function builtinDeclarations(
   features: BuiltinFeatures = {},
@@ -320,6 +333,9 @@ export function builtinDeclarations(
   }
   if (features.callbacks) {
     Object.assign(out, CALLBACK_DECLARATIONS);
+  }
+  if (features.stream) {
+    Object.assign(out, STREAM_DECLARATIONS);
   }
   return out;
 }

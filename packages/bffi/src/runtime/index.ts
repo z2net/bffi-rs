@@ -9,4 +9,5 @@ export * from "./buffer.ts";
 export * from "./wire.ts";
 export * from "./callbacks.ts";
 export * from "./async.ts";
+export * from "./stream.ts";
 export * from "./version.ts";

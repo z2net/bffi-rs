@@ -9,6 +9,7 @@ import { ErrorCode, type FfiLib, makeTakeError, sym } from "../runtime/error.ts"
 import { makeReadBuffer } from "../runtime/buffer.ts";
 import { assertSchema, buildDeclarations, type BuiltinFeatures, type FunctionJson, type ModuleJson, type TsName } from "./loader.ts";
 import { wrapTask } from "../runtime/async.ts";
+import { streamItemTs, wrapStream } from "../runtime/stream.ts";
 import { isCompositeTs, jsToWire, tablesOf, wireToJs } from "./composite.ts";
 import { decodeAt, encodeValue } from "../runtime/wire.ts";
 
@@ -71,7 +72,21 @@ export type TsOf<S extends TsName, M extends ModuleJson = ModuleJson> =
                         ? boolean[]
                         : S extends "string[]"
                           ? string[]
-                          : S extends `${infer N}[]`
+                          : S extends "AsyncIterableIterator<number>"
+                            ? AsyncIterableIterator<number>
+                            : S extends "AsyncIterableIterator<bigint>"
+                              ? AsyncIterableIterator<bigint>
+                              : S extends "AsyncIterableIterator<boolean>"
+                                ? AsyncIterableIterator<boolean>
+                                : S extends "AsyncIterableIterator<string>"
+                                  ? AsyncIterableIterator<string>
+                                  : S extends "AsyncIterableIterator<Uint8Array>"
+                                    ? AsyncIterableIterator<Uint8Array>
+                                    : S extends `AsyncIterableIterator<${infer N}>`
+                                      ? N extends TsName
+                                        ? AsyncIterableIterator<TsOf<N, M>>
+                                        : S
+                                      : S extends `${infer N}[]`
                             ? N extends TsName
                               ? TsOf<N, M>[]
                               : S
@@ -341,6 +356,18 @@ function decodeReturn(
       throw new TypeError(`${fn.name}: expected a task handle, got ${typeof raw}`);
     }
     return wrapTask(lib, raw);
+  }
+  if (fn.ret.abi === "stream") {
+    if (typeof raw !== "bigint") {
+      throw new TypeError(`${fn.name}: expected a stream handle, got ${typeof raw}`);
+    }
+    const itemTs = streamItemTs(fn.ret.ts);
+    if (itemTs === null) {
+      throw new Error(
+        `${fn.name}: stream return type must be AsyncIterableIterator<T>, got ${fn.ret.ts}`,
+      );
+    }
+    return wrapStream(lib, raw, itemTs, json);
   }
   if (fn.ret.abi === "buffer") {
     if (typeof raw !== "bigint") {

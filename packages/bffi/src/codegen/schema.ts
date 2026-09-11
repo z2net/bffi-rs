@@ -65,7 +65,12 @@ function checkEnum(
   }
 }
 
-function checkParams(issues: SchemaIssue[], path: string, value: unknown): void {
+function checkParams(
+  issues: SchemaIssue[],
+  path: string,
+  value: unknown,
+  named: (ts: string) => boolean,
+): void {
   if (!Array.isArray(value)) {
     issues.push({ path, message: "expected an array of parameter entries" });
     return;
@@ -77,23 +82,47 @@ function checkParams(issues: SchemaIssue[], path: string, value: unknown): void 
       continue;
     }
     checkString(issues, `${at}.name`, param.name);
-    checkEnum(issues, `${at}.ts`, param.ts, TS_NAMES);
+    checkTs(issues, `${at}.ts`, param.ts, named);
     checkEnum(issues, `${at}.abi`, param.abi, ABI_NAMES);
   }
 }
 
-function checkRet(issues: SchemaIssue[], path: string, value: unknown): void {
+function checkRet(
+  issues: SchemaIssue[],
+  path: string,
+  value: unknown,
+  named: (ts: string) => boolean,
+): void {
   if (!isRecord(value)) {
     issues.push({ path, message: "expected an object" });
     return;
   }
-  checkEnum(issues, `${path}.ts`, value.ts, TS_NAMES);
+  checkTs(issues, `${path}.ts`, value.ts, named);
   checkEnum(issues, `${path}.abi`, value.abi, RET_ABI_NAMES);
+}
+
+/** A `ts` name is a known literal, or a named composite (module
+ * table entry, optionally the `[]` form). */
+function checkTs(
+  issues: SchemaIssue[],
+  path: string,
+  value: unknown,
+  named: (ts: string) => boolean,
+): void {
+  if (typeof value === "string" && named(value)) {
+    return;
+  }
+  checkEnum(issues, path, value, TS_NAMES);
 }
 
 const OUT_NAMES_SET: ReadonlySet<string> = OUT_NAMES;
 
-function checkFunctionLike(issues: SchemaIssue[], path: string, value: unknown): void {
+function checkFunctionLike(
+  issues: SchemaIssue[],
+  path: string,
+  value: unknown,
+  named: (ts: string) => boolean,
+): void {
   if (!isRecord(value)) {
     issues.push({ path, message: "expected an object" });
     return;
@@ -101,14 +130,19 @@ function checkFunctionLike(issues: SchemaIssue[], path: string, value: unknown):
   checkString(issues, `${path}.name`, value.name);
   checkString(issues, `${path}.export`, value.export);
   checkStringArray(issues, `${path}.docs`, value.docs);
-  checkParams(issues, `${path}.params`, value.params);
-  checkRet(issues, `${path}.ret`, value.ret);
+  checkParams(issues, `${path}.params`, value.params, named);
+  checkRet(issues, `${path}.ret`, value.ret, named);
   if (value.out !== undefined) {
     checkEnum(issues, `${path}.out`, value.out, OUT_NAMES_SET);
   }
 }
 
-function checkClass(issues: SchemaIssue[], path: string, value: unknown): void {
+function checkClass(
+  issues: SchemaIssue[],
+  path: string,
+  value: unknown,
+  named: (ts: string) => boolean,
+): void {
   if (!isRecord(value)) {
     issues.push({ path, message: "expected an object" });
     return;
@@ -116,7 +150,7 @@ function checkClass(issues: SchemaIssue[], path: string, value: unknown): void {
   checkString(issues, `${path}.name`, value.name);
   checkString(issues, `${path}.release`, value.release);
   checkStringArray(issues, `${path}.docs`, value.docs);
-  checkFunctionLike(issues, `${path}.constructor`, value.constructor);
+  checkFunctionLike(issues, `${path}.constructor`, value.constructor, named);
   if (!Array.isArray(value.fields)) {
     issues.push({ path: `${path}.fields`, message: "expected an array of field entries" });
   } else {
@@ -129,7 +163,7 @@ function checkClass(issues: SchemaIssue[], path: string, value: unknown): void {
       checkString(issues, `${at}.name`, field.name);
       checkString(issues, `${at}.export`, field.export);
       checkStringArray(issues, `${at}.docs`, field.docs);
-      checkEnum(issues, `${at}.ts`, field.ts, TS_NAMES);
+      checkTs(issues, `${at}.ts`, field.ts, named);
       checkEnum(issues, `${at}.out`, field.out, OUT_NAMES_SET);
     }
   }
@@ -137,7 +171,66 @@ function checkClass(issues: SchemaIssue[], path: string, value: unknown): void {
     issues.push({ path: `${path}.methods`, message: "expected an array of method entries" });
   } else {
     for (const [index, method] of value.methods.entries()) {
-      checkFunctionLike(issues, `${path}.methods[${index}]`, method);
+      checkFunctionLike(issues, `${path}.methods[${index}]`, method, named);
+    }
+  }
+}
+
+function checkRecords(issues: SchemaIssue[], path: string, value: unknown, named: (ts: string) => boolean): void {
+  if (!Array.isArray(value)) {
+    issues.push({ path, message: "expected an array of record entries" });
+    return;
+  }
+  for (const [index, entry] of value.entries()) {
+    const at = `${path}[${index}]`;
+    if (!isRecord(entry)) {
+      issues.push({ path: at, message: "expected an object" });
+      continue;
+    }
+    checkString(issues, `${at}.name`, entry.name);
+    checkStringArray(issues, `${at}.docs`, entry.docs);
+    if (!Array.isArray(entry.fields)) {
+      issues.push({ path: `${at}.fields`, message: "expected an array of field entries" });
+    } else {
+      for (const [fieldIndex, field] of entry.fields.entries()) {
+        const fieldAt = `${at}.fields[${fieldIndex}]`;
+        if (!isRecord(field)) {
+          issues.push({ path: fieldAt, message: "expected an object" });
+          continue;
+        }
+        checkString(issues, `${fieldAt}.name`, field.name);
+        checkStringArray(issues, `${fieldAt}.docs`, field.docs);
+        checkTs(issues, `${fieldAt}.ts`, field.ts, named);
+      }
+    }
+  }
+}
+
+function checkEnums(issues: SchemaIssue[], path: string, value: unknown): void {
+  if (!Array.isArray(value)) {
+    issues.push({ path, message: "expected an array of enum entries" });
+    return;
+  }
+  for (const [index, entry] of value.entries()) {
+    const at = `${path}[${index}]`;
+    if (!isRecord(entry)) {
+      issues.push({ path: at, message: "expected an object" });
+      continue;
+    }
+    checkString(issues, `${at}.name`, entry.name);
+    checkStringArray(issues, `${at}.docs`, entry.docs);
+    if (!Array.isArray(entry.variants)) {
+      issues.push({ path: `${at}.variants`, message: "expected an array of variant entries" });
+    } else {
+      for (const [variantIndex, variant] of entry.variants.entries()) {
+        const variantAt = `${at}.variants[${variantIndex}]`;
+        if (!isRecord(variant)) {
+          issues.push({ path: variantAt, message: "expected an object" });
+          continue;
+        }
+        checkString(issues, `${variantAt}.name`, variant.name);
+        checkStringArray(issues, `${variantAt}.docs`, variant.docs);
+      }
     }
   }
 }
@@ -160,24 +253,52 @@ export function validateModule(raw: unknown): ModuleJsonLike {
     });
   }
   checkString(issues, "$.module", raw.module);
+  const records = Array.isArray(raw.records) ? raw.records : [];
+  const enums = Array.isArray(raw.enums) ? raw.enums : [];
+  const recordNames = new Set(
+    records
+      .filter(isRecord)
+      .map((entry) => entry.name)
+      .filter((name): name is string => typeof name === "string"),
+  );
+  const enumNames = new Set(
+    enums
+      .filter(isRecord)
+      .map((entry) => entry.name)
+      .filter((name): name is string => typeof name === "string"),
+  );
+  const named = (ts: string): boolean => {
+    const name = ts.endsWith("[]") ? ts.slice(0, -2) : ts;
+    return recordNames.has(name) || enumNames.has(name);
+  };
   if (!Array.isArray(raw.functions)) {
     issues.push({ path: "$.functions", message: "expected an array" });
   } else {
     for (const [index, fn] of raw.functions.entries()) {
-      checkFunctionLike(issues, `$.functions[${index}]`, fn);
+      checkFunctionLike(issues, `$.functions[${index}]`, fn, named);
     }
   }
   if (!Array.isArray(raw.classes)) {
     issues.push({ path: "$.classes", message: "expected an array" });
   } else {
     for (const [index, cls] of raw.classes.entries()) {
-      checkClass(issues, `$.classes[${index}]`, cls);
+      checkClass(issues, `$.classes[${index}]`, cls, named);
     }
+  }
+  if (raw.records !== undefined) {
+    checkRecords(issues, "$.records", raw.records, named);
+  }
+  if (raw.enums !== undefined) {
+    checkEnums(issues, "$.enums", raw.enums);
   }
   if (issues.length > 0) {
     throw new SchemaValidationError(issues);
   }
-  return raw as unknown as ModuleJsonLike;
+  return {
+    ...(raw as Record<string, unknown>),
+    records: Array.isArray(raw.records) ? raw.records : [],
+    enums: Array.isArray(raw.enums) ? raw.enums : [],
+  } as unknown as ModuleJsonLike;
 }
 
 /** The minimal structural type the validator guarantees. */
@@ -186,4 +307,6 @@ export interface ModuleJsonLike {
   module: string;
   functions: unknown[];
   classes: unknown[];
+  records: unknown[];
+  enums: unknown[];
 }

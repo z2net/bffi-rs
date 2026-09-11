@@ -79,7 +79,14 @@ const api: Api = await bffi();       // one call: build -> json -> gen -> dlopen
 api.add(1, 2);                       // number, typed; errors throw JS Errors
 const counter = new api.counter(10); // classes: FinalizationRegistry + release()
 await api.compute(21);               // `#[bffi_async]` -> Promise
+const sample = await api.report(7n); // records: Promise<Report> / Sample / Sample[] | null
 ```
+
+Composites cross the boundary as wire-encoded buffers, copy by
+default: `#[derive(BffiRecord)]` structs, `#[derive(BffiEnum)]`
+unit enums, `Vec<T>` sequences (including `Vec<Vec<u8>>`), and
+`Option<Record>` / `Option<Vec<T>>` returns rendering as
+`| null` (async: `Promise<Sample>`, `Promise<number[]>`).
 
 ## Typed errors
 

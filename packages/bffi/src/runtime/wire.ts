@@ -24,8 +24,11 @@ export const TAG_STR = 5;
 export const TAG_BYTES = 6;
 export const TAG_RECORD = 7;
 export const TAG_SEQ = 8;
+export const TAG_U64 = 10;
+export const TAG_ERROR = 11;
 
-/** A decoded wire value: composites decode positionally. */
+/** A decoded wire value: composites decode positionally, an error
+ * item decodes into an `Error` instance. */
 export type WireValue =
   | undefined
   | number
@@ -34,7 +37,8 @@ export type WireValue =
   | string
   | Uint8Array
   | WireValue[]
-  | { fields: WireValue[] };
+  | { fields: WireValue[] }
+  | Error;
 
 /**
  * Decodes one `[tag][payload]` record into a JS value. The bytes view
@@ -87,6 +91,14 @@ export function decodeAt(bytes: Uint8Array, offset: number): Decoded {
       const value = bytes.slice(start, start + len);
       return { value, next: start + len };
     }
+    case TAG_U64:
+      return { value: view.getBigUint64(offset + 1, true), next: offset + 9 };
+    case TAG_ERROR: {
+      const len = view.getUint32(offset + 1, true);
+      const start = offset + 5;
+      const message = new TextDecoder().decode(bytes.subarray(start, start + len));
+      return { value: new Error(message), next: start + len };
+    }
     case TAG_RECORD: {
       const count = view.getUint32(offset + 1, true);
       let at = offset + 5;
@@ -132,13 +144,30 @@ export function encodeValue(out: number[], value: WireValue): void {
       pushF64(out, value);
     }
   } else if (typeof value === "bigint") {
-    if (value < -9223372036854775808n || value > 9223372036854775807n) {
-      throw new Error(`i64 value out of range: ${value}`);
+    if (value < 0n) {
+      throw new Error(`negative bigint value: ${value}`);
     }
-    out.push(TAG_I64);
-    pushI64(out, value);
+    if (value > 18446744073709551615n) {
+      throw new Error(`u64 value out of range: ${value}`);
+    }
+    // Exact carriers: I64 below i64::MAX (signed view agrees), U64
+    // above it (an i64 record would show a negative value).
+    if (value > 9223372036854775807n) {
+      out.push(TAG_U64);
+      pushU64(out, value);
+    } else {
+      out.push(TAG_I64);
+      pushI64(out, value);
+    }
   } else if (typeof value === "boolean") {
     out.push(TAG_BOOL, value ? 1 : 0);
+  } else if (value instanceof Error) {
+    out.push(TAG_ERROR);
+    const bytes = new TextEncoder().encode(value.message);
+    pushU32(out, bytes.length);
+    for (const byte of bytes) {
+      out.push(byte);
+    }
   } else if (typeof value === "string") {
     out.push(TAG_STR);
     const bytes = new TextEncoder().encode(value);
@@ -202,6 +231,14 @@ function pushF64(out: number[], value: number): void {
 function pushI64(out: number[], value: bigint): void {
   const view = new DataView(new ArrayBuffer(8));
   view.setBigInt64(0, value, true);
+  for (let i = 0; i < 8; i++) {
+    out.push(view.getUint8(i));
+  }
+}
+
+function pushU64(out: number[], value: bigint): void {
+  const view = new DataView(new ArrayBuffer(8));
+  view.setBigUint64(0, value, true);
   for (let i = 0; i < 8; i++) {
     out.push(view.getUint8(i));
   }

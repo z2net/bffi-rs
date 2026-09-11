@@ -51,6 +51,14 @@ pub const TAG_RECORD: u8 = 7;
 /// The sequence value (`u32` LE item count + one value record per
 /// item): the wire form of a `Vec<T>` whose item type is not `u8`.
 pub const TAG_SEQ: u8 = 8;
+/// The exact `u64` value (`8` bytes LE): JS decodes it as a
+/// non-negative `bigint` (`BigInt64`/`BigUint64` agree below
+/// `i64::MAX`; `U64` is the exact carrier above it).
+pub const TAG_U64: u8 = 10;
+/// The error item (a UTF-8 message with a `u32` LE length prefix):
+/// the wire form of a `Result` item's `Err` inside a stream. The JS
+/// side decodes it into an `Error` instance.
+pub const TAG_ERROR: u8 = 11;
 
 /// Appends one little-endian `u32`.
 pub fn push_u32_le(out: &mut Vec<u8>, value: u32) {
@@ -184,6 +192,42 @@ pub fn encode_f64(out: &mut Vec<u8>, value: f64) {
 pub fn encode_bool(out: &mut Vec<u8>, value: bool) {
     out.push(TAG_BOOL);
     push_bool(out, value);
+}
+
+/// Appends one exact `u64` value record.
+pub fn encode_u64(out: &mut Vec<u8>, value: u64) {
+    out.push(TAG_U64);
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+/// Decodes one exact `u64` value record at `offset`.
+pub fn decode_u64(bytes: &[u8], offset: usize) -> Result<(u64, usize), BffiError> {
+    let at = expect_tag(bytes, offset, TAG_U64, "wire: expected u64")?;
+    let tail = bytes
+        .get(at..at + 8)
+        .ok_or_else(|| wire_error("wire: truncated u64"))?;
+    let mut raw = [0_u8; 8];
+    raw.copy_from_slice(tail);
+    Ok((u64::from_le_bytes(raw), at + 8))
+}
+
+/// Decodes one error-message record at `offset` (the wire form of a
+/// `Result` item's `Err`); validated UTF-8.
+pub fn decode_error(bytes: &[u8], offset: usize) -> Result<(String, usize), BffiError> {
+    let at = expect_tag(bytes, offset, TAG_ERROR, "wire: expected error")?;
+    let (payload, end) = decode_len_prefixed(bytes, at, "error message")?;
+    let message = std::str::from_utf8(payload)
+        .map_err(|_| BffiError::new(ErrorCode::InvalidUtf8, "wire: invalid UTF-8 in error"))?
+        .to_owned();
+    Ok((message, end))
+}
+
+/// Appends one error-message value record (the wire form of a
+/// `Result` item's `Err`).
+pub fn encode_error(out: &mut Vec<u8>, message: &str) {
+    out.push(TAG_ERROR);
+    push_u32_le(out, message.len() as u32);
+    out.extend_from_slice(message.as_bytes());
 }
 
 /// Appends one UTF-8 string value record.
@@ -331,10 +375,11 @@ pub fn decode_variant<'a>(
 #[cfg(test)]
 mod tests {
     use super::{
-        TAG_BOOL, TAG_BYTES, TAG_F64, TAG_I32, TAG_I64, TAG_RECORD, TAG_SEQ, TAG_STR, TAG_UNIT,
-        decode_bool, decode_bytes, decode_f64, decode_i32, decode_i64, decode_record_header,
-        decode_seq_header, decode_str, decode_variant, encode_bool, encode_bytes, encode_f64,
-        encode_i32, encode_i64, encode_record_header, encode_seq_header, encode_str, push_bool,
+        TAG_BOOL, TAG_BYTES, TAG_ERROR, TAG_F64, TAG_I32, TAG_I64, TAG_RECORD, TAG_SEQ, TAG_STR,
+        TAG_U64, TAG_UNIT, decode_bool, decode_bytes, decode_error, decode_f64, decode_i32,
+        decode_i64, decode_record_header, decode_seq_header, decode_str, decode_u64,
+        decode_variant, encode_bool, encode_bytes, encode_error, encode_f64, encode_i32,
+        encode_i64, encode_record_header, encode_seq_header, encode_str, encode_u64, push_bool,
         push_f64_le, push_i32_le, push_i64_le, push_u32_le, read_bool, read_f64_le, read_i32_le,
         read_i64_le, read_u32_le,
     };
@@ -486,6 +531,27 @@ mod tests {
             decode_variant(&out, 0, &["Idle"]).is_err(),
             "unknown variant"
         );
+    }
+
+    #[test]
+    fn u64_round_trips_exactly_and_error_carries_the_message() {
+        let mut out = Vec::new();
+        // Above i64::MAX: the value only a U64 tag carries exactly.
+        encode_u64(&mut out, u64::MAX);
+        encode_u64(&mut out, 42);
+        encode_error(&mut out, "stream failed");
+
+        let (value, next) = decode_u64(&out, 0).expect("u64");
+        assert_eq!((value, next), (u64::MAX, 9));
+        let (value, next) = decode_u64(&out, next).expect("u64 small");
+        assert_eq!((value, next), (42, 18));
+        let (message, end) = decode_error(&out, next).expect("error");
+        assert_eq!((message.as_str(), end), ("stream failed", out.len()));
+
+        // Malformed shapes are clean errors.
+        assert!(decode_u64(&[TAG_U64, 0, 0], 0).is_err());
+        // Length prefix promising more than the buffer holds.
+        assert!(decode_error(&[TAG_ERROR, 5, 0, 0, 0], 0).is_err());
     }
 
     #[test]

@@ -49,6 +49,7 @@ crate's namespaces (`::bffi::core`, ...) out of the box; an optional
 | `callback` *(default)* | two-direction callbacks + generic ABI | core/types/build |
 | `event-loop` *(default)* | the job queue (`pump`/`run`/`marshal`) | core/callback |
 | `async` *(default)* | Rust futures as JS Promises | core/types/build/event-loop |
+| `stream` *(default)* | Rust iterators as JS async iterators (pull-chunk) | core/types/build |
 | `macros` *(default)* | `#[bffi]`, `#[bffi_async]` (dep: `bffi-macros`) | core/types/build/dts |
 | `class` *(default)* | `#[bffi_class]`, `#[bffi_impl]` | macros/object |
 | `tokio` | poll async tasks on a tokio runtime | async |
@@ -74,6 +75,36 @@ pub async fn double_async(x: u64) -> u64 {
 
 Cancellation is cooperative, timeouts are first-class combinators,
 and tokio is an opt-in executor (`features = ["tokio"]`).
+
+## Streams
+
+Annotate an iterator-returning fn and consume it with `for await`:
+
+```rust
+/// Streams `1..=count`.
+#[bffi::bffi_stream]
+fn numbers(count: u32) -> impl Iterator<Item = i32> + Send {
+    (1..=count).map(|n| n as i32)
+}
+```
+
+Slow producers use the push shape - an async fn over a `Ctx<T>`
+channel with backpressure (`ctx.push(item).await` parks the
+producer while the JS side has not drained):
+
+```rust
+#[bffi::bffi_stream]
+async fn readings(ctx: bffi::stream::Ctx<f64>, count: u32) -> Result<(), MyError> {
+    for i in 0..count {
+        bffi::sleep(Duration::from_millis(5)).await;
+        ctx.push(f64::from(i)).await?;
+    }
+    Ok(())
+}
+```
+
+Items ride the shared wire codec (numbers, strings, bytes, exact
+`u64`, records/enums, `Result` items as `Error` values).
 
 ## Classes
 

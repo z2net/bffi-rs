@@ -116,8 +116,8 @@ pub use crate::bffi_callback::{
 };
 #[cfg(feature = "core")]
 pub use crate::bffi_core::{
-    BffiError, ErrorCode, Handle, MAX_GENERATION, MAX_INDEX, Registry, RegistryError, TableError,
-    TypeTag, boundary, catch_panic, panic_message, run_extern_body, run_extern_body_or,
+    BffiError, ErrorCode, ErrorRich, Handle, MAX_GENERATION, MAX_INDEX, Registry, RegistryError,
+    TableError, TypeTag, boundary, catch_panic, panic_message, run_extern_body, run_extern_body_or,
     set_last_error, take_last_error,
 };
 #[cfg(feature = "dts")]

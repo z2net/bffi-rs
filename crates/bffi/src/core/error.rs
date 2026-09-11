@@ -141,6 +141,42 @@ pub struct BffiError {
     /// typed error (e.g. [`TableError`], [`RegistryError`], or a
     /// `bffi-types` conversion error).
     pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    /// The B3 rich fields (present only on derived errors): boxed to
+    /// keep [`BffiError`] small across `Result` channels.
+    pub rich: Option<Box<ErrorRich>>,
+}
+
+/// The rich error fields of `#[derive(BffiError)]` types.
+#[derive(Debug, Default)]
+pub struct ErrorRich {
+    /// The user-defined status that replaces [`ErrorCode`] in the ABI
+    /// return (the reserved range `0x1000..=0xFFFF`). JS reads it as
+    /// `e.code`.
+    pub user_code: Option<u32>,
+    /// The derived variant name (`NotFound`, ...) - JavaScript sets
+    /// `e.name` to it.
+    pub variant: Option<String>,
+    /// The pre-encoded wire record of the variant's payload fields
+    /// (B1 encoders); JavaScript decodes it into `e.payload`.
+    pub payload: Option<Vec<u8>>,
+    /// The captured Rust backtrace (present only when
+    /// `RUST_BACKTRACE` is active); JavaScript exposes it as
+    /// `e.nativeStack`.
+    pub backtrace: Option<String>,
+}
+
+/// The gated backtrace capture: `Backtrace::capture` is a no-op
+/// (cheap env check) unless `RUST_BACKTRACE` is active.
+fn capture_backtrace() -> Option<String> {
+    let backtrace = std::backtrace::Backtrace::capture();
+    if matches!(
+        backtrace.status(),
+        std::backtrace::BacktraceStatus::Captured
+    ) {
+        Some(backtrace.to_string())
+    } else {
+        None
+    }
 }
 
 impl BffiError {
@@ -151,6 +187,16 @@ impl BffiError {
             code,
             message: message.into(),
             source: None,
+
+            // Backtrace capture is gated by RUST_BACKTRACE: the rich
+            // slot is allocated only when a stack was actually
+            // captured.
+            rich: capture_backtrace().map(|stack| {
+                Box::new(ErrorRich {
+                    backtrace: Some(stack),
+                    ..Default::default()
+                })
+            }),
         }
     }
 
@@ -168,7 +214,50 @@ impl BffiError {
             code,
             message: message.into(),
             source: Some(source.into()),
+            rich: capture_backtrace().map(|stack| {
+                Box::new(ErrorRich {
+                    backtrace: Some(stack),
+                    ..Default::default()
+                })
+            }),
         }
+    }
+
+    /// Sets the user-defined status (the reserved `0x1000..=0xFFFF`
+    /// range; `#[derive(BffiError)]` emits this).
+    #[must_use]
+    pub fn with_user_code(mut self, code: u32) -> Self {
+        self.rich_mut().user_code = Some(code);
+        self
+    }
+
+    /// Sets the derived variant name (JavaScript `e.name`).
+    #[must_use]
+    pub fn with_variant(mut self, name: impl Into<String>) -> Self {
+        self.rich_mut().variant = Some(name.into());
+        self
+    }
+
+    /// Sets the pre-encoded payload record (JavaScript `e.payload`).
+    #[must_use]
+    pub fn with_payload(mut self, payload: Vec<u8>) -> Self {
+        self.rich_mut().payload = Some(payload);
+        self
+    }
+
+    /// The rich-fields slot, created on demand.
+    fn rich_mut(&mut self) -> &mut ErrorRich {
+        self.rich.get_or_insert_with(Default::default)
+    }
+
+    /// The status that crosses the C ABI: the user-defined code when
+    /// present, otherwise the framework code.
+    #[must_use]
+    pub fn status_u32(&self) -> u32 {
+        self.rich
+            .as_ref()
+            .and_then(|rich| rich.user_code)
+            .unwrap_or_else(|| self.code.as_u32())
     }
 }
 
@@ -192,7 +281,22 @@ impl From<ErrorCode> for BffiError {
             code,
             message: code.to_string(),
             source: None,
+            rich: None,
         }
+    }
+}
+
+/// Ad-hoc domain errors: a plain string becomes a `DomainError`
+/// (code 13) without requiring `#[derive(BffiError)]`.
+impl From<String> for BffiError {
+    fn from(message: String) -> Self {
+        Self::new(ErrorCode::DomainError, message)
+    }
+}
+
+impl From<&str> for BffiError {
+    fn from(message: &str) -> Self {
+        Self::new(ErrorCode::DomainError, message)
     }
 }
 
@@ -273,6 +377,42 @@ mod tests {
     fn unknown_codes_decode_to_none() {
         assert_eq!(ErrorCode::from_u32(999), None);
         assert_eq!(ErrorCode::from_u32(u32::MAX), None);
+    }
+
+    #[test]
+    fn rich_fields_round_trip_and_status_prefers_the_user_code() {
+        let error = BffiError::new(ErrorCode::DomainError, "no row")
+            .with_user_code(0x1001)
+            .with_variant("NotFound")
+            .with_payload(vec![1, 2, 3]);
+
+        assert_eq!(error.status_u32(), 0x1001, "user code wins");
+        let rich = error.rich.as_ref().expect("rich slot allocated");
+        assert_eq!(rich.user_code, Some(0x1001));
+        assert_eq!(rich.variant.as_deref(), Some("NotFound"));
+        assert_eq!(rich.payload.as_deref(), Some(&[1, 2, 3][..]));
+    }
+
+    #[test]
+    fn framework_errors_keep_the_framework_status() {
+        let error = BffiError::new(ErrorCode::InvalidHandle, "gone");
+        assert_eq!(error.status_u32(), ErrorCode::InvalidHandle.as_u32());
+        // A captured backtrace may allocate the rich slot (when
+        // RUST_BACKTRACE is active), but never a user code.
+        let has_user_code = error
+            .rich
+            .as_ref()
+            .is_some_and(|rich| rich.user_code.is_some());
+        assert!(!has_user_code, "framework errors carry no user code");
+    }
+
+    #[test]
+    fn string_errors_map_onto_domain_error() {
+        let error: BffiError = "ad-hoc".to_owned().into();
+        assert_eq!(error.code, ErrorCode::DomainError);
+        assert_eq!(error.message, "ad-hoc");
+        let error: BffiError = "borrowed".into();
+        assert_eq!(error.code, ErrorCode::DomainError);
     }
 
     #[test]

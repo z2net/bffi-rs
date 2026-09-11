@@ -149,7 +149,7 @@ pub use crate::bffi_types::{
 // `::bffi::r#async`, so enable the `async` feature to use it.
 #[cfg(feature = "macros")]
 pub use bffi_macros::{
-    BffiEnum, BffiRecord, bffi, bffi_async, bffi_class, bffi_constructor, bffi_impl,
+    BffiEnum, BffiRecord, bffi, bffi_async, bffi_class, bffi_constructor, bffi_impl, bffi_stream,
 };
 
 /// THE single zero-copy door (DESIGN §6.3). Zero-copy is allowed only

@@ -64,6 +64,7 @@ mod mapping;
 mod meta;
 mod model;
 mod shim;
+mod stream_fn;
 mod support;
 
 use proc_macro::TokenStream;
@@ -317,4 +318,26 @@ pub fn bffi_record_derive(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(BffiEnum)]
 pub fn bffi_enum_derive(input: TokenStream) -> TokenStream {
     derive::enumeration(input)
+}
+
+/// Marks a plain fn returning `impl Iterator<Item = T> + Send` as a
+/// stream export (B2): the spawn shim registers the item-encoded
+/// iterator in the stream table and returns its handle; JavaScript
+/// pulls chunks through the generic `bffi_stream_next` export (the
+/// user crate generates it with `bffi::bffi_stream_abi!()`) and
+/// iterates with `for await`. Item matrix as in `Vec<T>` sequences
+/// plus `Vec<u8>` items; rejections carry `E012`.
+#[proc_macro_attribute]
+pub fn bffi_stream(attrs: TokenStream, item: TokenStream) -> TokenStream {
+    let attrs = proc_macro2::TokenStream::from(attrs);
+    let item = proc_macro2::TokenStream::from(item);
+    let item2 = item.clone();
+    match stream_fn::parse(&attrs, item) {
+        Ok(model) => {
+            let shim = stream_fn::expand(&model);
+            let meta = stream_fn::stream_meta(&model);
+            quote::quote! { #item2 #shim #meta }.into()
+        }
+        Err(err) => err.to_compile_error().into(),
+    }
 }

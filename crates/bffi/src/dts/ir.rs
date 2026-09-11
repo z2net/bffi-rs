@@ -101,6 +101,23 @@ pub enum TsType {
     StringArray,
     /// The TypeScript `<name>[]` type (`Vec` of a named record).
     RecordArray(&'static str),
+    /// `AsyncIterableIterator<number>` (a `#[bffi_stream]` of
+    /// number-ish items).
+    StreamNumber,
+    /// `AsyncIterableIterator<bigint>` (`#[bffi_stream]` of
+    /// `i64`/`u64` items).
+    StreamBigInt,
+    /// `AsyncIterableIterator<boolean>` (`#[bffi_stream]` of `bool`).
+    StreamBoolean,
+    /// `AsyncIterableIterator<string>` (`#[bffi_stream]` of
+    /// `String`).
+    StreamString,
+    /// `AsyncIterableIterator<Uint8Array>` (`#[bffi_stream]` of
+    /// `Vec<u8>` items).
+    StreamUint8Array,
+    /// `AsyncIterableIterator<Name>` (a `#[bffi_stream]` of a named
+    /// record/enum).
+    StreamRecord(&'static str),
 }
 
 impl TsType {
@@ -131,6 +148,12 @@ impl TsType {
             Self::BooleanArray => Cow::Borrowed("boolean[]"),
             Self::StringArray => Cow::Borrowed("string[]"),
             Self::RecordArray(name) => Cow::Owned(format!("{name}[]")),
+            Self::StreamNumber => Cow::Borrowed("AsyncIterableIterator<number>"),
+            Self::StreamBigInt => Cow::Borrowed("AsyncIterableIterator<bigint>"),
+            Self::StreamBoolean => Cow::Borrowed("AsyncIterableIterator<boolean>"),
+            Self::StreamString => Cow::Borrowed("AsyncIterableIterator<string>"),
+            Self::StreamUint8Array => Cow::Borrowed("AsyncIterableIterator<Uint8Array>"),
+            Self::StreamRecord(name) => Cow::Owned(format!("AsyncIterableIterator<{name}>")),
         }
     }
 }

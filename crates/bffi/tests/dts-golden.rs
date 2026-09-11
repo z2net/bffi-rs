@@ -316,9 +316,42 @@ fn golden_b1_matches() {
     assert_eq!(render(&B1), expected);
 }
 
+static STREAM_FNS: &[FunctionDef] = &[
+    FunctionDef {
+        js_name: "numbers",
+        export_name: "bffi_numbers",
+        docs: &["A numeric sequence."],
+        params: &[],
+        ret: TsType::StreamNumber,
+        abi: HANDLE_ABI,
+    },
+    FunctionDef {
+        js_name: "samples",
+        export_name: "bffi_samples",
+        docs: &["Record streams carry their composite item type."],
+        params: &[],
+        ret: TsType::StreamRecord("Sample"),
+        abi: HANDLE_ABI,
+    },
+];
+
+static STREAMS: ModuleDef = ModuleDef {
+    name: "streams",
+    fns: STREAM_FNS,
+    classes: &[],
+    records: &[],
+    enums: &[],
+};
+
+#[test]
+fn golden_streams_match() {
+    let expected = normalize_lf(include_str!("golden/streams.d.ts"));
+    assert_eq!(render(&STREAMS), expected);
+}
+
 #[test]
 fn render_is_deterministic() {
-    for module in [&MATH, &KITCHEN, &EMPTY, &SHAPES, &B1] {
+    for module in [&MATH, &KITCHEN, &EMPTY, &SHAPES, &B1, &STREAMS] {
         let first = render(module);
         let second = render(module);
         assert_eq!(first, second, "re-rendering {module:?} must be identical");

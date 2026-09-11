@@ -175,8 +175,9 @@ fn plain_path(ty: &syn::Type) -> Option<&syn::Path> {
     Some(&path.path)
 }
 
-/// Classifies the item of a `Vec<T>` sequence; `None` rejects.
-fn seq_item(inner: &syn::Type) -> Option<SeqItem> {
+/// Classifies the item of a `Vec<T>` sequence (or of a
+/// `#[bffi_stream]`); `None` rejects.
+pub(crate) fn seq_item(inner: &syn::Type) -> Option<SeqItem> {
     let syn::Type::Path(path) = inner else {
         return None;
     };

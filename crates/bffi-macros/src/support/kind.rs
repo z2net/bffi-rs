@@ -195,6 +195,21 @@ pub enum TsKind {
     StringArray,
     /// `<Name>[]` (a `Vec` sequence of a named record/enum).
     RecordArray(String),
+    /// `AsyncIterableIterator<number>` (a `#[bffi_stream]` of
+    /// number-ish items).
+    StreamNumber,
+    /// `AsyncIterableIterator<bigint>` (a stream of `i64`/`u64`).
+    StreamBigInt,
+    /// `AsyncIterableIterator<boolean>` (a stream of `bool`).
+    StreamBoolean,
+    /// `AsyncIterableIterator<string>` (a stream of `String`).
+    StreamString,
+    /// `AsyncIterableIterator<Uint8Array>` (a stream of `Vec<u8>`).
+    StreamUint8Array,
+    /// `AsyncIterableIterator<Name>` (a stream of a named
+    /// record/enum); the pre-quoted expression carries the exact
+    /// `TsType::StreamRecord("Name")` tokens.
+    StreamExpr(TokenStream),
 }
 
 /// Manual: `Expr` compares by its token text, the array wrappers by
@@ -235,6 +250,12 @@ impl TsKind {
             TsKind::BooleanArray => quote! { #dts::TsType::BooleanArray },
             TsKind::StringArray => quote! { #dts::TsType::StringArray },
             TsKind::RecordArray(name) => quote! { #dts::TsType::RecordArray(#name) },
+            TsKind::StreamNumber => quote! { #dts::TsType::StreamNumber },
+            TsKind::StreamBigInt => quote! { #dts::TsType::StreamBigInt },
+            TsKind::StreamBoolean => quote! { #dts::TsType::StreamBoolean },
+            TsKind::StreamString => quote! { #dts::TsType::StreamString },
+            TsKind::StreamUint8Array => quote! { #dts::TsType::StreamUint8Array },
+            TsKind::StreamExpr(tokens) => tokens.clone(),
         }
     }
 }

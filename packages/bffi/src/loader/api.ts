@@ -188,9 +188,9 @@ export function createApiFromLib<J extends ModuleJson>(json: J, lib: FfiLib): Ap
     }
     const out = outName === undefined ? undefined : allocOut(outName);
     const full = out === undefined ? args : [...args, out];
-    const status = symbol(...full);
+    const status = Number(symbol(...full));
     if (status !== ErrorCode.Ok) {
-      throw takeError() ?? new Error(`${exportName} failed: ${String(status)}`);
+      throw takeError(status) ?? new Error(`${exportName} failed: ${String(status)}`);
     }
     return readOut(outName, out);
   };
@@ -413,19 +413,19 @@ function makeClass(
   callFunction: (fn: FunctionJson) => (...args: unknown[]) => unknown,
   callMethod: (method: FunctionJson) => (handle: bigint, ...jsArgs: unknown[]) => unknown,
   lib: FfiLib,
-  takeError: () => Error | null,
+  takeError: (status?: number) => Error | null,
 ): new (...args: unknown[]) => unknown {
   const ctor = callFunction(cls.constructor);
   // A GC finalizer may race an explicit `release()`; the duplicate
   // release is `InvalidHandle` (4) and must stay silent - every other
   // status is a real error.
   const release = (handle: bigint): void => {
-    const status = sym(lib, cls.release)(handle);
+    const status = Number(sym(lib, cls.release)(handle));
     if (status === ErrorCode.InvalidHandle) {
       return;
     }
     if (status !== ErrorCode.Ok) {
-      throw takeError() ?? new Error(`${cls.release} failed: ${String(status)}`);
+      throw takeError(status) ?? new Error(`${cls.release} failed: ${String(status)}`);
     }
   };
   const finalizers = new FinalizationRegistry((handle: bigint) => {
@@ -448,9 +448,9 @@ function makeClass(
     Object.defineProperty(Wrapper.prototype, field.name, {
       get(this: NativeInstance) {
         const out = allocOut(field.out);
-        const status = sym(lib, field.export)(this.handle, out);
+        const status = Number(sym(lib, field.export)(this.handle, out));
         if (status !== ErrorCode.Ok) {
-          throw takeError() ?? new Error(`${field.export} failed: ${String(status)}`);
+          throw takeError(status) ?? new Error(`${field.export} failed: ${String(status)}`);
         }
         return readOut(field.out, out);
       },

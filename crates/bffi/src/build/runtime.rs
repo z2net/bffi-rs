@@ -58,6 +58,16 @@ struct ErrorEntry {
     /// The source's `Display` string, materialized at `take_error`
     /// time (the boxed source itself is never stored).
     cause: Option<String>,
+    /// The user-defined status of a `#[derive(BffiError)]` error
+    /// (`0` when the error carries none).
+    user_code: u32,
+    /// The derived variant name (empty for framework errors).
+    variant: String,
+    /// The pre-encoded payload record (empty = no payload).
+    payload: Vec<u8>,
+    /// The captured Rust backtrace (present only when
+    /// `RUST_BACKTRACE` was active at error creation).
+    backtrace: Option<String>,
 }
 
 /// Declares both runtime tables in the global registry, exactly once
@@ -168,7 +178,27 @@ pub fn take_error() -> Handle {
     // box itself.
     let cause = error.source().map(std::string::ToString::to_string);
     let shape = error.to_js_shape();
-    match Registry::global().insert(ERROR_TAG, Arc::new(ErrorEntry { shape, cause })) {
+    // The B3 rich fields move out of the (boxed) rich slot.
+    let (user_code, variant, payload, backtrace) = match error.rich {
+        Some(rich) => (
+            rich.user_code.unwrap_or(0),
+            rich.variant.unwrap_or_default(),
+            rich.payload.unwrap_or_default(),
+            rich.backtrace,
+        ),
+        None => (0, String::new(), Vec::new(), None),
+    };
+    match Registry::global().insert(
+        ERROR_TAG,
+        Arc::new(ErrorEntry {
+            shape,
+            cause,
+            user_code,
+            variant,
+            payload,
+            backtrace,
+        }),
+    ) {
         Ok(handle) => handle,
         Err(_) => Handle::NULL,
     }
@@ -243,6 +273,94 @@ pub fn free_error(handle: Handle) -> bool {
     Registry::global()
         .remove_typed::<ErrorEntry>(handle)
         .is_some()
+}
+
+/// Returns the user-defined status of the drained error behind
+/// `handle` (`0` for framework errors without a user code).
+#[must_use]
+pub fn error_user_code(handle: Handle) -> u32 {
+    Registry::global()
+        .get_typed::<ErrorEntry>(handle)
+        .map_or(0, |entry| entry.user_code)
+}
+
+/// Returns the pointer to the derived variant name bytes of the
+/// drained error behind `handle`, or a null pointer when absent or
+/// the handle is invalid. Valid until `bffi_error_free`.
+#[must_use]
+pub fn error_variant_ptr(handle: Handle) -> *const u8 {
+    match Registry::global().get_typed::<ErrorEntry>(handle) {
+        Some(entry) if !entry.variant.is_empty() => entry.variant.as_ptr(),
+        _ => std::ptr::null(),
+    }
+}
+
+/// Returns the byte length of the derived variant name of the drained
+/// error behind `handle` (`0` = absent).
+#[must_use]
+pub fn error_variant_len(handle: Handle) -> u64 {
+    Registry::global()
+        .get_typed::<ErrorEntry>(handle)
+        .map_or(0, |entry| entry.variant.len() as u64)
+}
+
+/// Returns the derived variant name of the drained error behind
+/// `handle` (empty for framework errors), or `None` for invalid
+/// handles.
+#[must_use]
+pub fn error_variant(handle: Handle) -> Option<String> {
+    Registry::global()
+        .get_typed::<ErrorEntry>(handle)
+        .map(|entry| entry.variant.clone())
+}
+
+/// Returns the pointer to the pre-encoded payload record of the
+/// drained error behind `handle`, or a null pointer when there is no
+/// payload or the handle is invalid. The record is the last element
+/// of the error storage and stays valid until `bffi_error_free`.
+#[must_use]
+pub fn error_payload_ptr(handle: Handle) -> *const u8 {
+    match Registry::global().get_typed::<ErrorEntry>(handle) {
+        Some(entry) if !entry.payload.is_empty() => entry.payload.as_ptr(),
+        _ => std::ptr::null(),
+    }
+}
+
+/// Returns the payload record length of the drained error behind
+/// `handle` (`0` = no payload), or `0` for invalid handles.
+#[must_use]
+pub fn error_payload_len(handle: Handle) -> u64 {
+    Registry::global()
+        .get_typed::<ErrorEntry>(handle)
+        .map_or(0, |entry| entry.payload.len() as u64)
+}
+
+/// Returns the pointer to the captured Rust backtrace of the drained
+/// error behind `handle`, or a null pointer when no backtrace was
+/// captured (`RUST_BACKTRACE` inactive) or the handle is invalid.
+#[must_use]
+pub fn error_stack_ptr(handle: Handle) -> *const u8 {
+    match Registry::global().get_typed::<ErrorEntry>(handle) {
+        Some(entry) => entry
+            .backtrace
+            .as_ref()
+            .map_or(std::ptr::null(), |trace| trace.as_ptr()),
+        None => std::ptr::null(),
+    }
+}
+
+/// Returns the backtrace length of the drained error behind `handle`
+/// (`0` = no backtrace), or `0` for invalid handles.
+#[must_use]
+pub fn error_stack_len(handle: Handle) -> u64 {
+    Registry::global()
+        .get_typed::<ErrorEntry>(handle)
+        .map_or(0, |entry| {
+            entry
+                .backtrace
+                .as_ref()
+                .map_or(0, |trace| trace.len() as u64)
+        })
 }
 
 #[cfg(test)]

@@ -235,7 +235,7 @@ fn wire_encode_value(ctx: &PathCtx, ret: &RetKind, value: syn::Ident) -> TokenSt
 
 /// One item-encode statement inside a sequence loop (the item is
 /// bound to `__item`).
-fn seq_item_encode(wire: &TokenStream, item: &SeqItem) -> TokenStream {
+pub(crate) fn seq_item_encode(wire: &TokenStream, item: &SeqItem) -> TokenStream {
     match item {
         SeqItem::Narrow => quote! { #wire::encode_i32(&mut __buf, *__item as i32); },
         SeqItem::Wide => quote! { #wire::encode_f64(&mut __buf, *__item as f64); },

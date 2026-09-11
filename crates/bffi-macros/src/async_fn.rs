@@ -371,7 +371,8 @@ pub(crate) fn async_meta(model: &AsyncFnModel) -> TokenStream {
 
 /// The future body for a return kind: awaits the call expression and
 /// converts the output into `Ok(AsyncValue)`; `Result` errors become
-/// `Err(BffiError)` through the domain channel.
+/// `Err(BffiError)` through the `Into<BffiError>` domain channel
+/// (derived error enums keep their user codes and payloads).
 fn async_tail(paths: &PathCtx, ret: &RetKind, call: TokenStream) -> TokenStream {
     let core = &paths.core;
     let async_root = &paths.r#async;
@@ -388,11 +389,9 @@ fn async_tail(paths: &PathCtx, ret: &RetKind, call: TokenStream) -> TokenStream 
                         ::std::result::Result::Ok(#ok_tail)
                     }
                     ::std::result::Result::Err(__err) => {
-                        ::std::result::Result::Err(#core::BffiError::with_source(
-                            #core::ErrorCode::DomainError,
-                            ::std::string::ToString::to_string(&__err),
-                            ::std::boxed::Box::new(__err),
-                        ))
+                        let __converted: #core::BffiError =
+                            ::std::convert::Into::into(__err);
+                        ::std::result::Result::Err(__converted)
                     }
                 }
             }
@@ -408,11 +407,36 @@ fn async_tail(paths: &PathCtx, ret: &RetKind, call: TokenStream) -> TokenStream 
 }
 
 /// The `AsyncValue` conversion expression for an already-bound
-/// `__value`.
+/// `__value`. Composites encode explicitly into the wire buffer (the
+/// `AsyncValue::Wire` payload is byte-identical to the sync record
+/// channel).
 fn async_value_from(paths: &PathCtx, ret: &RetKind) -> TokenStream {
     let async_root = &paths.r#async;
+    let types = &paths.types;
     match ret {
         RetKind::Unit => quote! { #async_root::AsyncValue::Unit },
+        RetKind::Record(path) => {
+            let p = support::classify::descriptor_path(&path.0);
+            quote! {{
+                #[allow(unused_imports)]
+                use #types::wire::BffiWire as _;
+                let mut __buf = ::std::vec::Vec::<u8>::new();
+                #p::bffi_wire_encode(&__value, &mut __buf);
+                #async_root::AsyncValue::Wire(__buf)
+            }}
+        }
+        RetKind::Seq(item) => {
+            let wire = quote::quote! { #types::wire };
+            let push = support::codegen::seq_item_encode(&wire, item);
+            quote! {{
+                let mut __buf = ::std::vec::Vec::<u8>::new();
+                #types::wire::encode_seq_header(&mut __buf, __value.len());
+                for __item in &__value {
+                    #push
+                }
+                #async_root::AsyncValue::Wire(__buf)
+            }}
+        }
         _ => quote! { #async_root::AsyncValue::from(__value) },
     }
 }

@@ -333,6 +333,10 @@ export function validateModule(raw: unknown): ModuleJsonLike {
       }
       return named(inner);
     }
+    // A promise return wraps one element type (`Promise<Sample>`).
+    if (ts.startsWith("Promise<") && ts.endsWith(">")) {
+      return named(ts.slice("Promise<".length, -1));
+    }
     // A nullable return wraps one element type (`<T> | null`).
     if (ts.endsWith(" | null")) {
       return named(ts.slice(0, -" | null".length));

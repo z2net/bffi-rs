@@ -102,6 +102,23 @@ pub enum TsType {
     /// The TypeScript `Promise<Uint8Array>` type (`#[bffi_async]`
     /// returns of `Vec<u8>` / `CopiedBuf`).
     PromiseUint8Array,
+    /// The TypeScript `Promise<name>` type (`#[bffi_async]` returns
+    /// of a named record/enum).
+    PromiseRecord(&'static str),
+    /// The TypeScript `Promise<number[]>` type (`#[bffi_async]` `Vec`
+    /// of number-ish items).
+    PromiseNumberArray,
+    /// The TypeScript `Promise<bigint[]>` type (`Vec<i64>`/`Vec<u64>`).
+    PromiseBigIntArray,
+    /// The TypeScript `Promise<boolean[]>` type (`Vec<bool>`).
+    PromiseBooleanArray,
+    /// The TypeScript `Promise<string[]>` type (`Vec<String>`).
+    PromiseStringArray,
+    /// The TypeScript `Promise<Uint8Array[]>` type (`Vec<Vec<u8>>`).
+    PromiseUint8ArrayArray,
+    /// The TypeScript `Promise<name[]>` type (`Vec` of a named
+    /// record/enum).
+    PromiseRecordArray(&'static str),
     /// The TypeScript `void` type.
     Void,
     /// A named record type, declared in [`ModuleDef::records`] (the
@@ -183,6 +200,13 @@ impl TsType {
             Self::PromiseBoolean => Cow::Borrowed("Promise<boolean>"),
             Self::PromiseString => Cow::Borrowed("Promise<string>"),
             Self::PromiseUint8Array => Cow::Borrowed("Promise<Uint8Array>"),
+            Self::PromiseRecord(name) => Cow::Owned(format!("Promise<{name}>")),
+            Self::PromiseNumberArray => Cow::Borrowed("Promise<number[]>"),
+            Self::PromiseBigIntArray => Cow::Borrowed("Promise<bigint[]>"),
+            Self::PromiseBooleanArray => Cow::Borrowed("Promise<boolean[]>"),
+            Self::PromiseStringArray => Cow::Borrowed("Promise<string[]>"),
+            Self::PromiseUint8ArrayArray => Cow::Borrowed("Promise<Uint8Array[]>"),
+            Self::PromiseRecordArray(name) => Cow::Owned(format!("Promise<{name}[]>")),
             Self::Void => Cow::Borrowed("void"),
             Self::Record(name) => Cow::Borrowed(*name),
             Self::Enum(name) => Cow::Borrowed(*name),

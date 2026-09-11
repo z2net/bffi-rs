@@ -58,9 +58,35 @@ export type TsOf<S extends TsName, M extends ModuleJson = ModuleJson> =
           ? Promise<boolean>
           : S extends "Promise<string>"
             ? Promise<string>
-            : S extends "Promise<Uint8Array>"
-              ? Promise<Uint8Array>
-              : S extends "string | null"
+             : S extends "Promise<Uint8Array>"
+               ? Promise<Uint8Array>
+               : S extends "Promise<number[]>"
+                 ? Promise<number[]>
+                 : S extends "Promise<bigint[]>"
+                   ? Promise<bigint[]>
+                   : S extends "Promise<boolean[]>"
+                     ? Promise<boolean[]>
+                     : S extends "Promise<string[]>"
+                       ? Promise<string[]>
+                       : S extends "Promise<Uint8Array[]>"
+                         ? Promise<Uint8Array[]>
+                         : S extends `Promise<${infer P}>`
+                           ? P extends TsName
+                             ? [NamedRecord<M, P>] extends [never]
+                               ? [NamedEnum<M, P>] extends [never]
+                                 ? S
+                                 : NamedEnum<M, P> extends infer E
+                                   ? E extends { variants: { name: string }[] }
+                                     ? Promise<EnumUnion<E>>
+                                     : S
+                                   : S
+                               : NamedRecord<M, P> extends infer Rec
+                                 ? Rec extends { fields: { name: string; ts: TsName }[] }
+                                   ? Promise<RecordShape<Rec, M>>
+                                   : S
+                                 : S
+                             : S
+                           : S extends "string | null"
                 ? string | null
                 : S extends "Uint8Array | null"
                   ? Uint8Array | null
@@ -387,7 +413,7 @@ function decodeReturn(
     if (typeof raw !== "bigint") {
       throw new TypeError(`${fn.name}: expected a task handle, got ${typeof raw}`);
     }
-    return wrapTask(lib, raw);
+    return wrapTask(lib, raw, fn.ret.ts, json);
   }
   if (fn.ret.abi === "stream") {
     if (typeof raw !== "bigint") {

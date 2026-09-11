@@ -207,6 +207,22 @@ pub enum TsKind {
     /// `Promise<Uint8Array>` (`#[bffi_async]` returns of `Vec<u8>` /
     /// `CopiedBuf`).
     PromiseUint8Array,
+    /// `Promise<Name>` (`#[bffi_async]` returns of a named
+    /// record/enum).
+    PromiseRecord(String),
+    /// `Promise<number[]>` (`#[bffi_async]` `Vec` of number-ish).
+    PromiseNumberArray,
+    /// `Promise<bigint[]>` (`#[bffi_async]` `Vec<i64>`/`Vec<u64>`).
+    PromiseBigIntArray,
+    /// `Promise<boolean[]>` (`#[bffi_async]` `Vec<bool>`).
+    PromiseBooleanArray,
+    /// `Promise<string[]>` (`#[bffi_async]` `Vec<String>`).
+    PromiseStringArray,
+    /// `Promise<Uint8Array[]>` (`#[bffi_async]` `Vec<Vec<u8>>`).
+    PromiseUint8ArrayArray,
+    /// `Promise<Name[]>` (`#[bffi_async]` `Vec` of a named
+    /// record/enum).
+    PromiseRecordArray(String),
     /// A pre-quoted `TsType` expression: the B1 named composites
     /// (`#path::BFFI_TS_TYPE` of a record/enum) carry their exact IR
     /// tokens with no path context of their own.
@@ -249,6 +265,8 @@ impl PartialEq for TsKind {
             (Self::RecordArray(a), Self::RecordArray(b)) => a == b,
             (Self::NullableRecord(a), Self::NullableRecord(b)) => a == b,
             (Self::NullableRecordArray(a), Self::NullableRecordArray(b)) => a == b,
+            (Self::PromiseRecord(a), Self::PromiseRecord(b)) => a == b,
+            (Self::PromiseRecordArray(a), Self::PromiseRecordArray(b)) => a == b,
             (a, b) => std::mem::discriminant(a) == std::mem::discriminant(b),
         }
     }
@@ -283,6 +301,15 @@ impl TsKind {
             TsKind::PromiseBoolean => quote! { #dts::TsType::PromiseBoolean },
             TsKind::PromiseString => quote! { #dts::TsType::PromiseString },
             TsKind::PromiseUint8Array => quote! { #dts::TsType::PromiseUint8Array },
+            TsKind::PromiseRecord(name) => quote! { #dts::TsType::PromiseRecord(#name) },
+            TsKind::PromiseNumberArray => quote! { #dts::TsType::PromiseNumberArray },
+            TsKind::PromiseBigIntArray => quote! { #dts::TsType::PromiseBigIntArray },
+            TsKind::PromiseBooleanArray => quote! { #dts::TsType::PromiseBooleanArray },
+            TsKind::PromiseStringArray => quote! { #dts::TsType::PromiseStringArray },
+            TsKind::PromiseUint8ArrayArray => quote! { #dts::TsType::PromiseUint8ArrayArray },
+            TsKind::PromiseRecordArray(name) => {
+                quote! { #dts::TsType::PromiseRecordArray(#name) }
+            }
             TsKind::Expr(tokens) => tokens.clone(),
             TsKind::NumberArray => quote! { #dts::TsType::NumberArray },
             TsKind::BigIntArray => quote! { #dts::TsType::BigIntArray },

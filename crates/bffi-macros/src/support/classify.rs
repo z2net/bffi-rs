@@ -396,7 +396,7 @@ pub fn ts_prim(prim: PrimTy) -> TsKind {
 /// annotated module do not resolve - relative paths gain a `super::`
 /// anchor (leading-`::` / `crate::` / `self::` / `super::` paths pass
 /// through unchanged).
-fn descriptor_path(path: &syn::Path) -> TokenStream {
+pub(crate) fn descriptor_path(path: &syn::Path) -> TokenStream {
     if path.leading_colon.is_some() {
         return quote! { #path };
     }
@@ -515,13 +515,37 @@ pub fn ts_promise(ret: &RetKind) -> TsKind {
         RetKind::Buffer(_) => TsKind::PromiseUint8Array,
         RetKind::Result(inner) => ts_promise(inner),
         RetKind::Nullable(inner) => ts_promise(&RetKind::Buffer(*inner)),
-        // Async records/sequences (plain or nullable) arrive with the
-        // next B4 slice; the async model rejects them before
-        // descriptors are emitted, so these arms are defensive only.
-        RetKind::Record(_)
-        | RetKind::Seq(_)
-        | RetKind::NullableRecord(_)
-        | RetKind::NullableSeq(_) => TsKind::Void,
+        RetKind::Record(path) => {
+            let name = path
+                .0
+                .segments
+                .last()
+                .map(|seg| seg.ident.to_string())
+                .unwrap_or_default();
+            TsKind::PromiseRecord(name)
+        }
+        RetKind::Seq(item) => promise_seq_kind(item),
+        RetKind::NullableRecord(_) | RetKind::NullableSeq(_) => TsKind::Void,
+    }
+}
+
+/// TypeScript kind of a promised sequence (`Promise<number[]>` ...).
+fn promise_seq_kind(item: &SeqItem) -> TsKind {
+    match item {
+        SeqItem::Narrow | SeqItem::Wide => TsKind::PromiseNumberArray,
+        SeqItem::I64 | SeqItem::U64 => TsKind::PromiseBigIntArray,
+        SeqItem::Bool => TsKind::PromiseBooleanArray,
+        SeqItem::Str => TsKind::PromiseStringArray,
+        SeqItem::Bytes => TsKind::PromiseUint8ArrayArray,
+        SeqItem::Record(path) => {
+            let name = path
+                .0
+                .segments
+                .last()
+                .map(|seg| seg.ident.to_string())
+                .unwrap_or_default();
+            TsKind::PromiseRecordArray(name)
+        }
     }
 }
 

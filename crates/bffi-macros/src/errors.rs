@@ -128,7 +128,7 @@ pub(crate) fn async_nullable_return<T: ToTokens>(span: Span, ty_tokens: &T) -> s
             ty_tokens.to_token_stream(),
         ),
     )
-    .with_help("supported async returns: ()|primitives|i64|u64|String|Vec<u8>|CopiedBuf|Result<T, E: Error + Send + Sync>")
+    .with_help("supported async returns: ()|primitives|i64|u64|String|Vec<u8>|CopiedBuf|records|Vec<T>|Result<T, E: Into<BffiError>>")
     .with_note("Option async returns arrive later")
     .with_note(DESIGN_NOTE)
     .to_compile_error(span)

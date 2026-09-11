@@ -230,6 +230,87 @@ pub fn encode_error(out: &mut Vec<u8>, message: &str) {
     out.extend_from_slice(message.as_bytes());
 }
 
+/// Appends one rich-error envelope: `[u32 code][str variant][str
+/// message][record|unit]` - the wire form of a `Result` item's `Err`
+/// for `#[derive(BffiError)]` types (the code is the user code, the
+/// variant the enum variant name, the record the payload fields;
+/// ad-hoc errors use code 13, an empty variant and a unit payload).
+pub fn encode_error_rich(
+    out: &mut Vec<u8>,
+    code: u32,
+    variant: &str,
+    message: &str,
+    payload: Option<&[u8]>,
+) {
+    out.push(TAG_ERROR);
+    push_u32_le(out, code);
+    push_u32_le(out, variant.len() as u32);
+    out.extend_from_slice(variant.as_bytes());
+    push_u32_le(out, message.len() as u32);
+    out.extend_from_slice(message.as_bytes());
+    match payload {
+        Some(record) => out.extend_from_slice(record),
+        None => out.push(TAG_UNIT),
+    }
+}
+
+/// One decoded rich-error envelope.
+pub struct ErrorEnvelope {
+    /// The user-defined code (0 for ad-hoc domain errors).
+    pub code: u32,
+    /// The variant name (empty for ad-hoc domain errors).
+    pub variant: String,
+    /// The human-readable message.
+    pub message: String,
+    /// The payload record bytes (`None` when absent); decode with the
+    /// module's record descriptor.
+    pub payload: Option<Vec<u8>>,
+}
+
+/// Decodes one rich-error envelope at `offset`.
+pub fn decode_error_rich(bytes: &[u8], offset: usize) -> Result<(ErrorEnvelope, usize), BffiError> {
+    let at = expect_tag(bytes, offset, TAG_ERROR, "wire: expected error")?;
+    let read_str = |at: usize| -> Result<(String, usize), BffiError> {
+        let len = read_u32_le(bytes, at)
+            .ok_or_else(|| wire_error("wire: truncated error field length"))?
+            as usize;
+        let start = at + 4;
+        let end = start
+            .checked_add(len)
+            .ok_or_else(|| wire_error("wire: oversized error field length"))?;
+        let payload = bytes
+            .get(start..end)
+            .ok_or_else(|| wire_error("wire: truncated error field"))?;
+        let value = std::str::from_utf8(payload)
+            .map_err(|_| BffiError::new(ErrorCode::InvalidUtf8, "wire: invalid UTF-8 in error"))?
+            .to_owned();
+        Ok((value, end))
+    };
+    let code = read_u32_le(bytes, at).ok_or_else(|| wire_error("wire: truncated error code"))?;
+    let (variant, at) = read_str(at + 4)?;
+    let (message, at) = read_str(at)?;
+    // The payload record (documented as the envelope's last element)
+    // is captured raw: it is a self-describing TAG_RECORD decoded by
+    // the module's record descriptor on the JS side.
+    let payload = bytes
+        .get(at..)
+        .filter(|tail| tail.first() == Some(&TAG_RECORD))
+        .map(|tail| tail.to_vec());
+    let next = match &payload {
+        Some(tail) => at + tail.len(),
+        None => at + 1, // the TAG_UNIT marker
+    };
+    Ok((
+        ErrorEnvelope {
+            code,
+            variant,
+            message,
+            payload,
+        },
+        next,
+    ))
+}
+
 /// Appends one UTF-8 string value record.
 pub fn encode_str(out: &mut Vec<u8>, value: &str) {
     out.push(TAG_STR);
@@ -376,12 +457,12 @@ pub fn decode_variant<'a>(
 mod tests {
     use super::{
         TAG_BOOL, TAG_BYTES, TAG_ERROR, TAG_F64, TAG_I32, TAG_I64, TAG_RECORD, TAG_SEQ, TAG_STR,
-        TAG_U64, TAG_UNIT, decode_bool, decode_bytes, decode_error, decode_f64, decode_i32,
-        decode_i64, decode_record_header, decode_seq_header, decode_str, decode_u64,
-        decode_variant, encode_bool, encode_bytes, encode_error, encode_f64, encode_i32,
-        encode_i64, encode_record_header, encode_seq_header, encode_str, encode_u64, push_bool,
-        push_f64_le, push_i32_le, push_i64_le, push_u32_le, read_bool, read_f64_le, read_i32_le,
-        read_i64_le, read_u32_le,
+        TAG_U64, TAG_UNIT, decode_bool, decode_bytes, decode_error, decode_error_rich, decode_f64,
+        decode_i32, decode_i64, decode_record_header, decode_seq_header, decode_str, decode_u64,
+        decode_variant, encode_bool, encode_bytes, encode_error, encode_error_rich, encode_f64,
+        encode_i32, encode_i64, encode_record_header, encode_seq_header, encode_str, encode_u64,
+        push_bool, push_f64_le, push_i32_le, push_i64_le, push_u32_le, read_bool, read_f64_le,
+        read_i32_le, read_i64_le, read_u32_le,
     };
 
     #[test]
@@ -552,6 +633,43 @@ mod tests {
         assert!(decode_u64(&[TAG_U64, 0, 0], 0).is_err());
         // Length prefix promising more than the buffer holds.
         assert!(decode_error(&[TAG_ERROR, 5, 0, 0, 0], 0).is_err());
+    }
+
+    #[test]
+    fn rich_error_envelope_round_trips_code_variant_message_payload() {
+        use super::decode_error_rich;
+        let mut payload_record = Vec::new();
+        payload_record.push(TAG_RECORD);
+        push_u32_le(&mut payload_record, 1);
+        payload_record.push(TAG_I64);
+        push_i64_le(&mut payload_record, 777);
+
+        let mut out = Vec::new();
+        encode_error_rich(
+            &mut out,
+            0x1001,
+            "NotFound",
+            "no row 777",
+            Some(&payload_record),
+        );
+
+        let (envelope, end) = decode_error_rich(&out, 0).expect("envelope");
+        assert_eq!(envelope.code, 0x1001);
+        assert_eq!(envelope.variant, "NotFound");
+        assert_eq!(envelope.message, "no row 777");
+        assert_eq!(envelope.payload.as_deref(), Some(payload_record.as_slice()));
+        assert_eq!(end, out.len());
+    }
+
+    #[test]
+    fn rich_error_envelope_without_payload_decodes_unit() {
+        let mut out = Vec::new();
+        encode_error_rich(&mut out, 13, "", "domain failure", None);
+        let (envelope, end) = decode_error_rich(&out, 0).expect("envelope");
+        assert_eq!((envelope.code, envelope.variant.as_str()), (13, ""));
+        assert_eq!(envelope.message, "domain failure");
+        assert!(envelope.payload.is_none(), "unit marker = no payload");
+        assert_eq!(end, out.len());
     }
 
     #[test]

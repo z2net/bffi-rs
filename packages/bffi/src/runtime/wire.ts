@@ -39,7 +39,6 @@ export type WireValue =
   | WireValue[]
   | { fields: WireValue[] }
   | Error;
-
 /**
  * Decodes one `[tag][payload]` record into a JS value. The bytes view
  * MUST be a subarray starting at the record; `Bytes` payloads are
@@ -55,6 +54,65 @@ export function decodeValue(bytes: Uint8Array): WireValue {
 export interface Decoded {
   value: WireValue;
   next: number;
+}
+
+/** The decoded rich-error envelope (TAG_ERROR): code + variant +
+ * message + optional payload record fields. */
+export interface ErrorEnvelope {
+  code: number;
+  variant: string;
+  message: string;
+  payload: WireValue[] | null;
+}
+
+/** Decodes the rich-error envelope at `offset`: `[u32 code][str
+ * variant][str message][record|unit]`. `payload` carries the decoded
+ * record fields when present, `null` for the unit marker. */
+export function decodeErrorEnvelope(
+  bytes: Uint8Array,
+  offset: number,
+): { envelope: ErrorEnvelope; next: number } {
+  const tag = bytes[offset];
+  if (tag !== TAG_ERROR) {
+    throw new Error(`not an error record at offset ${offset}`);
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let at = offset + 1;
+  const code = view.getUint32(at, true);
+  at += 4;
+  const readStr = (): { value: string; next: number } => {
+    const len = view.getUint32(at, true);
+    const start = at + 4;
+    const value = new TextDecoder().decode(bytes.subarray(start, start + len));
+    return { value, next: start + len };
+  };
+  const variant = readStr();
+  at = variant.next;
+  const message = readStr();
+  at = message.next;
+  // The payload record (the envelope's last element): decode its
+  // fields; a unit marker means no payload.
+  let payload: WireValue[] | null = null;
+  let next = at;
+  const payloadTag = bytes[at];
+  if (payloadTag === TAG_RECORD) {
+    const count = view.getUint32(at + 1, true);
+    let cursor = at + 5;
+    const fields: WireValue[] = [];
+    for (let i = 0; i < count; i++) {
+      const decoded = decodeAt(bytes, cursor);
+      fields.push(decoded.value);
+      cursor = decoded.next;
+    }
+    payload = fields;
+    next = cursor;
+  } else if (payloadTag === TAG_UNIT) {
+    next = at + 1;
+  }
+  return {
+    envelope: { code, variant: variant.value ?? "", message: message.value, payload },
+    next,
+  };
 }
 
 /** Decodes one record at `offset`. */

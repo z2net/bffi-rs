@@ -101,6 +101,19 @@ describe("streams through the full pipeline", () => {
     expect(elapsed).toBeGreaterThanOrEqual(15);
   });
 
+  test("push producers deliver Result items: T | Error", async () => {
+    // ctx.push(Ok(v)) arrives as the value, ctx.push(Err(m)) as a
+    // real Error instance - and the stream still completes normally.
+    const items = await collect(api.checked_readings(4));
+    expect(items).toHaveLength(4);
+    expect(items[0]).toBe(0);
+    expect(items[1]).toBeInstanceOf(Error);
+    expect((items[1] as Error).message).toContain("bad tick 1");
+    expect(items[2]).toBe(2);
+    expect(items[3]).toBeInstanceOf(Error);
+    expect((items[3] as Error).message).toContain("bad tick 3");
+  });
+
   test("Result items arrive as values: T | Error", async () => {
     // Even indexes are values (exact u64 bigints), odd indexes are
     // error items - real Error instances yielded by the iterator.

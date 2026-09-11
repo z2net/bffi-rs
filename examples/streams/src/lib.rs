@@ -98,6 +98,25 @@ async fn readings(ctx: Ctx<f64>, count: u32) -> Result<(), bffi::StreamError> {
     Ok(())
 }
 
+/// A PUSH producer delivering `Result` items: even ticks arrive as
+/// values, odd ticks as item errors (`ctx.push(Ok/Err)` - the item
+/// itself carries the domain outcome, the stream still completes).
+#[bffi::bffi_stream]
+async fn checked_readings(
+    ctx: Ctx<Result<u32, String>>,
+    count: u32,
+) -> Result<(), bffi::StreamError> {
+    for index in 0..count {
+        bffi::sleep(Duration::from_millis(2)).await;
+        if index % 2 == 0 {
+            ctx.push(Ok(index)).await?;
+        } else {
+            ctx.push(Err(format!("bad tick {index}"))).await?;
+        }
+    }
+    Ok(())
+}
+
 /// Result items: even indexes arrive as values, odd ones as item
 /// errors (the JS iterator throws at the first error item). The
 /// parens are the documented workaround for generic bindings in

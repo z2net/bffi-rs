@@ -87,6 +87,27 @@ const moduleJson = {
       "out": "handle"
     },
     {
+      "name": "checked_readings",
+      "export": "bffi_checked_readings",
+      "docs": [
+        "A PUSH producer delivering `Result` items: even ticks arrive as",
+        "values, odd ticks as item errors (`ctx.push(Ok/Err)` - the item",
+        "itself carries the domain outcome, the stream still completes)."
+      ],
+      "params": [
+        {
+          "name": "count",
+          "ts": "number",
+          "abi": "u32"
+        }
+      ],
+      "ret": {
+        "ts": "AsyncIterableIterator<number | Error>",
+        "abi": "stream"
+      },
+      "out": "handle"
+    },
+    {
       "name": "flaky",
       "export": "bffi_flaky",
       "docs": [

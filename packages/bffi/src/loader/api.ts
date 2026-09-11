@@ -9,6 +9,8 @@ import { ErrorCode, type FfiLib, makeTakeError, sym } from "../runtime/error.ts"
 import { makeReadBuffer } from "../runtime/buffer.ts";
 import { assertSchema, buildDeclarations, type BuiltinFeatures, type FunctionJson, type ModuleJson, type TsName } from "./loader.ts";
 import { wrapTask } from "../runtime/async.ts";
+import { isCompositeTs, jsToWire, tablesOf, wireToJs } from "./composite.ts";
+import { decodeAt, encodeValue } from "../runtime/wire.ts";
 
 const decoder = new TextDecoder();
 
@@ -122,9 +124,9 @@ export function createApiFromLib<J extends ModuleJson>(json: J, lib: FfiLib): Ap
 
   const callFunction = (fn: FunctionJson): (...args: unknown[]) => unknown => {
     return (...jsArgs: unknown[]) => {
-      const args = encodeArgs(fn.params, jsArgs, fn.name);
+      const args = encodeArgs(fn.params, jsArgs, fn.name, json);
       const raw = call(fn.export, args, fn.out);
-      return decodeReturn(fn, raw, readBuffer, lib);
+      return decodeReturn(fn, raw, readBuffer, lib, json);
     };
   };
 
@@ -132,9 +134,9 @@ export function createApiFromLib<J extends ModuleJson>(json: J, lib: FfiLib): Ap
    * NOT counted in the descriptor's own parameter list. */
   const callMethod = (method: FunctionJson): ((handle: bigint, ...jsArgs: unknown[]) => unknown) => {
     return (handle, ...jsArgs) => {
-      const args = encodeArgs(method.params, jsArgs, method.name);
+      const args = encodeArgs(method.params, jsArgs, method.name, json);
       const raw = call(method.export, [handle, ...args], method.out);
-      return decodeReturn(method, raw, readBuffer, lib);
+      return decodeReturn(method, raw, readBuffer, lib, json);
     };
   };
 
@@ -152,19 +154,23 @@ export function createApiFromLib<J extends ModuleJson>(json: J, lib: FfiLib): Ap
  * Encodes JS arguments onto the ABI: booleans coerce to `0`/`1`
  * (dlopen `"u8"`), an empty `Uint8Array` passes a null data pointer
  * with `len == 0` (bun:ffi rejects empty TypedArrays as pointers),
- * strings travel as cstrings verbatim, everything else passes
- * through (numbers, bigints).
+ * strings travel as cstrings verbatim, composite (record/enum/array)
+ * parameters wire-encode into one `Uint8Array` crossing as a
+ * borrowed `(ptr, len)` pair, everything else passes through
+ * (numbers, bigints).
  */
 function encodeArgs(
-  params: readonly { name: string; abi: string }[],
+  params: readonly { name: string; ts: TsName; abi: string }[],
   jsArgs: readonly unknown[],
   fnName: string,
+  json: ModuleJson,
 ): unknown[] {
   if (jsArgs.length !== params.length) {
     throw new Error(
       `${fnName}: expected ${String(params.length)} argument(s), got ${String(jsArgs.length)}`,
     );
   }
+  const tables = tablesOf(json);
   const args: unknown[] = [];
   for (const [index, param] of params.entries()) {
     const value = jsArgs[index];
@@ -177,8 +183,17 @@ function encodeArgs(
         break;
       }
       case "ptr_len": {
+        if (isCompositeTs(param.ts, tables)) {
+          const wire = jsToWire(tables, param.ts, value, `${fnName}(${param.name})`);
+          const out: number[] = [];
+          encodeValue(out, wire);
+          const bytes = new Uint8Array(out);
+          args.push(bytes.length > 0 ? ptr(bytes) : null);
+          args.push(bytes.length);
+          break;
+        }
         if (!(value instanceof Uint8Array)) {
-          throw new TypeError(`${fnName}(${param.name}): expected Uint8Array`);
+          throw new TypeError(`${fnName}(${param.name}): expected ${String(param.ts)}`);
         }
         args.push(value.length > 0 ? ptr(value) : null);
         args.push(value.length);
@@ -262,6 +277,7 @@ function decodeReturn(
   raw: unknown,
   readBuffer: (handle: bigint) => Uint8Array,
   lib: FfiLib,
+  json: ModuleJson,
 ): unknown {
   if (fn.ret.abi === "void") {
     return undefined;
@@ -277,6 +293,10 @@ function decodeReturn(
       throw new TypeError(`${fn.name}: expected a buffer handle, got ${typeof raw}`);
     }
     const bytes = readBuffer(raw);
+    const tables = tablesOf(json);
+    if (isCompositeTs(fn.ret.ts, tables)) {
+      return wireToJs(tables, fn.ret.ts, decodeAt(bytes, 0).value, `${fn.name}()`);
+    }
     if (fn.ret.ts === "string") {
       return decoder.decode(bytes);
     }

@@ -44,7 +44,10 @@ export type RetAbiName =
   | "task"
   | "void";
 
-/** The TypeScript type name as written by `bffi-dts`. */
+/** The TypeScript type name as written by `bffi-dts`. Named record/
+ * enum references (`Sample`) and their arrays (`Sample[]`) resolve
+ * against the module's `records`/`enums` tables; the flat array
+ * forms (`number[]`, ...) are part of the B1 matrix. */
 export type TsName =
   | "number"
   | "bigint"
@@ -54,7 +57,12 @@ export type TsName =
   | "string | null"
   | "Uint8Array | null"
   | "void"
-  | `Promise<${string}>`;
+  | "number[]"
+  | "bigint[]"
+  | "boolean[]"
+  | "string[]"
+  | `Promise<${string}>`
+  | (string & {});
 
 /** Every valid `abi` parameter name (the codegen/CLI validator
  * consumes this set). */
@@ -88,7 +96,9 @@ RET_ABI_NAMES_MUTABLE.add("void");
 /** Every valid return-transport name. */
 export const RET_ABI_NAMES: ReadonlySet<string> = RET_ABI_NAMES_MUTABLE;
 
-/** The TypeScript type names the `bffi-dts` renderer emits. */
+/** The TypeScript type names the `bffi-dts` renderer emits. Named
+ * record/enum references (and their `[]` forms) validate as TS
+ * identifiers against the module tables instead of this closed set. */
 export const TS_NAMES: ReadonlySet<string> = new Set([
   "number",
   "bigint",
@@ -98,6 +108,10 @@ export const TS_NAMES: ReadonlySet<string> = new Set([
   "string | null",
   "Uint8Array | null",
   "void",
+  "number[]",
+  "bigint[]",
+  "boolean[]",
+  "string[]",
   "Promise<void>",
   "Promise<number>",
   "Promise<bigint>",
@@ -105,6 +119,22 @@ export const TS_NAMES: ReadonlySet<string> = new Set([
   "Promise<string>",
   "Promise<Uint8Array>",
 ]);
+
+/** Whether `ts` names a module composite (a record/enum table entry,
+ * optionally as an array form). */
+export function isNamedTs(
+  ts: string,
+  json: Pick<ModuleJson, "records" | "enums">,
+): boolean {
+  const name = ts.endsWith("[]") ? ts.slice(0, -2) : ts;
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) {
+    return false;
+  }
+  return (
+    (json.records ?? []).some((record) => record.name === name)
+    || (json.enums ?? []).some((enumeration) => enumeration.name === name)
+  );
+}
 
 export interface ParamJson {
   name: string;
@@ -145,11 +175,45 @@ export interface ClassJson {
   methods: FunctionJson[];
 }
 
+/** One record field: its JS name, docs and TypeScript type (the
+ * whole value crosses as one wire payload - fields carry no ABI of
+ * their own). */
+export interface RecordFieldJson {
+  name: string;
+  docs: string[];
+  ts: TsName;
+}
+
+/** A `#[derive(BffiRecord)]` type of the module. */
+export interface RecordJson {
+  name: string;
+  docs: string[];
+  fields: RecordFieldJson[];
+}
+
+/** One unit-enum variant (wire-encoded as its name). */
+export interface EnumVariantJson {
+  name: string;
+  docs: string[];
+}
+
+/** A `#[derive(BffiEnum)]` type of the module. */
+export interface EnumJson {
+  name: string;
+  docs: string[];
+  variants: EnumVariantJson[];
+}
+
 export interface ModuleJson {
   bffi: number;
   module: string;
   functions: FunctionJson[];
   classes: ClassJson[];
+  /** The B1 record types (always present in freshly emitted JSON;
+   * older JSON without the key reads as empty). */
+  records?: RecordJson[];
+  /** The B1 enum types. */
+  enums?: EnumJson[];
 }
 
 /** Validates the schema header: unknown versions are rejected. */

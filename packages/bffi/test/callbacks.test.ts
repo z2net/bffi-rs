@@ -19,7 +19,6 @@ import {
   invokeCallback,
   setJsThread,
   TAG_BOOL,
-  TAG_F64,
   TAG_I32,
   TAG_I64,
   type WireValue,
@@ -55,16 +54,9 @@ function makeCallbackMock() {
       }
     } else if (typeof value === "boolean") {
       bytes.push(TAG_BOOL, value ? 1 : 0);
-    } else if (typeof value === "string" || value instanceof Uint8Array) {
-      // String/bytes callback values are outside the ValueType matrix.
-      throw new Error("mock: unsupported callback value kind");
     } else {
-      bytes.push(TAG_F64);
-      const view = new DataView(new ArrayBuffer(8));
-      view.setFloat64(0, value, true);
-      for (let i = 0; i < 8; i++) {
-        bytes.push(view.getUint8(i));
-      }
+      // Strings/bytes/composites are outside the ValueType matrix.
+      throw new Error("mock: unsupported callback value kind");
     }
     return new Uint8Array(bytes);
   };

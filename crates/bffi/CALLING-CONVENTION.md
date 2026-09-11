@@ -99,6 +99,7 @@ not revalidated.
 | 11   | `InvalidArgument`  | TypeError      | argument contract violated |
 | 12   | `WrongThread`      | Error          | call from a non-JS thread that could not be marshalled |
 | 13   | `DomainError`      | Error          | `Err` from a `Result<T, E>` return |
+| 0x1000-0xFFFF | (user codes, from a `#[derive(BffiError)]` conversion) | Error | typed domain error; replaces the framework `13` in the ABI return |
 
 ## 7. Type tag ranges
 
@@ -182,3 +183,32 @@ item's `Err` encodes as a tag-11 record and arrives in JavaScript
 as an `Error` instance inside the iterator (`T | Error` contract);
 a producer `Err` return or a panicking iterator terminates the
 stream with the drained last error instead.
+
+## 11. Typed errors (`#[derive(BffiError)]`, B3)
+
+A domain error enum derives `Display`, `std::error::Error` and
+`From<Self> for BffiError`. Every variant carries
+`#[bffi(code = 0x10XX)]` inside the reserved user range
+`0x1000..=0xFFFF` (unique within the enum, E013 otherwise); field
+types go through the same matrix as records (E014 on an
+unsupported type).
+
+The conversion fixes the three error channels at once:
+
+- **status**: `status_u32()` returns the variant's user code
+  (the framework `13 DomainError` is replaced) - the number JS
+  reads as `e.code`;
+- **variant**: the variant name travels as `e.name` (JS);
+- **payload**: the variant's named fields encode as one
+  `TAG_RECORD` (wire tag `1`) and arrive as `e.payload` - a
+  positional array of decoded field values.
+
+Unit variants carry no payload (`e.payload === undefined`).
+The rich envelope (`bffi_error_user_code`/`_variant_*`/
+`_payload_*`/`_stack_*` accessors over the drained last error)
+is best-effort on the JS side: mocks and older builds without
+the symbols keep working, only the rich fields disappear.
+
+`RUST_BACKTRACE`-gated backtraces travel as `e.nativeStack`.
+The loader JSON carries the `errors` table (name, docs,
+variants with hex codes and payload fields) for typed codegen.

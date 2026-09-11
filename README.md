@@ -81,6 +81,37 @@ const counter = new api.counter(10); // classes: FinalizationRegistry + release(
 await api.compute(21);               // `#[bffi_async]` -> Promise
 ```
 
+## Typed errors
+
+Domain errors derive `BffiError` with stable user codes in the
+reserved range `0x1000..=0xFFFF`; the code replaces the framework
+status in the ABI return and surfaces as `e.code` on the JS side,
+with `e.name` (the variant), `e.payload` (the variant fields) and
+`e.nativeStack` (a `RUST_BACKTRACE`-gated backtrace) alongside.
+
+```rust
+#[derive(BffiError, Debug)]
+pub enum UsersError {
+    #[bffi(code = 0x1001)]
+    NotFound { id: u64 },
+    #[bffi(code = 0x1002)]
+    InvalidAge { age: u32, min: u32 },
+}
+
+#[bffi]
+pub fn find_user(id: u64) -> Result<User, UsersError> { ... }
+```
+
+```ts
+try {
+  api.find_user(99n);
+} catch (e) {
+  e.code;    // 0x1001 (4097)
+  e.name;    // "NotFound"
+  e.payload; // [99n]
+}
+```
+
 The pipeline, its config (`.bffi/bffi.json`) and every subtlety are
 documented in
 [`packages/bffi`](https://github.com/z2net/bffi-rs/blob/main/packages/bffi);

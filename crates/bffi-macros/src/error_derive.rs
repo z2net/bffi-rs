@@ -110,7 +110,7 @@ fn expand(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
         let code_lit = def.code;
         if def.fields.is_empty() {
             quote! {
-                Self::#ident {} => ::bffi::BffiError::new(
+                #name::#ident {} => ::bffi::BffiError::new(
                     ::bffi::ErrorCode::DomainError,
                     #vname,
                 )
@@ -122,11 +122,11 @@ fn expand(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
             let field_count = def.fields.len();
             let encodes = def.fields.iter().map(|(ident, _)| {
                 quote! {
-                    ::bffi::BffiStreamItem::encode_into(value.#ident, &mut __payload);
+                    ::bffi::BffiStreamItem::encode_into(&#ident, &mut __payload);
                 }
             });
             quote! {
-                Self::#ident { #(#field_names):* } => {
+                #name::#ident { #(#field_names),* } => {
                     let mut __payload = ::std::vec::Vec::<u8>::new();
                     ::bffi::bffi_types::wire::encode_record_header(&mut __payload, #field_count);
                     #(#encodes)*

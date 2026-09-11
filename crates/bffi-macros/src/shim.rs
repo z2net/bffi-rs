@@ -64,7 +64,7 @@ pub(crate) fn expand(model: &FnModel) -> TokenStream {
         #[doc = #shim_doc]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
         pub extern "C" fn #shim_ident(#(#params,)* #(#out)*) -> u32 {
-            #core::boundary::run_extern_body(move || { #body })
+            #core::boundary::run_extern_body_u32(move || { #body })
         }
     };
 

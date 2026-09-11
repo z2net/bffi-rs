@@ -1,0 +1,21 @@
+{
+  "bffi": 1,
+  "version": "0.1.0",
+  "module": "errors",
+  "debug": false,
+  "crate": {
+    "dir": ".",
+    "targetDir": "../../target",
+    "name": "bffi-example-errors",
+    "binary": "bffi_example_errors"
+  },
+  "features": {
+    "runtime": true
+  },
+  "generate": {
+    "apiGen": true,
+    "outFile": "api.gen.ts"
+  },
+  "files": ["bffi.api.json", "api.gen.ts"],
+  "libraryPath": null
+}

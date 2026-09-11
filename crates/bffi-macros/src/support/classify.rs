@@ -292,16 +292,9 @@ pub fn classify_return(ty: &syn::Type) -> Result<RetKind, Unsupported<'_>> {
             }
             ("Result", [ok, err]) => {
                 let inner = classify_return(ok)?;
-                // Shape-check only: the trait obligations on `E`
-                // (`Error + Send + Sync + 'static`) surface as a
-                // regular trait-bound error in the expansion, where
-                // rustc names the exact missing impl.
-                if path_ident(err).is_none() {
-                    return Err(Unsupported {
-                        span: ty.span(),
-                        ty,
-                    });
-                }
+                // The E type contract is `Into<BffiError>` (checked at
+                // the trait level); no shape pre-check needed.
+                let _ = err;
                 return Ok(RetKind::Result(Box::new(inner)));
             }
             _ => {}

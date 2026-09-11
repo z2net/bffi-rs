@@ -434,7 +434,7 @@ pub(crate) fn expand(model: &StreamFnModel) -> TokenStream {
         #[doc = #shim_doc]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
         pub extern "C" fn #shim_ident(#(#shim_params,)* __ret: *mut u64) -> u32 {
-            #core::boundary::run_extern_body(move || {
+            #core::boundary::run_extern_body_u32(move || {
                 #conversions
                 #spawn
             })
@@ -658,7 +658,7 @@ pub(crate) fn expand_push(model: &PushModel) -> TokenStream {
         #[doc = #shim_doc]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
         pub extern "C" fn #shim_ident(#(#shim_params,)* __ret: *mut u64) -> u32 {
-            #core::boundary::run_extern_body(move || {
+            #core::boundary::run_extern_body_u32(move || {
                 #conversions
                 #spawn
             })

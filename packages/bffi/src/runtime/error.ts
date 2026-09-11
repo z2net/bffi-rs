@@ -122,9 +122,14 @@ export function makeTakeError(lib: FfiLib): (status?: number) => Error | null {
       const pLen = Number(payloadLen(handle));
       const pPointer = payloadPtr(handle) as unknown as number;
       if (pLen > 0) {
-        (error as Error & { payload: unknown }).payload = decodeValue(
-          new Uint8Array(toArrayBuffer(pPointer, 0, pLen)),
-        );
+        const decoded = decodeValue(new Uint8Array(toArrayBuffer(pPointer, 0, pLen)));
+        // A TAG_RECORD payload decodes as {fields: [...]} - unwrap it
+        // to the positional array so e.payload matches the Rust-side
+        // variant fields directly.
+        (error as Error & { payload: unknown }).payload =
+          decoded !== null && typeof decoded === "object" && "fields" in decoded
+            ? (decoded as { fields: unknown[] }).fields
+            : decoded;
       }
       const sLen = Number(stackLen(handle));
       const sPointer = stackPtr(handle) as unknown as number;

@@ -254,7 +254,7 @@ pub(crate) fn expand(model: &StreamFnModel) -> TokenStream {
         let __encoded = __iter.map(|__item| {
             let mut rec = ::std::vec::Vec::<u8>::new();
             #encode
-            rec
+            ::std::result::Result::Ok(rec)
         });
         match ::bffi::bffi_stream::spawn(::std::boxed::Box::new(__encoded)) {
             ::std::result::Result::Ok(handle) => {

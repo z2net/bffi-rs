@@ -137,7 +137,8 @@ pub use crate::bffi_event_loop::{
 pub use crate::bffi_object::{ObjectError, ObjectWrap, TAG_MAX, TAG_MIN, tag_in_range};
 #[cfg(feature = "stream")]
 pub use crate::bffi_stream::{
-    Chunk, StreamError, drop_stream, is_live, next_chunk, spawn as spawn_stream,
+    BffiStreamItem, Chunk, Ctx, StreamError, drop_stream, is_live, next_chunk,
+    spawn as spawn_stream, spawn_push,
 };
 #[cfg(feature = "types")]
 pub use crate::bffi_types::{

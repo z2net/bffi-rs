@@ -24,6 +24,7 @@ default = [
     "build",
     "callback",
     "event-loop",
+    "stream",
     "async",
     "macros",
     "class",
@@ -36,6 +37,7 @@ object = ["core"]
 build = ["core", "types", "error", "dts"]
 callback = ["core", "types", "build"]
 event-loop = ["core", "callback"]
+stream = ["core", "types", "build"]
 async = ["core", "types", "build", "event-loop"]
 macros = ["dep:bffi-macros", "core", "types", "build", "dts"]
 class = ["macros", "object"]

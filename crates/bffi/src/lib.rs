@@ -91,6 +91,9 @@ pub mod bffi_event_loop;
 #[cfg(feature = "object")]
 #[path = "object/mod.rs"]
 pub mod bffi_object;
+#[cfg(feature = "stream")]
+#[path = "stream/mod.rs"]
+pub mod bffi_stream;
 #[cfg(feature = "types")]
 #[path = "types/mod.rs"]
 pub mod bffi_types;
@@ -132,6 +135,10 @@ pub use crate::bffi_event_loop::{
 };
 #[cfg(feature = "object")]
 pub use crate::bffi_object::{ObjectError, ObjectWrap, TAG_MAX, TAG_MIN, tag_in_range};
+#[cfg(feature = "stream")]
+pub use crate::bffi_stream::{
+    Chunk, StreamError, drop_stream, is_live, next_chunk, spawn as spawn_stream,
+};
 #[cfg(feature = "types")]
 pub use crate::bffi_types::{
     BffiWire, ConversionError, CopiedBuf, JsNumber, buf_view, bytes_to_string, str_view,

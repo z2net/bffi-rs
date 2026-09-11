@@ -108,7 +108,9 @@ const moduleJson = {
       }
     }
   ],
-  "classes": []
+  "classes": [],
+  "records": [],
+  "enums": []
 } as const satisfies ModuleJson;
 
 /** Opens the native library at `libraryPath` and returns the typed API. */

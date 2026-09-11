@@ -235,6 +235,23 @@ pub fn decode_f64(bytes: &[u8], offset: usize) -> Result<(f64, usize), BffiError
     Ok((value, at + 8))
 }
 
+/// Decodes one number-ish value record: `TAG_I32` or `TAG_F64`
+/// (the JS encoder picks the width by value - whole small numbers
+/// ride `i32` - so number fields decode tolerantly and exactly).
+pub fn decode_number(bytes: &[u8], offset: usize) -> Result<(f64, usize), BffiError> {
+    let tag = *bytes
+        .get(offset)
+        .ok_or_else(|| wire_error("wire: expected a number"))?;
+    if tag == TAG_I32 {
+        let (value, next) = decode_i32(bytes, offset)?;
+        return Ok((f64::from(value), next));
+    }
+    if tag == TAG_F64 {
+        return decode_f64(bytes, offset);
+    }
+    Err(wire_error("wire: expected i32 or f64"))
+}
+
 /// Decodes one `bool` value record at `offset`.
 pub fn decode_bool(bytes: &[u8], offset: usize) -> Result<(bool, usize), BffiError> {
     let at = expect_tag(bytes, offset, TAG_BOOL, "wire: expected bool")?;

@@ -259,8 +259,9 @@ impl FieldKind {
             Self::NarrowInt => quote! {
                 let (#ident, __off) = __w::decode_i32(bytes, __off)?;
             },
+            // The JS encoder picks i32/f64 by value: decode both.
             Self::WideNumber => quote! {
-                let (#ident, __off) = __w::decode_f64(bytes, __off)?;
+                let (#ident, __off) = __w::decode_number(bytes, __off)?;
             },
             Self::Int64 => quote! {
                 let (#ident, __off) = __w::decode_i64(bytes, __off)?;

@@ -26,9 +26,11 @@ type NamedEnum<M extends ModuleJson, N extends string> = Extract<
   { name: N }
 >;
 
-/** The object shape of one record entry: fields keyed by name. */
-type RecordShape<R extends { fields: { name: string; ts: TsName }[] }> = {
-  [F in R["fields"][number] as F["name"]]: TsOf<F["ts"]>;
+/** The object shape of one record entry: fields keyed by name (the
+ * module context threads through - a record field may reference
+ * another composite of the same module). */
+type RecordShape<R extends { fields: { name: string; ts: TsName }[] }, M extends ModuleJson> = {
+  [F in R["fields"][number] as F["name"]]: TsOf<F["ts"], M>;
 };
 
 /** The string-literal union of one enum entry's variants. */
@@ -95,7 +97,7 @@ export type TsOf<S extends TsName, M extends ModuleJson = ModuleJson> =
                                   : S
                               : NamedRecord<M, S & string> extends infer Rec
                                 ? Rec extends { fields: { name: string; ts: TsName }[] }
-                                  ? RecordShape<Rec>
+                                  ? RecordShape<Rec, M>
                                   : S
                                 : S;
 

@@ -8,6 +8,7 @@ members = [
     "examples/async",
     "examples/event-loop",
     "examples/callbacks",
+    "examples/records",
 ]
 
 [workspace.package]

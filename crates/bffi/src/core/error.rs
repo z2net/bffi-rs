@@ -59,6 +59,10 @@ pub enum ErrorCode {
     /// A domain error reported by the native function through the
     /// `Result` error channel.
     DomainError = 13,
+    /// A stream pull found the buffer empty while the producer is
+    /// still alive: not an error - retry after the next wake.
+    /// Returned by `bffi_stream_next` only.
+    Pending = 14,
 }
 
 impl ErrorCode {
@@ -89,6 +93,7 @@ impl ErrorCode {
             11 => Some(Self::InvalidArgument),
             12 => Some(Self::WrongThread),
             13 => Some(Self::DomainError),
+            14 => Some(Self::Pending),
             _ => None,
         }
     }
@@ -111,6 +116,7 @@ impl fmt::Display for ErrorCode {
             Self::InvalidArgument => "invalid argument",
             Self::WrongThread => "call from a non-JS thread that could not be marshalled",
             Self::DomainError => "domain error reported by the native function",
+            Self::Pending => "no items ready yet - the producer is still alive",
         };
         f.write_str(text)
     }

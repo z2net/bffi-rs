@@ -123,6 +123,26 @@ const moduleJson = {
       "out": "handle"
     },
     {
+      "name": "label_bytes",
+      "export": "bffi_label_bytes",
+      "docs": [
+        "The UTF-8 bytes of each label: the nested byte-vector sequence",
+        "(`Vec<Vec<u8>>`) round trip."
+      ],
+      "params": [
+        {
+          "name": "samples",
+          "ts": "Sample[]",
+          "abi": "ptr_len"
+        }
+      ],
+      "ret": {
+        "ts": "Uint8Array[]",
+        "abi": "buffer"
+      },
+      "out": "handle"
+    },
+    {
       "name": "classify",
       "export": "bffi_classify",
       "docs": [

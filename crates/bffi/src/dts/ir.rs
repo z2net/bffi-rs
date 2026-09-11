@@ -99,6 +99,8 @@ pub enum TsType {
     BooleanArray,
     /// The TypeScript `string[]` type (`Vec<String>`).
     StringArray,
+    /// The TypeScript `Uint8Array[]` type (`Vec<Vec<u8>>`).
+    Uint8ArrayArray,
     /// The TypeScript `<name>[]` type (`Vec` of a named record).
     RecordArray(&'static str),
     /// `AsyncIterableIterator<number>` (a `#[bffi_stream]` of
@@ -162,6 +164,7 @@ impl TsType {
             Self::BigIntArray => Cow::Borrowed("bigint[]"),
             Self::BooleanArray => Cow::Borrowed("boolean[]"),
             Self::StringArray => Cow::Borrowed("string[]"),
+            Self::Uint8ArrayArray => Cow::Borrowed("Uint8Array[]"),
             Self::RecordArray(name) => Cow::Owned(format!("{name}[]")),
             Self::StreamNumber => Cow::Borrowed("AsyncIterableIterator<number>"),
             Self::StreamBigInt => Cow::Borrowed("AsyncIterableIterator<bigint>"),

@@ -67,6 +67,17 @@ describe("records through the full pipeline", () => {
     expect(api.labels(samples)).toEqual(["a", "b"]);
   });
 
+  test("nested byte vectors round trip (Vec<Vec<u8>>)", () => {
+    const samples: Sample[] = [
+      { at: 0, weight: 1, label: "hi", axis: "Horizontal" },
+      { at: 0, weight: 2, label: "", axis: "Vertical" },
+    ];
+    const encoded: Uint8Array[] = api.label_bytes(samples);
+    expect(encoded.length).toBe(2);
+    expect(Array.from(encoded[0] ?? [])).toEqual([0x68, 0x69]);
+    expect((encoded[1] as Uint8Array).length).toBe(0);
+  });
+
   test("the enum result channel", () => {
     const samples: Sample[] = [
       { at: 0, weight: 1, label: "x", axis: "Vertical" },

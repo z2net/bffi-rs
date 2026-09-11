@@ -185,10 +185,20 @@ pub(crate) fn seq_item(inner: &syn::Type) -> Option<SeqItem> {
         return None;
     }
     let last = path.path.segments.last()?;
+    let name = last.ident.to_string();
+    // `Vec<u8>` items: the nested byte-vector sequence
+    // (`Vec<Vec<u8>>`).
+    if name == "Vec"
+        && let syn::PathArguments::AngleBracketed(args) = &last.arguments
+        && args.args.len() == 1
+        && let syn::GenericArgument::Type(elem) = &args.args[0]
+        && is_u8(elem)
+    {
+        return Some(SeqItem::Bytes);
+    }
     if !last.arguments.is_none() {
         return None;
     }
-    let name = last.ident.to_string();
     match name.as_str() {
         "i8" | "i16" | "i32" | "u8" | "u16" => Some(SeqItem::Narrow),
         "u32" | "f32" | "f64" => Some(SeqItem::Wide),
@@ -394,6 +404,7 @@ fn ts_seq_item(item: &SeqItem) -> TsKind {
         SeqItem::I64 | SeqItem::U64 => TsKind::BigIntArray,
         SeqItem::Bool => TsKind::BooleanArray,
         SeqItem::Str => TsKind::StringArray,
+        SeqItem::Bytes => TsKind::Uint8ArrayArray,
         SeqItem::Record(path) => {
             let name = path
                 .0
@@ -706,6 +717,7 @@ mod tests {
             ("Vec<i64>", SeqItem::I64),
             ("Vec<bool>", SeqItem::Bool),
             ("Vec<String>", SeqItem::Str),
+            ("Vec<Vec<u8>>", SeqItem::Bytes),
             (
                 "Vec<Point>",
                 SeqItem::Record(crate::support::kind::KindPath(point)),
@@ -727,8 +739,10 @@ mod tests {
 
     #[test]
     fn vec_of_unsupported_items_is_rejected() {
-        // `Vec<u64>` now rides the exact U64 wire tag (supported).
-        for src in ["Vec<char>", "Vec<Option<u32>>", "Vec<Vec<u8>>"] {
+        // `Vec<u64>` now rides the exact U64 wire tag, `Vec<Vec<u8>>`
+        // the Bytes item (both supported); only genuinely unsupported
+        // items stay rejected.
+        for src in ["Vec<char>", "Vec<Option<u32>>", "Vec<Vec<Vec<u8>>>"] {
             assert!(
                 classify_param(&ty(src)).is_err(),
                 "`{src}` param must be rejected"

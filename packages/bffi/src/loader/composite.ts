@@ -33,7 +33,8 @@ export function tablesOf(json: ModuleJson): CompositeTables {
  * the raw borrowed-buffer path. */
 export function isCompositeTs(ts: string, tables: CompositeTables): boolean {
   if (
-    ts === "number[]" || ts === "bigint[]" || ts === "boolean[]" || ts === "string[]"
+    ts === "number[]" || ts === "bigint[]" || ts === "boolean[]" ||
+    ts === "string[]" || ts === "Uint8Array[]"
   ) {
     return true;
   }

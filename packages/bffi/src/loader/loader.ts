@@ -115,6 +115,7 @@ export const TS_NAMES: ReadonlySet<string> = new Set([
   "bigint[]",
   "boolean[]",
   "string[]",
+  "Uint8Array[]",
   "Promise<void>",
   "Promise<number>",
   "Promise<bigint>",

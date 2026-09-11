@@ -12,6 +12,7 @@ pub const FUNCTIONS: &[bffi::FunctionDef] = &[
     crate::bffi_meta_total_weight::FUNCTION,
     crate::bffi_meta_distances::FUNCTION,
     crate::bffi_meta_labels::FUNCTION,
+    crate::bffi_meta_label_bytes::FUNCTION,
     crate::bffi_meta_classify::FUNCTION,
 ];
 

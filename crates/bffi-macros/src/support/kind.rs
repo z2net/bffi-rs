@@ -104,6 +104,9 @@ pub enum SeqItem {
     Bool,
     /// `String` items - one string record each.
     Str,
+    /// `Vec<u8>` items - one raw-bytes record each (the nested
+    /// sequence `Vec<Vec<u8>>`).
+    Bytes,
     /// Nested record/enum items - one complete nested record each.
     Record(KindPath),
 }
@@ -195,6 +198,8 @@ pub enum TsKind {
     BooleanArray,
     /// `string[]` (`Vec<String>`).
     StringArray,
+    /// `Uint8Array[]` (`Vec<Vec<u8>>` - a sequence of byte vectors).
+    Uint8ArrayArray,
     /// `<Name>[]` (a `Vec` sequence of a named record/enum).
     RecordArray(String),
     /// `AsyncIterableIterator<number>` (a `#[bffi_stream]` of
@@ -251,6 +256,7 @@ impl TsKind {
             TsKind::BigIntArray => quote! { #dts::TsType::BigIntArray },
             TsKind::BooleanArray => quote! { #dts::TsType::BooleanArray },
             TsKind::StringArray => quote! { #dts::TsType::StringArray },
+            TsKind::Uint8ArrayArray => quote! { #dts::TsType::Uint8ArrayArray },
             TsKind::RecordArray(name) => quote! { #dts::TsType::RecordArray(#name) },
             TsKind::StreamNumber => quote! { #dts::TsType::StreamNumber },
             TsKind::StreamBigInt => quote! { #dts::TsType::StreamBigInt },

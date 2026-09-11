@@ -225,6 +225,7 @@ fn seq_item_encode(wire: &TokenStream, item: &SeqItem) -> TokenStream {
         SeqItem::U64 => quote! { #wire::encode_u64(&mut __buf, *__item); },
         SeqItem::Bool => quote! { #wire::encode_bool(&mut __buf, *__item); },
         SeqItem::Str => quote! { #wire::encode_str(&mut __buf, __item); },
+        SeqItem::Bytes => quote! { #wire::encode_bytes(&mut __buf, __item); },
         SeqItem::Record(path) => {
             let path = &path.0;
             quote! { #path::bffi_wire_encode(__item, &mut __buf); }
@@ -445,6 +446,11 @@ fn seq_item_decode(ctx: &PathCtx, item: &SeqItem, slice: &Ident) -> TokenStream 
             let (value, next) = #wire::decode_str(#slice, offset)?;
             offset = next;
             items.push(::std::string::String::from(value));
+        },
+        SeqItem::Bytes => quote! {
+            let (value, next) = #wire::decode_bytes(#slice, offset)?;
+            offset = next;
+            items.push(::std::vec::Vec::from(value));
         },
         SeqItem::Record(path) => {
             let path = &path.0;

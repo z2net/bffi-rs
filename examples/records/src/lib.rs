@@ -107,6 +107,13 @@ pub fn labels(samples: Vec<Sample>) -> Vec<String> {
     samples.into_iter().map(|s| s.label).collect()
 }
 
+/// The UTF-8 bytes of each label: the nested byte-vector sequence
+/// (`Vec<Vec<u8>>`) round trip.
+#[bffi]
+pub fn label_bytes(samples: Vec<Sample>) -> Vec<Vec<u8>> {
+    samples.into_iter().map(|s| s.label.into_bytes()).collect()
+}
+
 /// The axis of the first sample; an empty sequence is a domain
 /// error.
 #[bffi]

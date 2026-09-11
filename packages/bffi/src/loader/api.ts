@@ -70,9 +70,11 @@ export type TsOf<S extends TsName, M extends ModuleJson = ModuleJson> =
                       ? bigint[]
                       : S extends "boolean[]"
                         ? boolean[]
-                        : S extends "string[]"
-                          ? string[]
-                          : S extends "AsyncIterableIterator<number>"
+                  : S extends "string[]"
+                    ? string[]
+                    : S extends "Uint8Array[]"
+                      ? Uint8Array[]
+                      : S extends "AsyncIterableIterator<number>"
                             ? AsyncIterableIterator<number>
                             : S extends "AsyncIterableIterator<bigint>"
                               ? AsyncIterableIterator<bigint>

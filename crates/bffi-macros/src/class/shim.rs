@@ -344,7 +344,7 @@ fn shim_pair(
         #[doc = #doc]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
         pub extern "C" fn #ident(#params) -> u32 {
-            #core::boundary::run_extern_body(move || { #body })
+            #core::boundary::run_extern_body_u32(move || { #body })
         }
     };
     quote! { #debug_shim #release_shim }

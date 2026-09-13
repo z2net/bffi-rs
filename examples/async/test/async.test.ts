@@ -115,6 +115,24 @@ describe("async through the full pipeline", () => {
     expect(settled).toBeTrue();
   });
 
+  test("mixed concurrency: 24 tasks with values, failures and a timeout", async () => {
+    const values = Array.from({ length: 24 }, (_, i) => withPump(api.double_async(BigInt(i))));
+    const rejected = withPump(api.fail_async()).then(
+      () => "resolved",
+      (error: Error) => error.message,
+    );
+    const timed = withPump(api.timed_async()).then(
+      () => "resolved",
+      (error: Error) => error.message,
+    );
+    const results = await Promise.all([...values, rejected, timed]);
+    for (let i = 0; i < 24; i++) {
+      expect(results[i]).toBe(BigInt(i) * 2n);
+    }
+    expect(results[24]).toBe("domain failure");
+    expect(results[25]).toContain("task timed out");
+  });
+
   test("a raw task can be cancelled from JS before wrapping", async () => {
     const task = api.spawn_slow(60_000n);
     expect(task).toBeTypeOf("bigint");

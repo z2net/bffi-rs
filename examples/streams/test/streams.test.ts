@@ -114,6 +114,21 @@ describe("streams through the full pipeline", () => {
     expect((items[3] as Error).message).toContain("bad tick 3");
   });
 
+  test("concurrent push streams interleave without cross-talk", async () => {
+    const [plain, checked] = await Promise.all([
+      collect(api.readings(8)),
+      collect(api.checked_readings(6)),
+    ]);
+    expect(plain).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(checked).toHaveLength(6);
+    expect(checked.filter((item) => !(item instanceof Error))).toEqual([0, 2, 4]);
+    expect(
+      checked.filter((item) => item instanceof Error).every((item) =>
+        String((item as Error).message).startsWith("bad tick"),
+      ),
+    ).toBe(true);
+  });
+
   test("Result items arrive as values: T | Error", async () => {
     // Even indexes are values (exact u64 bigints), odd indexes are
     // error items - real Error instances yielded by the iterator.

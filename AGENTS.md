@@ -98,7 +98,7 @@ bffi-rs/
 │   ├── DESIGN.md                # architecture & decisions
 │   ├── CONTRIBUTING.md
 │   └── CODE_OF_CONDUCT.md
-├── examples/                      # sqlite, async, event-loop, callbacks (each an e2e suite)
+├── examples/                      # sqlite, records, streams, errors, async, event-loop, callbacks, wry (each an e2e suite)
 ├── packages/                      # JS-side: bffi (@z2net/bffi), bffi-cli, native
 └── scripts/
 ```
@@ -219,7 +219,7 @@ When unsure about architecture, prefer asking (or opening a draft PR) instead of
 | Async         | `#[bffi_async]`: spawn shim returns a task handle; N-worker executor; cooperative cancel + timeout; resolve via event-loop enqueue; tokio opt-in; tags 0x0500-0x05FF; composite returns ride the wire channel (`Promise<Record>` / `Promise<Vec<T>>` via `AsyncValue::Wire`); `E: Into<BffiError>` contract |
 | Streams       | `#[bffi_stream]` (B2): pull (`impl Iterator<Item = T> + Send`) or push (`async fn(ctx: Ctx<T>, ...)`, bounded 256, backpressure) as a JS `AsyncIterableIterator<T>`; generic `bffi_stream_next(handle, max)` (TAG_SEQ buffer, 0 = done; 14 = Pending retry) + `bffi_stream_drop` + `bffi_stream_set_wake` (event-loop wake trampoline, best-effort); tag 0x0600; push producers deliver `Result` items (`ctx.push(Ok/Err)`) |
 | Object ownership | `ObjectWrap<T>` over global `Registry` (tag 0x0100-0x01FF); release frees the slot |
-| Callbacks | `register`/`revoke` + `bind_js_callback`; tags 0x0200-0x0201; wrong-thread reject |
+| Callbacks | `register`/`revoke` + `bind_js_callback`; tags 0x0200-0x0201; wrong-thread reject; `invoke_wait` marshals a callback onto the JS thread from ANY native thread with a mandatory timeout (`Timeout = 15`) - both tables (native closures and JS-bound handles) |
 | Build ABI | Runtime exports (`bffi_error_*`, `bffi_buffer` pair, `bffi_types_free`) via `bffi_runtime_abi!()` in the user crate; tags 0x0400-0x04FF; canonical contract: bffi/CALLING-CONVENTION.md |
 | Descriptor ABI | `AbiSig` (exact C widths + out slot) on `FunctionDef`/`MethodDef`; getter `export_name` + out on `FieldDef`; `release_export` on `ClassDef` |
 | Wire codec | `bffi_types::wire`: one `[tag][payload]` table for async payloads and callback sigs/args/results |

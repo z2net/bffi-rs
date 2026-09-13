@@ -221,7 +221,7 @@ chore: pin rust-toolchain to 1.98.0
 | 门面         | `bffi`:扁平化再导出整个栈;`unsafe_zero_copy` 是唯一的零拷贝入口;宏展开默认引用 `::bffi::{core,types,dts,object,build,r#async}`(`crate = "<name>"` 重定向,`crate = "direct"` 选择 pre-merge 根) |
 | 异步         | `#[bffi_async]`:spawn 包装函数(shim)返回任务句柄;N-worker 执行器;协作式取消 + 超时;经 event-loop 入队交付;tokio opt-in;标签 0x0500-0x05FF;组合类型返回走 wire 通道(`Promise<Record>` / `Promise<Vec<T>>` 经 `AsyncValue::Wire`,`Option` -> `Promise<... \| null>`);`E: Into<BffiError>` 契约 |
 | 对象所有权 | 基于全局 `Registry` 的 `ObjectWrap<T>`(标签 0x0100-0x01FF);release 释放槽位 |
-| 回调 | `register`/`revoke` + `bind_js_callback`;标签 0x0200-0x0201;错误线程 - 拒绝 |
+| 回调 | `register`/`revoke` + `bind_js_callback`;标签 0x0200-0x0201;错误线程 - 拒绝;`invoke_wait` 经 marshal 把回调投递到 JS 线程,可从任意原生线程调用,必带超时(`Timeout = 15`)- 两张表(原生闭包与 JS-bound 句柄) |
 | 构建 ABI | 运行时导出（`bffi_error_*`、`bffi_buffer` 对、`bffi_types_free`）通过在用户 crate 中展开的 `bffi_runtime_abi!()` 生成；标签 0x0400-0x04FF；规范契约：bffi/CALLING-CONVENTION.md |
 | 描述符 ABI | `FunctionDef`/`MethodDef` 携带 `AbiSig`（精确 C 宽度 + out 槽）；`FieldDef` 携带 getter 的 `export_name` + out；`ClassDef` 携带 `release_export` |
 | Wire 编解码 | `bffi_types::wire`:统一的 `[tag][payload]` 表,服务异步负载与回调签名/参数/结果 |

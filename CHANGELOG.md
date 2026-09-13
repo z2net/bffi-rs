@@ -7,6 +7,14 @@ any minor).
 
 ## [0.1.2] - unreleased
 
+### Release alignment
+
+- The npm family (`@z2net/bffi`, `@z2net/bffi-cli`,
+  `@z2net/bffi-native` and the seven platform packages) is aligned
+  at one version: 0.1.2; `bun.lock` re-synced (the platform
+  `optionalDependencies` pins move 0.1.0 -> 0.1.2 - publish order
+  is platform packages first).
+
 ### Breaking
 
 - `#[bffi]` / `#[bffi_async]` / class macros without options emit

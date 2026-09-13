@@ -20,12 +20,13 @@ See [docs/DESIGN.md](https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md) 
 
 - [docs/DESIGN.md](https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md) - architecture & decisions
 - [crates/bffi/CALLING-CONVENTION.md](https://github.com/z2net/bffi-rs/blob/main/crates/bffi/CALLING-CONVENTION.md) - the C ABI contract (every crossing, callback exports included)
+- [docs/BINDING-GUI.md](https://github.com/z2net/bffi-rs/blob/main/docs/BINDING-GUI.md) - binding GUI / event-driven libraries (wry et al.) from Bun
 - [docs/CONTRIBUTING.md](https://github.com/z2net/bffi-rs/blob/main/docs/CONTRIBUTING.md) - how to contribute (branching, commits, PRs)
 - [AGENTS.md](https://github.com/z2net/bffi-rs/blob/main/AGENTS.md) - engineering rules for humans and AI agents
 - [packages/bffi](https://github.com/z2net/bffi-rs/blob/main/packages/bffi) - `@z2net/bffi`: the typed loader + build pipeline (see its README)
 - [packages/bffi-cli](https://github.com/z2net/bffi-rs/blob/main/packages/bffi-cli) - `@z2net/bffi-cli`: the `bffi` CLI (init, build, check, doctor, codegen, pack, fetch)
 - [packages/native](https://github.com/z2net/bffi-rs/blob/main/packages/native) - `@z2net/bffi-native`: the reference native module (platform npm package family)
-- [examples/sqlite](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite) - entry example (the full pipeline over rusqlite); `examples/async`, `examples/event-loop`, `examples/callbacks` sit beside it, each doubling as an e2e suite
+- [examples/](https://github.com/z2net/bffi-rs/blob/main/README.md#examples) - eight example modules, each doubling as an e2e suite (sqlite, records, streams, errors, async, event-loop, callbacks, wry)
 - [SECURITY.md](https://github.com/z2net/bffi-rs/blob/main/SECURITY.md) - security policy
 - [CONTACT.md](https://github.com/z2net/bffi-rs/blob/main/CONTACT.md) - contacts
 
@@ -139,6 +140,7 @@ Every example is a working native module and an e2e suite
 | [`examples/async`](https://github.com/z2net/bffi-rs/blob/main/examples/async) | `#[bffi_async]`: Promises, cancellation, timeouts, composite and `Option` results |
 | [`examples/event-loop`](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop) | the event loop: enqueue/marshal/pump/run/stop |
 | [`examples/callbacks`](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks) | both callback directions, the thread gate, marshal delivery |
+| [`examples/wry`](https://github.com/z2net/bffi-rs/blob/main/examples/wry) | a webview window driven from Bun: wry on a native loop thread, IPC round trips through `invoke_wait` (real-window e2e: `BFFI_WRY_E2E=1`) |
 
 ## Conventions
 

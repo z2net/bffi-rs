@@ -177,6 +177,13 @@ pub enum TsKind {
     /// `Uint8Array | null` (`Option<Vec<u8>>` / `Option<CopiedBuf>`
     /// returns).
     NullableUint8Array,
+    /// `number | null` (`Option` of the number-ish primitives as a
+    /// record field).
+    NullableNumber,
+    /// `bigint | null` (`Option<i64>`/`Option<u64>` record fields).
+    NullableBigInt,
+    /// `boolean | null` (`Option<bool>` record fields).
+    NullableBoolean,
     /// `<Name> | null` (`Option` of a named record/enum).
     NullableRecord(String),
     /// `number[] | null` (`Option<Vec>` of number-ish items).
@@ -309,6 +316,9 @@ impl TsKind {
             TsKind::Uint8Array => quote! { #dts::TsType::Uint8Array },
             TsKind::NullableString => quote! { #dts::TsType::NullableString },
             TsKind::NullableUint8Array => quote! { #dts::TsType::NullableUint8Array },
+            TsKind::NullableNumber => quote! { #dts::TsType::NullableNumber },
+            TsKind::NullableBigInt => quote! { #dts::TsType::NullableBigInt },
+            TsKind::NullableBoolean => quote! { #dts::TsType::NullableBoolean },
             TsKind::NullableRecord(name) => quote! { #dts::TsType::NullableRecord(#name) },
             TsKind::NullableNumberArray => quote! { #dts::TsType::NullableNumberArray },
             TsKind::NullableBigIntArray => quote! { #dts::TsType::NullableBigIntArray },

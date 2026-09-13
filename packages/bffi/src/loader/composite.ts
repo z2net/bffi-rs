@@ -55,6 +55,14 @@ export function jsToWire(
 ): WireValue {
   const fail = (expected: string): TypeError =>
     new TypeError(`${path}: expected ${expected}, got ${typeof value}`);
+  // An optional (`X | null`) slot: `null`/`undefined` ride the bare
+  // `Unit` record, `Some` values encode as the inner type.
+  if (ts.endsWith(" | null")) {
+    if (value === null || value === undefined) {
+      return undefined;
+    }
+    return jsToWire(tables, ts.slice(0, -" | null".length), value, path);
+  }
   if (ts === "number") {
     if (typeof value !== "number") {
       throw fail("number");
@@ -126,6 +134,14 @@ export function wireToJs(
   value: WireValue,
   path: string,
 ): unknown {
+  // An optional (`X | null`) slot: the `Unit` record (decoded as
+  // `undefined`) maps to `null`, `Some` values as the inner type.
+  if (ts.endsWith(" | null")) {
+    if (value === undefined) {
+      return null;
+    }
+    return wireToJs(tables, ts.slice(0, -" | null".length), value, path);
+  }
   if (ts === "number") {
     return value;
   }

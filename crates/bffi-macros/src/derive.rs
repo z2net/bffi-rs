@@ -4,7 +4,9 @@
 //! A derived record gains `BFFI_TS_TYPE` (`TsType::Record("Name")`),
 //! the `BFFI_RECORD_DEF` descriptor table entry, and the wire
 //! codec pair `bffi_wire_encode` / `bffi_wire_decode` over the
-//! value-level helpers of `bffi::types::wire`. A derived unit enum
+//! value-level helpers of `bffi::types::wire`. `Option<T>` fields
+//! encode `None` as the `TAG_UNIT` byte and `Some(v)` as the inner
+//! value record. A derived unit enum
 //! gains the same shape with `TsType::Enum("Name")`, encoding as its
 //! variant name.
 //!
@@ -25,6 +27,8 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::spanned::Spanned;
 
+use crate::support::kind::TsKind;
+use crate::support::paths::PathCtx;
 use crate::support::util::extract_docs;
 
 /// The `#[derive(BffiRecord)]` entry point (declared in `lib.rs`,
@@ -170,6 +174,9 @@ pub(crate) enum FieldKind {
     Bytes,
     /// A nested `BffiRecord`/`BffiEnum` type.
     Named(syn::Path),
+    /// `Option<inner>` over one of the kinds above: `None` rides the
+    /// `TAG_UNIT` byte, `Some` the inner value record as-is.
+    Opt(Box<Self>),
 }
 
 impl FieldKind {
@@ -213,7 +220,40 @@ impl FieldKind {
                 ),
             ));
         }
+        if last.ident == "Option" {
+            return Self::classify_option(ty, last, field);
+        }
         Err(field_type_error(ty, field))
+    }
+
+    /// Classifies `Option<inner>`: the inner type through the same
+    /// matrix; `Option<Option<T>>` is an `E010` rejection (v1).
+    fn classify_option(
+        ty: &syn::Type,
+        segment: &syn::PathSegment,
+        field: &syn::Ident,
+    ) -> syn::Result<Self> {
+        let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+            return Err(field_type_error(ty, field));
+        };
+        if args.args.len() != 1 {
+            return Err(field_type_error(ty, field));
+        }
+        let inner = match &args.args[0] {
+            syn::GenericArgument::Type(inner) => inner,
+            _ => return Err(field_type_error(ty, field)),
+        };
+        if is_option(inner) {
+            let ty_text = quote::ToTokens::to_token_stream(ty).to_string();
+            return Err(syn::Error::new(
+                ty.span(),
+                format!(
+                    "bffi[E010]: nested `{ty_text}` on `{field}`; `Option<Option<T>>` is \
+                     not supported (v1)"
+                ),
+            ));
+        }
+        Ok(Self::Opt(Box::new(Self::classify(inner, field)?)))
     }
 
     /// The `TsType` expression of the field.
@@ -228,28 +268,112 @@ impl FieldKind {
             Self::Str => quote! { ::bffi::dts::TsType::String },
             Self::Bytes => quote! { ::bffi::dts::TsType::Uint8Array },
             Self::Named(path) => quote! { #path::BFFI_TS_TYPE },
+            Self::Opt(inner) => Self::nullable_expr(inner),
         }
+    }
+
+    /// The nullable `TsType` expression of an `Option` field's inner
+    /// kind: the flat `| null` flavors of the IR, routed through the
+    /// shared [`TsKind`] bridge.
+    fn nullable_expr(inner: &Self) -> TokenStream2 {
+        let kind = match inner {
+            Self::NarrowInt | Self::WideNumber => TsKind::NullableNumber,
+            Self::Int64 | Self::UInt64 => TsKind::NullableBigInt,
+            Self::Bool => TsKind::NullableBoolean,
+            Self::Str => TsKind::NullableString,
+            Self::Bytes => TsKind::NullableUint8Array,
+            Self::Named(path) => TsKind::NullableRecord(
+                path.segments
+                    .last()
+                    .map(|segment| segment.ident.to_string())
+                    .unwrap_or_default(),
+            ),
+            // Unreachable: `classify` rejects nested options before
+            // an `Opt` can wrap one; the arm exists for
+            // exhaustiveness.
+            Self::Opt(_) => TsKind::Void,
+        };
+        kind.tokens(&PathCtx::default())
     }
 
     /// One encode statement for the field.
     fn encode_stmt(&self, ident: &syn::Ident) -> TokenStream2 {
+        self.encode_access(quote! { self.#ident })
+    }
+
+    /// One encode statement over any access expression of this kind's
+    /// type; the `Option` wrapper branches on the value.
+    fn encode_access(&self, access: TokenStream2) -> TokenStream2 {
         match self {
-            Self::NarrowInt => quote! { __w::encode_i32(out, i32::from(self.#ident)); },
-            Self::WideNumber => quote! { __w::encode_f64(out, self.#ident as f64); },
-            Self::Int64 => quote! { __w::encode_i64(out, self.#ident); },
-            Self::UInt64 => quote! { __w::encode_u64(out, self.#ident); },
-            Self::Bool => quote! { __w::encode_bool(out, self.#ident); },
-            Self::Str => quote! { __w::encode_str(out, &self.#ident); },
-            Self::Bytes => quote! { __w::encode_bytes(out, &self.#ident); },
+            Self::NarrowInt => quote! { __w::encode_i32(out, i32::from(#access)); },
+            Self::WideNumber => quote! { __w::encode_f64(out, #access as f64); },
+            Self::Int64 => quote! { __w::encode_i64(out, #access); },
+            Self::UInt64 => quote! { __w::encode_u64(out, #access); },
+            Self::Bool => quote! { __w::encode_bool(out, #access); },
+            Self::Str => quote! { __w::encode_str(out, &#access); },
+            Self::Bytes => quote! { __w::encode_bytes(out, &#access); },
             Self::Named(path) => {
-                quote! { #path::bffi_wire_encode(&self.#ident, out); }
+                quote! { #path::bffi_wire_encode(&#access, out); }
             }
+            Self::Opt(inner) => {
+                let some = Self::encode_access_ref(inner);
+                quote! {
+                    match &#access {
+                        ::core::option::Option::None => out.push(__w::TAG_UNIT),
+                        ::core::option::Option::Some(__v) => { #some }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The encode statement of an `Option`'s inner kind over the
+    /// borrowed binding `__v` (the `Some` arm of [`Self::encode_access`]).
+    fn encode_access_ref(inner: &Self) -> TokenStream2 {
+        match inner {
+            Self::NarrowInt => quote! { __w::encode_i32(out, i32::from(*__v)); },
+            Self::WideNumber => quote! { __w::encode_f64(out, *__v as f64); },
+            Self::Int64 => quote! { __w::encode_i64(out, *__v); },
+            Self::UInt64 => quote! { __w::encode_u64(out, *__v); },
+            Self::Bool => quote! { __w::encode_bool(out, *__v); },
+            Self::Str => quote! { __w::encode_str(out, __v); },
+            Self::Bytes => quote! { __w::encode_bytes(out, __v); },
+            Self::Named(path) => {
+                quote! { #path::bffi_wire_encode(__v, out); }
+            }
+            // Unreachable: `classify` rejects nested options before
+            // an `Opt` can wrap one; the arm exists for
+            // exhaustiveness.
+            Self::Opt(_) => quote! {},
         }
     }
 
     /// One decode statement for the field.
     fn decode_stmt(&self, ident: &syn::Ident) -> TokenStream2 {
         match self {
+            Self::Opt(inner) => {
+                let value = syn::Ident::new("__v", ident.span());
+                let some = inner.decode_stmt(&value);
+                quote! {
+                    let (#ident, __off) = match bytes.get(__off) {
+                        ::core::option::Option::Some(&__w::TAG_UNIT) => {
+                            (::core::option::Option::None, __off + 1)
+                        }
+                        ::core::option::Option::Some(_) => {
+                            #some
+                            (::core::option::Option::Some(#value), __off)
+                        }
+                        ::core::option::Option::None => {
+                            return ::core::result::Result::Err(
+                                ::bffi::core::BffiError::new(
+                                    ::bffi::core::ErrorCode::InvalidArgument,
+                                    "wire: truncated optional field",
+                                ),
+                            );
+                        }
+                    };
+                }
+            }
             // The wire carries i32/f64; the construction site narrows
             // back to the exact field width.
             Self::NarrowInt => quote! {
@@ -263,7 +387,7 @@ impl FieldKind {
                 let (#ident, __off) = __w::decode_i64(bytes, __off)?;
             },
             Self::UInt64 => quote! {
-                let (#ident, __off) = __w::decode_u64(bytes, __off)?;
+                let (#ident, __off) = __w::decode_u64_lenient(bytes, __off)?;
             },
             Self::Bool => quote! {
                 let (#ident, __off) = __w::decode_bool(bytes, __off)?;
@@ -287,9 +411,22 @@ impl FieldKind {
     fn construct_field(&self, ident: &syn::Ident) -> TokenStream2 {
         match self {
             Self::NarrowInt | Self::WideNumber => quote! { #ident: #ident as _ },
+            Self::Opt(inner) if matches!(**inner, Self::NarrowInt | Self::WideNumber) => {
+                quote! { #ident: #ident.map(|__v| __v as _) }
+            }
             _ => quote! { #ident },
         }
     }
+}
+
+/// Whether the type is syntactically a single-segment `Option<_>`.
+fn is_option(ty: &syn::Type) -> bool {
+    let syn::Type::Path(syn::TypePath { qself: None, path }) = ty else {
+        return false;
+    };
+    path.segments.len() == 1
+        && path.segments[0].ident == "Option"
+        && !path.segments[0].arguments.is_none()
 }
 
 /// Whether the type is literally `u8`.
@@ -423,7 +560,8 @@ fn field_type_error(ty: &syn::Type, field: &syn::Ident) -> syn::Error {
         ty.span(),
         format!(
             "bffi[E010]: unsupported field type `{ty_text}` on `{field}`; \
-             supported: i8|i16|i32|u8|u16|u32|f32|f64|i64|bool|String|Vec<u8>|nested records"
+                 supported: i8|i16|i32|u8|u16|u32|f32|f64|i64|bool|String|Vec<u8>|\
+                 Option<T>|nested records"
         ),
     )
 }

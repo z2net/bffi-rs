@@ -51,6 +51,24 @@ pub struct Sample {
     pub axis: Axis,
 }
 
+/// A station profile over the optional-field flavors: `None` fields
+/// ride the `TAG_UNIT` wire byte and arrive as `null` in JS.
+#[derive(BffiRecord, Debug, PartialEq)]
+pub struct Profile {
+    /// The optional station name.
+    pub nick: Option<String>,
+    /// The optional operator level.
+    pub level: Option<u32>,
+    /// The optional station id (exact `u64`).
+    pub rank: Option<u64>,
+    /// The optional maintenance flag.
+    pub muted: Option<bool>,
+    /// The optional logo bytes.
+    pub avatar: Option<Vec<u8>>,
+    /// The optional home sample.
+    pub home: Option<Sample>,
+}
+
 /// The domain error of the module: a plain message wrapper.
 #[derive(Debug)]
 pub struct RecordsError(String);
@@ -129,4 +147,11 @@ pub fn classify(samples: Vec<Sample>) -> Result<Axis, RecordsError> {
         .first()
         .ok_or_else(|| RecordsError("no samples".to_owned()))?;
     Ok(first.axis)
+}
+
+/// Echoes a profile back: `Option` fields round trip, `None`
+/// arriving as `null` on the JS side.
+#[bffi]
+pub fn echo_profile(profile: Profile) -> Profile {
+    profile
 }

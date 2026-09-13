@@ -116,11 +116,17 @@ export type TsOf<S extends TsName, M extends ModuleJson = ModuleJson> =
                                    : S
                                  : S
                              : S
-                           : S extends "string | null"
-                ? string | null
-                : S extends "Uint8Array | null"
-                  ? Uint8Array | null
-                  : S extends "number[]"
+                            : S extends "string | null"
+                 ? string | null
+                 : S extends "Uint8Array | null"
+                   ? Uint8Array | null
+                   : S extends "number | null"
+                     ? number | null
+                     : S extends "bigint | null"
+                       ? bigint | null
+                       : S extends "boolean | null"
+                         ? boolean | null
+                         : S extends "number[]"
                     ? number[]
                     : S extends "bigint[]"
                       ? bigint[]

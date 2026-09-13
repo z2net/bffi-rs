@@ -451,7 +451,7 @@ fn seq_item_decode(ctx: &PathCtx, item: &SeqItem, slice: &Ident) -> TokenStream 
             items.push(value as _);
         },
         SeqItem::U64 => quote! {
-            let (value, next) = #wire::decode_u64(#slice, offset)?;
+            let (value, next) = #wire::decode_u64_lenient(#slice, offset)?;
             offset = next;
             items.push(value);
         },

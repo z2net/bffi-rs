@@ -181,6 +181,26 @@ const moduleJson = {
         "abi": "buffer"
       },
       "out": "handle"
+    },
+    {
+      "name": "echo_profile",
+      "export": "bffi_echo_profile",
+      "docs": [
+        "Echoes a profile back: `Option` fields round trip, `None`",
+        "arriving as `null` on the JS side."
+      ],
+      "params": [
+        {
+          "name": "profile",
+          "ts": "Profile",
+          "abi": "ptr_len"
+        }
+      ],
+      "ret": {
+        "ts": "Profile",
+        "abi": "buffer"
+      },
+      "out": "handle"
     }
   ],
   "classes": [],
@@ -218,6 +238,57 @@ const moduleJson = {
             "The axis it was taken along."
           ],
           "ts": "Axis"
+        }
+      ]
+    },
+    {
+      "name": "Profile",
+      "docs": [
+        "A station profile over the optional-field flavors: `None` fields",
+        "ride the `TAG_UNIT` wire byte and arrive as `null` in JS."
+      ],
+      "fields": [
+        {
+          "name": "nick",
+          "docs": [
+            "The optional station name."
+          ],
+          "ts": "string | null"
+        },
+        {
+          "name": "level",
+          "docs": [
+            "The optional operator level."
+          ],
+          "ts": "number | null"
+        },
+        {
+          "name": "rank",
+          "docs": [
+            "The optional station id (exact `u64`)."
+          ],
+          "ts": "bigint | null"
+        },
+        {
+          "name": "muted",
+          "docs": [
+            "The optional maintenance flag."
+          ],
+          "ts": "boolean | null"
+        },
+        {
+          "name": "avatar",
+          "docs": [
+            "The optional logo bytes."
+          ],
+          "ts": "Uint8Array | null"
+        },
+        {
+          "name": "home",
+          "docs": [
+            "The optional home sample."
+          ],
+          "ts": "Sample | null"
         }
       ]
     }

@@ -1,6 +1,6 @@
 {
   "name": "bffi-rs",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "description": "Bun-only native binding framework (Rust)",
   "license": "MIT",

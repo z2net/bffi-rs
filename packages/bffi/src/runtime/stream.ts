@@ -8,21 +8,32 @@
  * with an adaptive chunk budget and a GC finalizer for the drop.
  */
 import type { FfiLib } from "./error.ts";
-import { ErrorCode, sym } from "./error.ts";
+import { ErrorCode, sym, symOptional } from "./error.ts";
 import { makeReadBuffer } from "./buffer.ts";
 import { decodeAt } from "./wire.ts";
 import { tablesOf, wireToJs, type CompositeTables } from "../loader/composite.ts";
 import type { ModuleJson } from "../loader/loader.ts";
+import { JSCallback } from "bun:ffi";
 
 /** The initial chunk budget; doubled on full chunks, capped here. */
 const INITIAL_MAX = 32;
 const MAX_BUDGET = 1024;
+
+/** The pending-wait fallback when a wake fires between the Pending
+ * return and the wait registration (a lost wake-up must not hang
+ * the pull; the wake makes the common case instant). */
+const PENDING_FALLBACK_MS = 4;
 
 /**
  * Wraps a bffi stream handle into a JS `AsyncIterableIterator`.
  * Items decode through the module's composite tables by `itemTs`
  * (the inner type of the descriptor's
  * `AsyncIterableIterator<T>` return).
+ *
+ * A push producer's wake trampoline (best-effort, older builds
+ * without `bffi_stream_set_wake` keep the poll-retry contract)
+ * resolves the Pending wait instantly through the event loop; the
+ * bounded timer stays as the lost-wake-up fallback.
  */
 export function wrapStream<T = unknown>(
   lib: FfiLib,
@@ -37,6 +48,41 @@ export function wrapStream<T = unknown>(
   let queue: unknown[] = [];
   let done = false;
   let max = INITIAL_MAX;
+
+  // The wake trampoline: resolved whenever the native side signals
+  // that a waiting pull can resume (an item landed in an empty
+  // buffer, or the producer completed/failed). The callback is
+  // never closed while the stream can still fire - a queued wake
+  // job after a close would call a dangling trampoline.
+  const setWake = symOptional(lib, "bffi_stream_set_wake");
+  let wakeNotify: (() => void) | null = null;
+  let wakeCb: JSCallback | null = null;
+  if (setWake) {
+    const cb = new JSCallback(
+      () => {
+        wakeNotify?.();
+      },
+      { args: ["u64"], returns: "void" },
+    );
+    if (cb.ptr !== null) {
+      wakeCb = cb;
+      setWake(handle, BigInt(cb.ptr));
+    }
+  }
+
+  const waitForWake = async (): Promise<void> => {
+    if (wakeCb === null) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      wakeNotify = resolve;
+      setTimeout(() => {
+        wakeNotify = null;
+        resolve();
+      }, PENDING_FALLBACK_MS);
+    });
+  };
 
   const registry = new FinalizationRegistry((finalizeHandle: bigint) => {
     try {
@@ -55,14 +101,15 @@ export function wrapStream<T = unknown>(
     },
     next(): Promise<IteratorResult<T>> {
       const pull = async (): Promise<IteratorResult<T>> => {
-        // Poll contract: an empty live buffer reports Pending - wait
-        // a tick and retry (the buffer is shared memory; the pull is
-        // the delivery).
+        // Poll contract: an empty live buffer reports Pending - the
+        // wake trampoline (when registered) resumes the wait the
+        // moment the producer delivers; the bounded timer covers a
+        // lost wake-up.
         while (queue.length === 0 && !done) {
           const out = new BigUint64Array(1);
           const status = nextSym(handle, max, out);
           if (status === ErrorCode.Pending) {
-            await new Promise((resolve) => setTimeout(resolve, 1));
+            await waitForWake();
             continue;
           }
           if (status !== ErrorCode.Ok) {

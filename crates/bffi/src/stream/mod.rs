@@ -139,6 +139,11 @@ impl<T: BffiStreamItem, E: std::fmt::Display> BffiStreamItem for Result<T, E> {
 /// terminal in `Done`/`Errored`.
 pub(crate) struct StreamEntry {
     state: Mutex<StreamState>,
+    /// The JS wake trampoline registered by the typed wrapper (the
+    /// `bffi_stream_set_wake` ABI): fired through the event loop
+    /// when the buffer transitions empty -> non-empty or the stream
+    /// completes/fails, so a waiting pull resumes without polling.
+    wake: Mutex<Option<usize>>,
 }
 
 enum StreamState {
@@ -251,6 +256,49 @@ fn tables() -> Result<(), bffi_core::RegistryError> {
     })
 }
 
+/// Registers the JS wake trampoline for a stream: the raw pointer of
+/// a `(u64) -> void` bun:ffi `JSCallback` the typed wrapper created.
+/// `false` for unknown/stale/foreign handles.
+pub fn set_wake(handle: Handle, ptr: usize) -> bool {
+    match Registry::global().get_typed::<StreamEntry>(handle) {
+        Some(entry) => {
+            *entry
+                .wake
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(ptr);
+            true
+        }
+        None => false,
+    }
+}
+
+/// Fires the wake trampoline through the event loop: the queued job
+/// runs on the JS thread and resolves the pull that is waiting on
+/// the stream. Best-effort - a stopped loop (or an unregistered
+/// trampoline) simply keeps the poll-retry contract working.
+fn fire_wake(entry: &StreamEntry) {
+    let ptr = *entry
+        .wake
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(ptr) = ptr else {
+        return;
+    };
+    let queued = crate::bffi_event_loop::enqueue(Box::new(move || {
+        // SAFETY: `ptr` is the bun:ffi JSCallback trampoline the JS
+        // wrapper registered for this stream (`(u64) -> void`); the
+        // wrapper never closes it while the stream can still fire
+        // (the callback outlives the stream by contract), and the
+        // call runs on the JS thread inside the loop drain.
+        let wake: extern "C" fn(u64) = unsafe { std::mem::transmute(ptr) };
+        wake(0);
+    }));
+    if queued.is_err() {
+        // The loop was stopped: the wake is undeliverable and the
+        // JS pull falls back to its bounded timer (documented).
+    }
+}
+
 /// Registers a stream over `iter` and returns its handle. Items are
 /// the pre-encoded records; an `Err` item terminates the stream with
 /// that message (the `Result`-item adapter of the macros).
@@ -269,6 +317,7 @@ pub fn spawn(
             STREAM_TAG,
             Arc::new(StreamEntry {
                 state: Mutex::new(StreamState::Items(iter)),
+                wake: Mutex::new(None),
             }),
         )
         .map_err(|_| StreamError::TableFull)
@@ -289,6 +338,7 @@ pub fn spawn_push<T: BffiStreamItem>() -> Result<(Handle, Ctx<T>), StreamError> 
             STREAM_TAG,
             Arc::new(StreamEntry {
                 state: Mutex::new(StreamState::Buffer(PushState::new())),
+                wake: Mutex::new(None),
             }),
         )
         .map_err(|_| StreamError::TableFull)?;
@@ -485,6 +535,8 @@ impl<T: BffiStreamItem> Ctx<T> {
             StreamState::Buffer(push) => {
                 push.completed = true;
                 push.wake_producers();
+                // A pull waiting on Pending learns the end instantly.
+                fire_wake(&entry);
                 Ok(())
             }
             StreamState::Done | StreamState::Items(_) => Err(StreamError::Closed),
@@ -504,6 +556,8 @@ impl<T: BffiStreamItem> Ctx<T> {
             StreamState::Buffer(push) => {
                 push.error = Some(message);
                 push.wake_producers();
+                // A pull waiting on Pending learns the error instantly.
+                fire_wake(&entry);
                 Ok(())
             }
             StreamState::Done | StreamState::Items(_) => Err(StreamError::Closed),
@@ -557,7 +611,13 @@ impl<T: BffiStreamItem> std::future::Future for Push<'_, T> {
                     };
                     let mut record = Vec::new();
                     item.encode_into(&mut record);
+                    let was_empty = push.queue.is_empty();
                     push.queue.push_back(record);
+                    if was_empty {
+                        // Empty -> non-empty: a pull may be waiting
+                        // on Pending; wake it through the loop.
+                        fire_wake(&entry);
+                    }
                     std::task::Poll::Ready(Ok(()))
                 } else {
                     // Full: park until the next pull frees room.

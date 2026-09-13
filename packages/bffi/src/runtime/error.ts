@@ -152,7 +152,7 @@ export function readPointer(pointer: number, len: number): Uint8Array {
 /** A `sym` that tolerates missing exports: returns `undefined` when
  * the library does not provide the symbol (mock libraries, older
  * bffi builds). */
-function symOptional(lib: FfiLib, name: string): FfiSymbol | undefined {
+export function symOptional(lib: FfiLib, name: string): FfiSymbol | undefined {
   const symbol = (lib as Record<string, unknown>)[name];
   return typeof symbol === "function" ? (symbol as FfiSymbol) : undefined;
 }

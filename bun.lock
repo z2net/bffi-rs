@@ -13,11 +13,11 @@
     },
     "packages/bffi": {
       "name": "@z2net/bffi",
-      "version": "0.1.0",
+      "version": "0.1.2",
     },
     "packages/bffi-cli": {
       "name": "@z2net/bffi-cli",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "bin": {
         "bffi": "./bin/bffi.ts",
       },
@@ -27,18 +27,18 @@
     },
     "packages/native": {
       "name": "@z2net/bffi-native",
-      "version": "0.1.0",
+      "version": "0.1.2",
       "dependencies": {
         "@z2net/bffi": "^0.1.0",
       },
       "optionalDependencies": {
-        "@z2net/bffi-native-darwin-aarch64": "0.1.0",
-        "@z2net/bffi-native-darwin-x64": "0.1.0",
-        "@z2net/bffi-native-linux-arm64-gnu": "0.1.0",
-        "@z2net/bffi-native-linux-arm64-musl": "0.1.0",
-        "@z2net/bffi-native-linux-x64-gnu": "0.1.0",
-        "@z2net/bffi-native-linux-x64-musl": "0.1.0",
-        "@z2net/bffi-native-win32-x64-msvc": "0.1.0",
+        "@z2net/bffi-native-darwin-aarch64": "0.1.2",
+        "@z2net/bffi-native-darwin-x64": "0.1.2",
+        "@z2net/bffi-native-linux-arm64-gnu": "0.1.2",
+        "@z2net/bffi-native-linux-arm64-musl": "0.1.2",
+        "@z2net/bffi-native-linux-x64-gnu": "0.1.2",
+        "@z2net/bffi-native-linux-x64-musl": "0.1.2",
+        "@z2net/bffi-native-win32-x64-msvc": "0.1.2",
       },
     },
   },
@@ -130,20 +130,6 @@
     "@z2net/bffi-cli": ["@z2net/bffi-cli@workspace:packages/bffi-cli"],
 
     "@z2net/bffi-native": ["@z2net/bffi-native@workspace:packages/native"],
-
-    "@z2net/bffi-native-darwin-aarch64": ["@z2net/bffi-native-darwin-aarch64@0.1.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-BuBynYn+E+BY5ksMXdqV7bE0A4JpPTbD8XvPKdvgVjtKVpP0C4EKR7HdgarUocpi0XGzEgnXzOp+cqTgK6HD6g=="],
-
-    "@z2net/bffi-native-darwin-x64": ["@z2net/bffi-native-darwin-x64@0.1.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-lgD48pn24hriE8qOY7zyNIK33V5jNn2pqbPGCzQq+gP6wNZFQlGSYabhdmlCnL397AruTySRcMiRVKCx6/V2iQ=="],
-
-    "@z2net/bffi-native-linux-arm64-gnu": ["@z2net/bffi-native-linux-arm64-gnu@0.1.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-SrxQrLjzpZvXU/NCDnivFgcXH0Df36Uvkqgqh1k1OcLNDOTMnaxs45cHUvkgjMZ+LPVqDciicB2Ef7lIwShvCg=="],
-
-    "@z2net/bffi-native-linux-arm64-musl": ["@z2net/bffi-native-linux-arm64-musl@0.1.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-360C9qJ7aQ44FEt7qWJ13iejaQFUH76Uq80F4qQtWBaeM4PIV3dgQyUi8vxcY0J1/s9KcbM+by1g6g1OK5HO2A=="],
-
-    "@z2net/bffi-native-linux-x64-gnu": ["@z2net/bffi-native-linux-x64-gnu@0.1.0", "", { "os": "linux", "cpu": "x64" }, "sha512-LGAL60vgo3HDMumEI0/5xN8IcGbBpdE9zkY3Up1Dc7dqVKsZYYMeglyLNlN+4Tz2ALkpf/cykvp5H5k1BSi77g=="],
-
-    "@z2net/bffi-native-linux-x64-musl": ["@z2net/bffi-native-linux-x64-musl@0.1.0", "", { "os": "linux", "cpu": "x64" }, "sha512-GMuFsLCSgtLp173lYkd1ZuBSNVDu0JK4hZCnZpN3HXHAyYxmBpVuWspOUOd0B1YTkpiTQjRO2YNAwn086yLRqw=="],
-
-    "@z2net/bffi-native-win32-x64-msvc": ["@z2net/bffi-native-win32-x64-msvc@0.1.0", "", { "os": "win32", "cpu": "x64" }, "sha512-wO1OpUA3gIzPMVsxZXKbJjnUxkaGUksEwzCKnTrggLLKKES68MwTSTGFAXX4yeMEgO7B0EmxakN2SOdKEt9Gbg=="],
 
     "bun-types": ["bun-types@1.4.0", "", { "dependencies": { "@types/node": "*" } }, "sha512-iIKw23BspnQQYd3prITOBxeUsxBHnwzX6YJfGMuNOZzeNcMmVqzIIVGRm1l69ogaPQmb4wB6BN8mA5bE9YuC5Q=="],
 

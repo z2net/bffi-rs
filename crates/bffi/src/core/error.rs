@@ -63,6 +63,9 @@ pub enum ErrorCode {
     /// still alive: not an error - retry after the next wake.
     /// Returned by `bffi_stream_next` only.
     Pending = 14,
+    /// A bounded cross-thread wait (`bffi::callback::invoke_wait`)
+    /// expired before the JS thread delivered the outcome.
+    Timeout = 15,
 }
 
 impl ErrorCode {
@@ -94,6 +97,7 @@ impl ErrorCode {
             12 => Some(Self::WrongThread),
             13 => Some(Self::DomainError),
             14 => Some(Self::Pending),
+            15 => Some(Self::Timeout),
             _ => None,
         }
     }
@@ -117,6 +121,7 @@ impl fmt::Display for ErrorCode {
             Self::WrongThread => "call from a non-JS thread that could not be marshalled",
             Self::DomainError => "domain error reported by the native function",
             Self::Pending => "no items ready yet - the producer is still alive",
+            Self::Timeout => "the bounded wait for a callback result timed out",
         };
         f.write_str(text)
     }
@@ -367,6 +372,7 @@ mod tests {
             ErrorCode::InvalidArgument,
             ErrorCode::WrongThread,
             ErrorCode::DomainError,
+            ErrorCode::Timeout,
         ] {
             assert_eq!(ErrorCode::from_u32(code.as_u32()), Some(code));
         }

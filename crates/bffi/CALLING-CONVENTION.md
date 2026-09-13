@@ -104,6 +104,7 @@ not revalidated.
 | 11   | `InvalidArgument`  | TypeError      | argument contract violated |
 | 12   | `WrongThread`      | Error          | call from a non-JS thread that could not be marshalled |
 | 13   | `DomainError`      | Error          | `Err` from a `Result<T, E>` return |
+| 15   | `Timeout`          | Error          | a bounded cross-thread wait (`invoke_wait`) expired before the JS thread delivered |
 | 0x1000-0xFFFF | (user codes, from a `#[derive(BffiError)]` conversion) | Error | typed domain error; replaces the framework `13` in the ABI return |
 
 ## 7. Type tag ranges
@@ -148,6 +149,28 @@ message); dead handles -> `InvalidHandle` (4); wrong-thread invoke ->
 `WrongThread` (12). The result buffer follows the ┬з5 lifetime
 contract: read it through `bffi_buffer` / `bffi_buffer_length`, then
 release with `bffi_types_free`.
+
+### 9.1 `invoke_wait` - marshal-and-wait from any native thread (Rust API, not an ABI export)
+
+`bffi::callback::invoke_wait(handle, args, timeout)` is the
+cross-thread counterpart of `bffi_callback_invoke` for native
+callers (a GUI worker thread, for example): on the bound JS thread
+(or in an unbound process) it performs the ordinary synchronous
+invoke; from any other thread it queues an event-loop job that runs
+that same invoke on the JS thread and parks the caller on a shared
+`Mutex` + `Condvar` slot until the outcome - the value or the full
+`CallbackError` - crosses back unchanged. The existing
+`bffi_callback_invoke` keeps its JS-thread-only contract unchanged.
+
+Timing contract: an expired `timeout` returns the dedicated status
+`15` (`Timeout`) without touching loop or registry state - a late
+job stores its outcome into the abandoned slot (ignore-after-timeout)
+and a following `invoke_wait` is unaffected. A loop stopped before
+the job is queued fails immediately with status `1` (`LoopStopped`
+domain error). Deadlock contract: the JS side MUST keep draining the
+loop (`pump`/`run`) while a native thread waits; a re-entrant wait
+(the JS thread itself inside a native call that waits for JS) is
+forbidden and ends in the timeout.
 
 The user crate expands the generator once:
 

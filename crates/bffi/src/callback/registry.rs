@@ -20,6 +20,12 @@
 // Internal module aliases (the pre-merge crate names).
 use crate::bffi_core;
 use std::sync::{Arc, OnceLock};
+// `invoke_wait` (marshal-and-wait) rides the event loop, which is a
+// strict superset of this crate's own feature set.
+#[cfg(feature = "event-loop")]
+use std::sync::{Condvar, Mutex, PoisonError};
+#[cfg(feature = "event-loop")]
+use std::time::{Duration, Instant};
 
 use bffi_core::{Handle, Registry, TypeTag};
 
@@ -158,6 +164,119 @@ pub fn invoke(handle: Handle, args: &[Value]) -> Result<Value, CallbackError> {
     Ok((entry.f)(args))
 }
 
+/// The shared hand-off slot of [`invoke_wait`]: the event-loop job
+/// stores the invocation outcome, the calling thread parks on the
+/// condition variable. Locks follow the crate-wide poison-recovery
+/// pattern - the outcome is produced outside the lock (`invoke` runs
+/// in the job body), so poisoning cannot happen in practice.
+#[cfg(feature = "event-loop")]
+struct WaitSlot {
+    outcome: Mutex<Option<Result<Value, CallbackError>>>,
+    signal: Condvar,
+}
+
+#[cfg(feature = "event-loop")]
+impl Default for WaitSlot {
+    fn default() -> Self {
+        Self {
+            outcome: Mutex::new(None),
+            signal: Condvar::new(),
+        }
+    }
+}
+
+#[cfg(feature = "event-loop")]
+impl WaitSlot {
+    /// Stores `outcome` and wakes every waiter. Safe to call after the
+    /// caller timed out: the late store lands in the abandoned slot
+    /// (ignore-after-timeout) and drops together with the job's slot
+    /// clone - loop and registry state are untouched.
+    fn fill(&self, outcome: Result<Value, CallbackError>) {
+        *self.outcome.lock().unwrap_or_else(PoisonError::into_inner) = Some(outcome);
+        self.signal.notify_all();
+    }
+
+    /// Takes the stored outcome, waiting at most `timeout`. A filled
+    /// slot always wins over an expired deadline (the outcome arrived
+    /// within the wait); an empty slot at the deadline is
+    /// [`CallbackError::Timeout`].
+    fn take_within(&self, timeout: Duration) -> Result<Value, CallbackError> {
+        let deadline = Instant::now() + timeout;
+        let mut guard = self.outcome.lock().unwrap_or_else(PoisonError::into_inner);
+        loop {
+            if let Some(outcome) = guard.take() {
+                return outcome;
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return Err(CallbackError::Timeout);
+            }
+            let (woken, _) = self
+                .signal
+                .wait_timeout(guard, deadline - now)
+                .unwrap_or_else(PoisonError::into_inner);
+            guard = woken;
+        }
+    }
+}
+
+/// Invokes the native callback behind `handle` with `args` from ANY
+/// thread, blocking until the outcome arrives or `timeout` expires
+/// (marshal-and-wait, the cross-thread counterpart of [`invoke`]).
+///
+/// - The calling thread is the bound JS thread, or the process is
+///   unbound (the P1 policy admits every caller then): delegates to
+///   [`invoke`] directly - no channel, no extra latency.
+/// - Any other native thread: the call is marshalled through the
+///   event loop. A queued job runs the ordinary [`invoke`] on the JS
+///   thread (i.e. while it drains with `bffi::pump` / `bffi::run`)
+///   and stores the full outcome in a shared [`WaitSlot`]; the
+///   calling thread parks on the slot until it fills. The value AND
+///   every [`CallbackError`] - dead handle, signature mismatch -
+///   cross the slot unchanged.
+///
+/// Timeout semantics: an expired `timeout` yields
+/// [`CallbackError::Timeout`] even though the job may still run
+/// later; the late outcome is stored into the abandoned slot and
+/// ignored (ignore-after-timeout), leaving the loop and the registry
+/// fully usable - a following `invoke_wait` is unaffected. A native
+/// body that panics is contained by the loop's boundary policy and
+/// never reaches the slot, so the waiter observes the timeout. A
+/// loop stopped after the job was queued does not wake the waiter
+/// either - the timeout is the only exit there.
+///
+/// Deadlock contract: the JS thread MUST keep draining the loop while
+/// a native thread waits. A re-entrant wait - the JS thread itself
+/// inside a native call that `invoke_wait`s back into JS - never
+/// completes and ends in the timeout.
+///
+/// # Errors
+///
+/// [`CallbackError::InvalidHandle`] / [`CallbackError::SignatureMismatch`]
+/// from the inner [`invoke`]; [`CallbackError::Timeout`] when
+/// `timeout` expired before the JS thread delivered; [`CallbackError::
+/// LoopStopped`] when the event loop has been stopped, so the job
+/// could not be queued at all (immediate failure, nothing to wait
+/// for).
+#[cfg(feature = "event-loop")]
+pub fn invoke_wait(
+    handle: Handle,
+    args: &[Value],
+    timeout: Duration,
+) -> Result<Value, CallbackError> {
+    if ensure_js_thread().is_ok() {
+        return invoke(handle, args);
+    }
+    let slot = Arc::new(WaitSlot::default());
+    let job_slot = Arc::clone(&slot);
+    let job_args = args.to_vec();
+    crate::bffi_event_loop::enqueue(Box::new(move || {
+        job_slot.fill(invoke(handle, &job_args));
+    }))
+    .map_err(|_| CallbackError::LoopStopped)?;
+    slot.take_within(timeout)
+}
+
 /// Binds a JS-side callback (Rust -> JS direction) and returns its
 /// fresh, opaque [`Handle`].
 ///
@@ -261,9 +380,10 @@ mod tests {
 
     use crate::bffi_core::{Handle, Registry, TypeTag};
 
-    use super::{bind_js_callback, invoke, js_callback, register, revoke};
+    use super::{bind_js_callback, invoke, invoke_wait, js_callback, register, revoke};
     use crate::bffi_callback::error::CallbackError;
     use crate::bffi_callback::value::{CallbackSig, Value, ValueType};
+    use std::time::Duration;
 
     // NOTE (test isolation): these tests run in the lib test binary
     // where the process stays UNBOUND - they must never call
@@ -343,6 +463,33 @@ mod tests {
             Some(CallbackError::InvalidHandle(Handle::NULL))
         );
         assert!(!revoke(Handle::NULL));
+    }
+
+    #[test]
+    fn invoke_wait_delegates_to_the_sync_invoke_in_an_unbound_process() {
+        // NOTE: this lib test binary stays UNBOUND (see the module
+        // note below), so `invoke_wait` takes the direct path even on
+        // a spawned thread - no marshal job may reach the loop.
+        let sig = CallbackSig::new(ValueType::I32, &[ValueType::I32, ValueType::I32]);
+        let handle = register(
+            sig,
+            Arc::new(|args: &[Value]| match args {
+                [Value::I32(a), Value::I32(b)] => Value::I32(a + b),
+                _ => unreachable!("invoke checks the signature before calling"),
+            }),
+        )
+        .unwrap();
+
+        let joined = std::thread::spawn(move || {
+            invoke_wait(
+                handle,
+                &[Value::I32(2), Value::I32(3)],
+                Duration::from_secs(5),
+            )
+        })
+        .join()
+        .unwrap();
+        assert_eq!(joined, Ok(Value::I32(5)));
     }
 
     #[test]

@@ -40,6 +40,14 @@ pub enum CallbackError {
     /// The type tag is already declared - one tag serves one callback
     /// table per process.
     TagInUse(TypeTag),
+    /// The `invoke_wait` timeout expired before the JS thread
+    /// delivered the outcome (marshal-and-wait); the late outcome, if
+    /// any, is ignored and the loop/registry state stays usable.
+    Timeout,
+    /// `invoke_wait` could not queue its marshal job: the event loop
+    /// has been stopped (sticky, never restarts), so the wait fails
+    /// immediately instead of timing out.
+    LoopStopped,
 }
 
 /// Renders a [`ValueType`] as it is spelled in signatures and error
@@ -115,6 +123,18 @@ impl fmt::Display for CallbackError {
             Self::TagInUse(tag) => {
                 write!(f, "callback type tag {tag} is already declared")
             }
+            Self::Timeout => {
+                write!(
+                    f,
+                    "callback invoke_wait timed out waiting for the JS thread"
+                )
+            }
+            Self::LoopStopped => {
+                write!(
+                    f,
+                    "callback invoke_wait could not be queued: the event loop is stopped"
+                )
+            }
         }
     }
 }
@@ -125,7 +145,10 @@ impl std::error::Error for CallbackError {}
 /// `InvalidHandle`, signature mismatches to `InvalidArgument`,
 /// wrong-thread calls to the dedicated `WrongThread` code (P2; the
 /// message still distinguishes the cause), a full table to `TableFull`,
-/// an already-declared tag to `InvalidTag`; the domain error is
+/// an already-declared tag to `InvalidTag`; an expired `invoke_wait`
+/// timeout to the dedicated `Timeout` code, and a marshal job that
+/// could not be queued (stopped loop) to `Error` - the same mapping
+/// the event-loop layer uses for its `Stopped`; the domain error is
 /// preserved as the source.
 impl From<CallbackError> for BffiError {
     fn from(error: CallbackError) -> Self {
@@ -135,6 +158,8 @@ impl From<CallbackError> for BffiError {
             CallbackError::WrongThread => ErrorCode::WrongThread,
             CallbackError::TableFull => ErrorCode::TableFull,
             CallbackError::TagInUse(_) => ErrorCode::InvalidTag,
+            CallbackError::Timeout => ErrorCode::Timeout,
+            CallbackError::LoopStopped => ErrorCode::Error,
         };
         BffiError::with_source(code, error.to_string(), error)
     }
@@ -202,6 +227,18 @@ mod tests {
     }
 
     #[test]
+    fn wait_failure_displays_display_their_cause() {
+        assert_eq!(
+            CallbackError::Timeout.to_string(),
+            "callback invoke_wait timed out waiting for the JS thread"
+        );
+        assert_eq!(
+            CallbackError::LoopStopped.to_string(),
+            "callback invoke_wait could not be queued: the event loop is stopped"
+        );
+    }
+
+    #[test]
     fn converts_to_bffi_error_on_existing_codes() {
         let tag = TypeTag(0x0200);
         let cases = [
@@ -219,6 +256,8 @@ mod tests {
             (CallbackError::WrongThread, ErrorCode::WrongThread),
             (CallbackError::TableFull, ErrorCode::TableFull),
             (CallbackError::TagInUse(tag), ErrorCode::InvalidTag),
+            (CallbackError::Timeout, ErrorCode::Timeout),
+            (CallbackError::LoopStopped, ErrorCode::Error),
         ];
         for (error, code) in cases {
             let converted = BffiError::from(error);

@@ -15,27 +15,29 @@
 //! | objects | [`ObjectWrap`], [`ObjectError`], the tag helpers |
 //! | callbacks | `register`/`invoke`/`revoke`, `bind_js_callback`, the JS-thread gate |
 //! | dts | the full IR + `render` + `sanitize` |
-//! | macros | `#[bffi]`, `#[bffi_class]`, `#[bffi_impl]`, `#[bffi_constructor]`, `bffi_runtime_abi!` |
+//! | macros | `#[bffi]`, `#[bffi_async]`, `#[bffi_class]`, `#[bffi_impl]`, `#[bffi_constructor]`, `bffi_runtime_abi!` |
 //! | event loop | `enqueue`/`marshal`/`run`/`stop`/`pump` |
-//! | namespaces | [`core`], [`types`], [`dts`], [`object`], [`build`] - the 1:1 re-export modules the `crate = "bffi"` macros emit |
+//! | namespaces | [`core`], [`types`], [`dts`], [`object`], [`build`], [`r#async`] - the 1:1 re-export modules the macros emit by default |
 //!
-//! ## Macros: two modes
+//! ## Macros: default facade paths, `crate = "..."` opt-outs
 //!
-//! The generated code of `#[bffi]` / `#[bffi_class]` names runtime
-//! paths that resolve in one of two ways:
+//! The generated code of `#[bffi]` / `#[bffi_class]` /
+//! `#[bffi_impl]` / `#[bffi_async]` names runtime paths that resolve
+//! in one of two ways:
 //!
-//! - **Facade mode (recommended; required when depending on this
-//!   crate from crates.io)** - annotate with
-//!   `#[bffi(crate = "bffi")]` (and
-//!   `#[bffi_class(tag = ..., crate = "bffi")]` /
-//!   `#[bffi_impl(crate = "bffi")]` for classes): the expansion names
-//!   `::bffi::core`, `::bffi::types`, `::bffi::dts`, `::bffi::object`
-//!   and `::bffi::build` - the namespaces re-exported below - so the
-//!   `bffi` facade alone suffices.
-//! - **Direct-dependencies mode (in-workspace development)** - the
-//!   expansion names `::bffi_core`, `::bffi_types`, `::bffi_dts`,
-//!   `::bffi_object` and `::bffi_build`; keep those crates in your
-//!   `Cargo.toml` as path dependencies of your checkout.
+//! - **Facade mode (the default)** - no attribute options needed:
+//!   the expansion names `::bffi::core`, `::bffi::types`,
+//!   `::bffi::dts`, `::bffi::object`, `::bffi::build` and
+//!   `::bffi::r#async` - the namespaces re-exported below - so this
+//!   crate alone suffices. `crate = "bffi"` (or any other facade
+//!   crate re-exporting the same namespaces) redirects the roots;
+//!   `crate = "bffi"` is therefore accepted and identical to the
+//!   default.
+//! - **Direct-dependencies mode (`crate = "direct"`)** - the
+//!   expansion names the pre-merge roots `::bffi_core`,
+//!   `::bffi_types`, ...; an escape hatch for in-workspace
+//!   development against the historical crate names (not published
+//!   on crates.io).
 //!
 //! Note that `bffi_runtime_abi!` keeps its `$crate`-relative paths in
 //! `bffi-build` and always needs that crate as a direct dependency.
@@ -89,39 +91,73 @@ pub mod bffi_event_loop;
 #[cfg(feature = "object")]
 #[path = "object/mod.rs"]
 pub mod bffi_object;
+#[cfg(feature = "stream")]
+#[path = "stream/mod.rs"]
+pub mod bffi_stream;
 #[cfg(feature = "types")]
 #[path = "types/mod.rs"]
 pub mod bffi_types;
 
+// Every re-export below is gated on the feature that owns the
+// module: a minimal build (`--no-default-features` plus the slices
+// you need) must compile with exactly the enabled surface and no
+// dangling paths.
+#[cfg(feature = "async")]
 pub use crate::bffi_async::{
     AsyncError, AsyncValue, Sleep, Timeout, TimeoutError, attach, cancel, pending_tasks, sleep,
     spawn,
 };
+#[cfg(feature = "build")]
 pub use crate::bffi_build::BuildError;
+#[cfg(feature = "callback")]
 pub use crate::bffi_callback::{
     CallbackError, CallbackSig, JsCallbackInfo, Value, ValueType, bind_js_callback,
     ensure_js_thread, invoke, js_callback, register, revoke, set_js_thread,
 };
+// Marshal-and-wait rides the event loop, so it exists only when that
+// slice is compiled in (event-loop implies callback).
+#[cfg(feature = "event-loop")]
+pub use crate::bffi_callback::invoke_wait;
+#[cfg(feature = "core")]
 pub use crate::bffi_core::{
-    BffiError, ErrorCode, Handle, MAX_GENERATION, MAX_INDEX, Registry, RegistryError, TableError,
-    TypeTag, boundary, catch_panic, panic_message, run_extern_body, run_extern_body_or,
+    BffiError, ErrorCode, ErrorRich, Handle, MAX_GENERATION, MAX_INDEX, Registry, RegistryError,
+    TableError, TypeTag, boundary, catch_panic, panic_message, run_extern_body, run_extern_body_or,
     set_last_error, take_last_error,
 };
+#[cfg(feature = "dts")]
 pub use crate::bffi_dts::{
-    AbiOut, AbiPrim, AbiSig, AbiType, ClassDef, FieldDef, FunctionDef, MethodDef, ModuleDef,
-    ParamDef, TsType, render, sanitize,
+    AbiOut, AbiPrim, AbiSig, AbiType, ClassDef, EnumDef, EnumVariantDef, ErrorDef, ErrorVariantDef,
+    FieldDef, FunctionDef, MethodDef, ModuleDef, ParamDef, RecordDef, RecordFieldDef, TsType,
+    render, sanitize,
 };
+#[cfg(feature = "error")]
 pub use crate::bffi_error::{
     JsErrorExt, JsErrorName, JsErrorShape, js_error_name, take_last_error_shape,
 };
+#[cfg(feature = "event-loop")]
 pub use crate::bffi_event_loop::{
     EventLoopError, Job, enqueue, executed_total, is_running, marshal, pending, pump, run, stop,
 };
+#[cfg(feature = "object")]
 pub use crate::bffi_object::{ObjectError, ObjectWrap, TAG_MAX, TAG_MIN, tag_in_range};
-pub use crate::bffi_types::{
-    ConversionError, CopiedBuf, JsNumber, buf_view, bytes_to_string, str_view, string_to_bytes,
+#[cfg(feature = "stream")]
+pub use crate::bffi_stream::{
+    BffiStreamItem, Chunk, Ctx, StreamError, drop_stream, is_live, next_chunk,
+    spawn as spawn_stream, spawn_push,
 };
-pub use bffi_macros::{bffi, bffi_class, bffi_constructor, bffi_impl};
+#[cfg(feature = "types")]
+pub use crate::bffi_types::{
+    BffiWire, ConversionError, CopiedBuf, JsNumber, buf_view, bytes_to_string, str_view,
+    string_to_bytes,
+};
+// The attribute macros come with the optional `bffi-macros`
+// dependency; the `#[bffi_async]` expansion additionally resolves
+// `::bffi::r#async`, so enable the `async` feature to use it.
+#[cfg(feature = "macros")]
+pub use bffi_macros::{
+    BffiEnum, BffiError, BffiRecord, bffi, bffi_async, bffi_class, bffi_constructor, bffi_impl,
+    bffi_stream,
+};
 
 /// THE single zero-copy door (DESIGN §6.3). Zero-copy is allowed only
 /// through `bffi::unsafe_zero_copy`; everything else in this facade
@@ -146,13 +182,15 @@ pub use bffi_macros::{bffi, bffi_class, bffi_constructor, bffi_impl};
 /// let typed: bffi::unsafe_zero_copy::ZeroCopyStr<'_> = text;
 /// let _buf: bffi::unsafe_zero_copy::ZeroCopyBuf<'_> = view;
 /// ```
+#[cfg(feature = "types")]
 pub mod unsafe_zero_copy {
     // The view TYPES are exported only through this module - the
     // module name is the warning label. The constructor functions
     // (`str_view`/`buf_view`) are also available at the facade root
     // alongside the copying converters; they are re-exported here as
-    // well because the `#[bffi_async]` shims name the pre-merge
-    // `::bffi_types::unsafe_zero_copy::` path.
+    // well because the `#[bffi_async]` shims name the
+    // `::bffi::types::unsafe_zero_copy::` path (the `types`
+    // namespace re-exports it).
     pub use crate::bffi_types::unsafe_zero_copy::{ZeroCopyBuf, ZeroCopyStr, buf_view, str_view};
 }
 
@@ -160,7 +198,8 @@ pub mod unsafe_zero_copy {
 /// `bffi::core::*` 1:1. These are the paths the `crate = "bffi"`
 /// macros emit for the core roots (`::bffi::core::ErrorCode`, ...).
 ///
-/// [`bffi-core`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi-core
+/// [`bffi-core`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/core
+#[cfg(feature = "core")]
 pub mod core {
     pub use crate::bffi_core::*;
 }
@@ -168,7 +207,8 @@ pub mod core {
 /// Namespaced re-export of [`bffi-types`]: `bffi::types::*` mirrors
 /// `bffi::types::*` 1:1, including `unsafe_zero_copy`.
 ///
-/// [`bffi-types`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi-types
+/// [`bffi-types`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/types
+#[cfg(feature = "types")]
 pub mod types {
     pub use crate::bffi_types::*;
 }
@@ -177,7 +217,8 @@ pub mod types {
 /// `bffi::dts::*` 1:1. The descriptor consts the macros emit resolve
 /// here in facade-only mode (`::bffi::dts::FunctionDef`, ...).
 ///
-/// [`bffi-dts`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi-dts
+/// [`bffi-dts`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/dts
+#[cfg(feature = "dts")]
 pub mod dts {
     pub use crate::bffi_dts::*;
 }
@@ -186,16 +227,27 @@ pub mod dts {
 /// `bffi::object::*` 1:1. The class shims resolve here in facade-only
 /// mode (`::bffi::object::ObjectWrap`, ...).
 ///
-/// [`bffi-object`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi-object
+/// [`bffi-object`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/object
+#[cfg(feature = "object")]
 pub mod object {
     pub use crate::bffi_object::*;
+}
+
+/// Namespaced re-export of the async slice: `bffi::r#async::*`
+/// mirrors the pre-merge `bffi-async` crate 1:1. The `#[bffi_async]`
+/// shims resolve here (`::bffi::r#async::spawn`, ...); the module
+/// name is a raw identifier because `async` is a keyword.
+#[cfg(feature = "async")]
+pub mod r#async {
+    pub use crate::bffi_async::*;
 }
 
 /// Namespaced re-export of [`bffi-build`]: `bffi::build::*` mirrors
 /// `bffi::build::*` 1:1. The buffer-return shims resolve here in
 /// facade-only mode (`::bffi::build::runtime::store_bytes`, ...).
 ///
-/// [`bffi-build`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi-build
+/// [`bffi-build`]: https://github.com/z2net/bffi-rs/blob/main/crates/bffi/src/build
+#[cfg(feature = "build")]
 pub mod build {
     pub use crate::bffi_build::*;
 }

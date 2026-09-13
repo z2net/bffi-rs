@@ -71,6 +71,25 @@ describe("async through the full pipeline", () => {
     await expect(withPump(api.shout_async("async"))).resolves.toBe("HELLO async!");
   });
 
+  test("composite results decode through the record table (Promise<Report>)", async () => {
+    await expect(withPump(api.report_async(7n))).resolves.toEqual({
+      value: 7n,
+      label: "report-7",
+    });
+  });
+
+  test("sequence results decode as arrays (Promise<number[]>)", async () => {
+    await expect(withPump(api.ticks_async(3))).resolves.toEqual([0, 1, 2]);
+  });
+
+  test("optional results map None to null (Promise<Report | null>)", async () => {
+    await expect(withPump(api.maybe_report(9n))).resolves.toEqual({
+      value: 9n,
+      label: "report-9",
+    });
+    await expect(withPump(api.maybe_report(0n))).resolves.toBeNull();
+  });
+
   test("a failing task rejects with the domain message", async () => {
     await expect(withPump(api.fail_async())).rejects.toThrow("domain failure");
   });
@@ -94,6 +113,24 @@ describe("async through the full pipeline", () => {
     expect(settled).toBeFalse();
     await expect(withPump(promise)).resolves.toBe(42n);
     expect(settled).toBeTrue();
+  });
+
+  test("mixed concurrency: 24 tasks with values, failures and a timeout", async () => {
+    const values = Array.from({ length: 24 }, (_, i) => withPump(api.double_async(BigInt(i))));
+    const rejected = withPump(api.fail_async()).then(
+      () => "resolved",
+      (error: Error) => error.message,
+    );
+    const timed = withPump(api.timed_async()).then(
+      () => "resolved",
+      (error: Error) => error.message,
+    );
+    const results = await Promise.all([...values, rejected, timed]);
+    for (let i = 0; i < 24; i++) {
+      expect(results[i]).toBe(BigInt(i) * 2n);
+    }
+    expect(results[24]).toBe("domain failure");
+    expect(results[25]).toContain("task timed out");
   });
 
   test("a raw task can be cancelled from JS before wrapping", async () => {

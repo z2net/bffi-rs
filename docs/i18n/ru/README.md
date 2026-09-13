@@ -39,19 +39,8 @@
 
 | Часть | Назначение |
 | ---- | ------- |
-| `crates/bffi-core` | Дескрипторы с поколениями (generational handles), lock-free таблицы, граница `catch_unwind` |
-| `crates/bffi-types` | Конвертация чисел/строк/буферов, SIMD UTF-8, общий формат обмена (wire-кодек) |
-| `crates/bffi-error` | Единое отображение `BffiError` -> JS Error |
-| `crates/bffi-object` | Владение `ObjectWrap<T>` поверх глобального `Registry` |
-| `crates/bffi-callback` | Колбэки в обе стороны + универсальный callback ABI |
-| `crates/bffi-dts` | IR дескрипторов + детерминированный рендер `.d.ts` |
-| `crates/bffi-macros` | `#[bffi]` / `#[bffi_async]`: генерируют C-функции-обёртки и описания типов |
-| `crates/bffi-class` | `#[bffi_class]` / `#[bffi_impl]` поверх `ObjectWrap` |
-| `crates/bffi-macro-support` | Общие внутренности макросов (kind, классификация, кодогенерация) |
-| `crates/bffi-event-loop` | Очередь задач с `run()` / `pump()` на JS-потоке |
-| `crates/bffi-build` | Экспорты рантайм-ABI, транзитные буферы, эмиттеры `.d.ts`/loader-JSON |
-| `crates/bffi-async` | `#[bffi_async]`: асинхронные функции Rust в виде JS Promises (отмена, таймауты, опциональный tokio) |
-| `crates/bffi` | Фасад: одна зависимость, ре-экспортирующая весь стек |
+| `crates/bffi` | **Публикуемый крейт** ([crates.io/crates/bffi](https://crates.io/crates/bffi)): весь стек как feature-gated модули (core, types, error, object, dts, build, callback, event-loop, async) + фасад + реэкспорт макросов |
+| `crates/bffi-macros` | Proc-macro крейт ([crates.io/crates/bffi-macros](https://crates.io/crates/bffi-macros)): `#[bffi]`, `#[bffi_async]`, `#[bffi_class]`, `#[bffi_impl]`, `#[bffi_constructor]` |
 | `crates/bffi-native` | Эталонная cdylib (`add`/`shout`/`version` + рантайм ABI); источник семейства платформенных пакетов `@z2net/bffi-native` |
 | `packages/bffi` | Bun-only JS-пакет интеграции: конфиг, полный пайплайн (build → json → api.gen), типизированный лоадер (npm: `@z2net/bffi`) |
 | `packages/bffi-cli` | CLI `bffi`: init, build, codegen, pack, fetch, check, doctor (npm: `@z2net/bffi-cli`) |

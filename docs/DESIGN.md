@@ -21,7 +21,7 @@ A native module is written in Rust, compiled to a `cdylib`, and consumed from Ty
 - **Safety at the FFI boundary** - the boundary is where Rust's guarantees end; the framework puts explicit rules in its place.
 - **Clear ownership** - every value crossing the boundary has one side responsible for it, expressed in the types.
 - **Developer experience** - annotate, build, import typed functions; errors are diagnostics, not mysteries.
-- **Long-term maintainability** - small crates, built bottom-up; deterministic artifacts that can be committed and diffed.
+- **Long-term maintainability** - small modules, built bottom-up; deterministic artifacts that can be committed and diffed.
 - **Bun-first** - no compromises for other runtimes.
 
 ## 3. Architecture overview
@@ -30,14 +30,14 @@ Three planes, connected by one contract:
 
 ```mermaid
 flowchart LR
-    R["Rust stack<br/>(14 small crates, facade on top)"]
+    R["Rust stack<br/>(one crate: feature-gated modules, facade on top)"]
     A["thin C ABI<br/>(uniform shape: status + out-param)"]
     J["JS integration<br/>(pipeline, loader, CLI)"]
 
     R --> A --> J
 ```
 
-**Rust side, bottom-up.** `bffi-core` is the foundation: generational handles, the object registry, and the boundary policy. Above it sit single-purpose crates - `bffi-error`, `bffi-types` (conversions plus the shared wire codec), `bffi-object` (ObjectWrap), `bffi-callback` (two-direction callbacks and the generic callback ABI), `bffi-event-loop` (queue and drains), `bffi-async` (Rust futures as JS Promises), `bffi-dts` (descriptor IR and renderers), `bffi-build` (runtime ABI exports and the loader JSON). The proc-macro crates - `bffi-macros` (`#[bffi]`, `#[bffi_async]`) and `bffi-class` (`#[bffi_class]`) - share their internals in `bffi-macro-support`. `bffi` is the facade: one dependency re-exporting the stack. `bffi-native` is the reference cdylib.
+**Rust side, bottom-up.** The published crate `bffi` contains the whole stack as feature-gated modules with the pre-merge names preserved (`bffi::bffi_core`, `bffi::bffi_types`, ...): `bffi-core` is the foundation (generational handles, the object registry, the boundary policy); above it `bffi-error` (the `BffiError` -> JS Error mapping), `bffi-types` (conversions, SIMD UTF-8, the shared wire codec), `bffi-object` (ObjectWrap), `bffi-callback` (two-direction callbacks and the generic callback ABI), `bffi-event-loop` (queue and drains), `bffi-async` (Rust futures as JS Promises), `bffi-dts` (descriptor IR and renderers), `bffi-build` (runtime ABI exports and the loader JSON). The separate proc-macro crate `bffi-macros` (physically unavoidable: a proc-macro cannot live inside a normal crate) provides `#[bffi]`, `#[bffi_async]` and the class macros, sharing internals in its `support`/`class` modules. The facade re-exports everything flat, plus the `core`/`types`/`dts`/`object`/`build`/`r#async` namespaces the macro expansions name by default. `bffi-native` is the reference cdylib.
 
 **JS side.** `@z2net/bffi` (packages/bffi) is the config-driven pipeline - cargo build, loader JSON, generated TypeScript, dlopen - plus the typed runtime loader. `@z2net/bffi-cli` (packages/bffi-cli) is the `bffi` CLI: init, build, check, doctor, codegen, pack, fetch. `@z2net/bffi-native` (packages/native) is the published reference native module family.
 
@@ -91,9 +91,13 @@ Supported targets are seven 64-bit triples: `win32-x64-msvc`, `linux-x64-gnu`, `
 Each example is a working module and an end-to-end test of one slice of the design:
 
 - [examples/sqlite](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite) - the full pipeline on a real workload.
-- [examples/async](https://github.com/z2net/bffi-rs/blob/main/examples/async) - futures as Promises, cancellation, timeouts, the explicit pump.
+- [examples/async](https://github.com/z2net/bffi-rs/blob/main/examples/async) - futures as Promises, cancellation, timeouts, the explicit pump, composite and `Option` results.
 - [examples/event-loop](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop) - queue, drains, marshal.
 - [examples/callbacks](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks) - both directions, the JS-thread gate, marshal delivery.
+- [examples/records](https://github.com/z2net/bffi-rs/blob/main/examples/records) - the composite matrices: records, enums, sequences, `Option` fields and returns.
+- [examples/streams](https://github.com/z2net/bffi-rs/blob/main/examples/streams) - pull and push producers, backpressure, `Result` items, wake-driven delivery.
+- [examples/errors](https://github.com/z2net/bffi-rs/blob/main/examples/errors) - `#[derive(BffiError)]`: user codes, `e.name` / `e.payload`.
+- [examples/wry](https://github.com/z2net/bffi-rs/blob/main/examples/wry) - a webview window driven from Bun (the GUI-binding reference; see [docs/BINDING-GUI.md](https://github.com/z2net/bffi-rs/blob/main/docs/BINDING-GUI.md)).
 
 ## 9. Decisions log
 
@@ -113,6 +117,8 @@ Accepted decisions, one line each:
 | Toolchain | Bun >= 1.4.0 (enforced); Rust 1.98.0 (pinned). |
 | Targets | 64-bit only (seven triples); no 32-bit for now. |
 | Diagnostics | Stable E-codes for macro errors. |
+| Native-thread callbacks | `invoke_wait` marshals a callback onto the JS thread and waits with a mandatory timeout (`Timeout = 15`); the JS thread must pump. |
+| Option values | `Option` crosses the wire as `TAG_UNIT` (fields, returns, async); nested `Option<Option<T>>` is rejected. |
 | License | MIT. |
 
 ## 10. Non-goals

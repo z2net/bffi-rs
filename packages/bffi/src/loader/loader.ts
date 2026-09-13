@@ -37,14 +37,19 @@ export type OutName =
   | "handle";
 
 /** The return transport: a primitive width, a transient-buffer
- * handle, an async task handle, or the unit return. */
+ * handle, an async task handle, a stream handle, or the unit
+ * return. */
 export type RetAbiName =
   | OutName
   | "buffer"
+  | "stream"
   | "task"
   | "void";
 
-/** The TypeScript type name as written by `bffi-dts`. */
+/** The TypeScript type name as written by `bffi-dts`. Named record/
+ * enum references (`Sample`) and their arrays (`Sample[]`) resolve
+ * against the module's `records`/`enums` tables; the flat array
+ * forms (`number[]`, ...) are part of the B1 matrix. */
 export type TsName =
   | "number"
   | "bigint"
@@ -53,8 +58,16 @@ export type TsName =
   | "Uint8Array"
   | "string | null"
   | "Uint8Array | null"
+  | "number | null"
+  | "bigint | null"
+  | "boolean | null"
   | "void"
-  | `Promise<${string}>`;
+  | "number[]"
+  | "bigint[]"
+  | "boolean[]"
+  | "string[]"
+  | `Promise<${string}>`
+  | (string & {});
 
 /** Every valid `abi` parameter name (the codegen/CLI validator
  * consumes this set). */
@@ -82,13 +95,16 @@ export const OUT_NAMES: ReadonlySet<string> = OUT_NAMES_MUTABLE;
 
 const RET_ABI_NAMES_MUTABLE = new Set(OUT_NAMES_MUTABLE);
 RET_ABI_NAMES_MUTABLE.add("buffer");
+RET_ABI_NAMES_MUTABLE.add("stream");
 RET_ABI_NAMES_MUTABLE.add("task");
 RET_ABI_NAMES_MUTABLE.add("void");
 
 /** Every valid return-transport name. */
 export const RET_ABI_NAMES: ReadonlySet<string> = RET_ABI_NAMES_MUTABLE;
 
-/** The TypeScript type names the `bffi-dts` renderer emits. */
+/** The TypeScript type names the `bffi-dts` renderer emits. Named
+ * record/enum references (and their `[]` forms) validate as TS
+ * identifiers against the module tables instead of this closed set. */
 export const TS_NAMES: ReadonlySet<string> = new Set([
   "number",
   "bigint",
@@ -98,6 +114,11 @@ export const TS_NAMES: ReadonlySet<string> = new Set([
   "string | null",
   "Uint8Array | null",
   "void",
+  "number[]",
+  "bigint[]",
+  "boolean[]",
+  "string[]",
+  "Uint8Array[]",
   "Promise<void>",
   "Promise<number>",
   "Promise<bigint>",
@@ -105,6 +126,23 @@ export const TS_NAMES: ReadonlySet<string> = new Set([
   "Promise<string>",
   "Promise<Uint8Array>",
 ]);
+
+/** Whether `ts` names a module composite (a record/enum table entry,
+ * optionally as an array or `| null` form). */
+export function isNamedTs(
+  ts: string,
+  json: Pick<ModuleJson, "records" | "enums">,
+): boolean {
+  const stripped = ts.endsWith(" | null") ? ts.slice(0, -" | null".length) : ts;
+  const name = stripped.endsWith("[]") ? stripped.slice(0, -2) : stripped;
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) {
+    return false;
+  }
+  return (
+    (json.records ?? []).some((record) => record.name === name)
+    || (json.enums ?? []).some((enumeration) => enumeration.name === name)
+  );
+}
 
 export interface ParamJson {
   name: string;
@@ -145,11 +183,71 @@ export interface ClassJson {
   methods: FunctionJson[];
 }
 
+/** One record field: its JS name, docs and TypeScript type (the
+ * whole value crosses as one wire payload - fields carry no ABI of
+ * their own). */
+export interface RecordFieldJson {
+  name: string;
+  docs: string[];
+  ts: TsName;
+}
+
+/** A `#[derive(BffiRecord)]` type of the module. */
+export interface RecordJson {
+  name: string;
+  docs: string[];
+  fields: RecordFieldJson[];
+}
+
+/** One unit-enum variant (wire-encoded as its name). */
+export interface EnumVariantJson {
+  name: string;
+  docs: string[];
+}
+
+/** A `#[derive(BffiEnum)]` type of the module. */
+export interface EnumJson {
+  name: string;
+  docs: string[];
+  variants: EnumVariantJson[];
+}
+
 export interface ModuleJson {
   bffi: number;
   module: string;
   functions: FunctionJson[];
   classes: ClassJson[];
+  /** The B1 record types (always present in freshly emitted JSON;
+   * older JSON without the key reads as empty). */
+  records?: RecordJson[];
+  /** The B1 enum types. */
+  enums?: EnumJson[];
+  /** The B3 derived error enums (always present in freshly emitted
+   * JSON; older JSON without the key reads as empty). */
+  errors?: ErrorJson[];
+}
+
+/** One payload field of an error variant. */
+export interface ErrorFieldJson {
+  name: string;
+  docs: string[];
+  ts: string;
+}
+
+/** One variant of a derived error enum: its name, docs, the hex user
+ * code and the payload fields. */
+export interface ErrorVariantJson {
+  name: string;
+  docs: string[];
+  code: string;
+  fields: ErrorFieldJson[];
+}
+
+/** A derived error enum as carried by the loader JSON. */
+export interface ErrorJson {
+  name: string;
+  docs: string[];
+  variants: ErrorVariantJson[];
 }
 
 /** Validates the schema header: unknown versions are rejected. */
@@ -207,6 +305,8 @@ export interface BuiltinFeatures {
   async?: boolean;
   /** `bffi_callback_abi!()` exports. Default: false. */
   callbacks?: boolean;
+  /** `bffi_stream_abi!()` exports (next/drop). Default: false. */
+  stream?: boolean;
 }
 
 const RUNTIME_DECLARATIONS: Record<string, { args: FfiType[]; returns: FfiType }> = {
@@ -217,6 +317,13 @@ const RUNTIME_DECLARATIONS: Record<string, { args: FfiType[]; returns: FfiType }
   bffi_error_cause_ptr: { args: ["u64"], returns: "ptr" },
   bffi_error_cause_len: { args: ["u64"], returns: "u64" },
   bffi_error_free: { args: ["u64"], returns: "u32" },
+  bffi_error_user_code: { args: ["u64"], returns: "u32" },
+  bffi_error_variant_ptr: { args: ["u64"], returns: "ptr" },
+  bffi_error_variant_len: { args: ["u64"], returns: "u64" },
+  bffi_error_payload_ptr: { args: ["u64"], returns: "ptr" },
+  bffi_error_payload_len: { args: ["u64"], returns: "u64" },
+  bffi_error_stack_ptr: { args: ["u64"], returns: "ptr" },
+  bffi_error_stack_len: { args: ["u64"], returns: "u64" },
   bffi_buffer: { args: ["u64"], returns: "ptr" },
   bffi_buffer_length: { args: ["u64"], returns: "u64" },
   bffi_types_free: { args: ["u64"], returns: "u32" },
@@ -243,6 +350,14 @@ const CALLBACK_DECLARATIONS: Record<string, { args: FfiType[]; returns: FfiType 
   bffi_callback_revoke: { args: ["u64"], returns: "u32" },
 };
 
+const STREAM_DECLARATIONS: Record<string, { args: FfiType[]; returns: FfiType }> = {
+  bffi_stream_next: {
+    args: ["u64", "u32", "pointer"],
+    returns: "u32",
+  },
+  bffi_stream_drop: { args: ["u64"], returns: "u32" },
+};
+
 /** Built-in declarations selected by [`BuiltinFeatures`]. */
 export function builtinDeclarations(
   features: BuiltinFeatures = {},
@@ -256,6 +371,9 @@ export function builtinDeclarations(
   }
   if (features.callbacks) {
     Object.assign(out, CALLBACK_DECLARATIONS);
+  }
+  if (features.stream) {
+    Object.assign(out, STREAM_DECLARATIONS);
   }
   return out;
 }

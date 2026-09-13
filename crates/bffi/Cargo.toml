@@ -24,6 +24,7 @@ default = [
     "build",
     "callback",
     "event-loop",
+    "stream",
     "async",
     "macros",
     "class",
@@ -36,13 +37,14 @@ object = ["core"]
 build = ["core", "types", "error", "dts"]
 callback = ["core", "types", "build"]
 event-loop = ["core", "callback"]
+stream = ["core", "types", "build"]
 async = ["core", "types", "build", "event-loop"]
 macros = ["dep:bffi-macros", "core", "types", "build", "dts"]
 class = ["macros", "object"]
 tokio = ["async", "dep:tokio"]
 
 [dependencies]
-bffi-macros = { path = "../bffi-macros", version = "0.1.0", optional = true }
+bffi-macros = { path = "../bffi-macros", version = "0.1.2", optional = true }
 tokio = { version = "1", optional = true, features = ["rt-multi-thread", "time", "sync"] }
 
 [dev-dependencies]

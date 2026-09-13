@@ -39,19 +39,8 @@ Bun 的绑定框架 - [Bun](https://bun.sh) 的 napi-rs 等价物,构建于 `bun
 
 | 部分 | 用途 |
 | ---- | ------- |
-| `crates/bffi-core` | 世代句柄、无锁表、catch_unwind 边界 |
-| `crates/bffi-types` | 数字/字符串/缓冲区转换、SIMD UTF-8、共享 wire 编解码 |
-| `crates/bffi-error` | 统一的 `BffiError` -> JS Error 映射 |
-| `crates/bffi-object` | 基于全局 `Registry` 的 `ObjectWrap<T>` 所有权 |
-| `crates/bffi-callback` | 双向回调 + 泛型回调 ABI |
-| `crates/bffi-dts` | TypeScript IR + 确定性 `.d.ts` 渲染器 |
-| `crates/bffi-macros` | `#[bffi]` / `#[bffi_async]`(shim + 描述符) |
-| `crates/bffi-class` | 建立在 `ObjectWrap` 之上的 `#[bffi_class]` / `#[bffi_impl]` |
-| `crates/bffi-macro-support` | 宏的共享内部件(kinds、分类、代码生成) |
-| `crates/bffi-event-loop` | JS 线程上的 `run()` / `pump()` 任务队列 |
-| `crates/bffi-build` | 运行时 ABI 导出、瞬态缓冲区、`.d.ts`/loader JSON 生成器 |
-| `crates/bffi-async` | `#[bffi_async]`:Rust future 变为 JS Promise(取消、超时、tokio opt-in) |
-| `crates/bffi` | 门面:一个依赖再导出整个技术栈 |
+| `crates/bffi` | **已发布的 crate**([crates.io/crates/bffi](https://crates.io/crates/bffi)):整个技术栈作为 feature 门控模块(core、types、error、object、dts、build、callback、event-loop、async)+ 门面 + 宏再导出 |
+| `crates/bffi-macros` | proc-macro crate([crates.io/crates/bffi-macros](https://crates.io/crates/bffi-macros)):`#[bffi]`、`#[bffi_async]`、`#[bffi_class]`、`#[bffi_impl]`、`#[bffi_constructor]` |
 | `crates/bffi-native` | 参考 cdylib(`add`/`shout`/`version` + 运行时 ABI);`@z2net/bffi-native` 平台包家族的源头 |
 | `packages/bffi` | 仅限 Bun 的 JS 集成包:配置、完整流水线(build → json → api.gen)、类型化加载器(npm: `@z2net/bffi`) |
 | `packages/bffi-cli` | `bffi` CLI:init、build、codegen、pack、fetch、check、doctor(npm: `@z2net/bffi-cli`) |

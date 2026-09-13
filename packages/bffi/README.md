@@ -269,7 +269,7 @@ The generic callback ABI (four exports the crate expands via
 | Helper | Direction | What it does |
 | --- | --- | --- |
 | `setJsThread(lib)` | - | binds the CALLING thread as THE JS thread. First binder wins; sticky for the process; a second bind from another thread is `WrongThread` |
-| `bindJsCallback(lib, sig, fn)` | Rust -> JS | wraps `fn` into a `JSCallback` (`sig.ret`/`sig.params` are `"i32" \| "i64" \| "f64" \| "bool"`), stores the pointer under a fresh handle; returns `{ handle, revoke() }` |
+| `bindJsCallback(lib, sig, fn)` | Rust -> JS | wraps `fn` into a `JSCallback` (`sig.ret`/`sig.params` are `"i32" \| "i64" \| "f64" \| "bool" \| "cstring"`), stores the pointer under a fresh handle; returns `{ handle, revoke() }` |
 | `invokeCallback(lib, handle, ...args)` | JS -> Rust | wire-encodes `args`, invokes the native body registered by the crate, decodes the result |
 | `revokeCallback(lib, handle)` | both | terminal revocation - a dead handle never resurrects; the second revoke throws |
 
@@ -278,10 +278,19 @@ Subtleties worth knowing:
 - **The thread gate.** While the process is UNBOUND every caller is
   admitted; once `setJsThread` ran anywhere, invocations from other
   threads are rejected with `WrongThread (12)`. There is no unbind.
-- **JS-bound handles are opaque tokens.** `bindJsCallback` stores the
-  pointer; Rust may read it back but never dereference it - a LIVE
-  call into JS from Rust happens only through the async delivery
-  trampolines.
+- **`invoke_wait` crosses the gate - by marshalling, not by
+  breaking it.** The native side can call a bound callback from ANY
+  thread: the call is enqueued onto the bffi event loop, the
+  calling thread parks with a mandatory timeout
+  (`ErrorCode::Timeout = 15`), and the callback executes on the JS
+  thread during the pump. This is how GUI-library handlers (wry et
+  al.) reach JavaScript - see
+  [docs/BINDING-GUI.md](https://github.com/z2net/bffi-rs/blob/main/docs/BINDING-GUI.md)
+  and `bffi::invoke_wait` in
+  [CALLING-CONVENTION.md section 9.1](https://github.com/z2net/bffi-rs/blob/main/crates/bffi/CALLING-CONVENTION.md).
+- **Revocation while waiting is safe.** `invoke_wait` re-checks the
+  handle inside the marshal job: a revoked handle surfaces as
+  `InvalidHandle` through the slot, never a dead-pointer call.
 - **Signature mismatches** (arity or tag shape) surface as
   `InvalidArgument (11)` with an "expected i32(i32), got ..." message.
 - Booleans cross callbacks as `u8` (`1`/`0`) - same as the ABI.
@@ -403,4 +412,13 @@ building, resolution and the API factory over a mock symbol table.
 - [examples/event-loop](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop)
   - the queue/drains/marshal mechanics;
 - [examples/callbacks](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks)
-  - both callback directions, the thread gate, marshal delivery.
+  - both callback directions, the thread gate, marshal delivery;
+- [examples/records](https://github.com/z2net/bffi-rs/blob/main/examples/records)
+  - records, enums, sequences, `Option` fields and returns;
+- [examples/streams](https://github.com/z2net/bffi-rs/blob/main/examples/streams)
+  - pull and push producers, backpressure, wake-driven delivery;
+- [examples/errors](https://github.com/z2net/bffi-rs/blob/main/examples/errors)
+  - typed errors with user codes (`e.code` / `e.name` / `e.payload`);
+- [examples/wry](https://github.com/z2net/bffi-rs/blob/main/examples/wry)
+  - a webview window driven from Bun - the GUI-binding reference
+    ([docs/BINDING-GUI.md](https://github.com/z2net/bffi-rs/blob/main/docs/BINDING-GUI.md)).

@@ -32,7 +32,7 @@ mod tests {
     use super::{RetKind, ShimKind, classify_param, classify_return, ts_return, ts_type};
     use crate::model::FnModel;
     use crate::support::classify::ts_prim;
-    use crate::support::kind::{BigIntTy, BufferTy, PrimTy, TsKind};
+    use crate::support::kind::{BigIntTy, BufferTy, KindPath, PrimTy, SeqItem, TsKind};
     use quote::quote;
 
     /// Parses a type source, panicking in tests only (allowed by the
@@ -64,23 +64,23 @@ mod tests {
         let ctx = crate::support::paths::PathCtx::default();
         assert_eq!(
             TsKind::Number.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: Number"
+            ":: bffi :: dts :: TsType :: Number"
         );
         assert_eq!(
             TsKind::Uint8Array.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: Uint8Array"
+            ":: bffi :: dts :: TsType :: Uint8Array"
         );
         assert_eq!(
             TsKind::NullableString.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: NullableString"
+            ":: bffi :: dts :: TsType :: NullableString"
         );
         assert_eq!(
             TsKind::NullableUint8Array.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: NullableUint8Array"
+            ":: bffi :: dts :: TsType :: NullableUint8Array"
         );
         assert_eq!(
             TsKind::Void.tokens(&ctx).to_string(),
-            ":: bffi_dts :: TsType :: Void"
+            ":: bffi :: dts :: TsType :: Void"
         );
     }
 
@@ -170,6 +170,48 @@ mod tests {
     }
 
     #[test]
+    fn option_composite_returns_classify_nullable_wire() {
+        let point: syn::Path = syn::parse_str("Point").expect("path");
+        let cases: &[(&str, RetKind, TsKind)] = &[
+            (
+                "Option<Point>",
+                RetKind::NullableRecord(KindPath(point.clone())),
+                TsKind::NullableRecord("Point".to_owned()),
+            ),
+            (
+                "Option<Vec<f64>>",
+                RetKind::NullableSeq(SeqItem::Wide),
+                TsKind::NullableNumberArray,
+            ),
+            (
+                "Option<Vec<u64>>",
+                RetKind::NullableSeq(SeqItem::U64),
+                TsKind::NullableBigIntArray,
+            ),
+            (
+                "Option<Vec<String>>",
+                RetKind::NullableSeq(SeqItem::Str),
+                TsKind::NullableStringArray,
+            ),
+            (
+                "Option<Vec<Vec<u8>>>",
+                RetKind::NullableSeq(SeqItem::Bytes),
+                TsKind::NullableUint8ArrayArray,
+            ),
+            (
+                "Option<Vec<Point>>",
+                RetKind::NullableSeq(SeqItem::Record(KindPath(point))),
+                TsKind::NullableRecordArray("Point".to_owned()),
+            ),
+        ];
+        for (src, expected, ts) in cases {
+            let ret = classify_return(&ty(src)).expect("accepted");
+            assert_eq!(&ret, expected, "return type `{src}`");
+            assert_eq!(ts_return(&ret), *ts, "ts kind for `{src}`");
+        }
+    }
+
+    #[test]
     fn result_returns_wrap_any_supported_inner() {
         for src in [
             "Result<u32, MyError>",
@@ -207,9 +249,10 @@ mod tests {
     }
 
     #[test]
-    fn vec_non_u8_and_single_arg_result_are_rejected() {
-        assert!(classify_return(&ty("Vec<u32>")).is_err());
-        assert!(classify_return(&ty("Vec<i8>")).is_err());
+    fn vec_of_unsupported_items_and_single_arg_result_are_rejected() {
+        // `Vec<char>` items stay outside the sequence matrix; a
+        // single-argument `Result` is a shape error.
+        assert!(classify_return(&ty("Vec<char>")).is_err());
         assert!(classify_return(&ty("Result<u32>")).is_err());
     }
 
@@ -300,8 +343,8 @@ mod tests {
         let model = FnModel::parse(&proc_macro2::TokenStream::new(), item).expect("accepted");
         assert_eq!(
             model.paths.core.to_string(),
-            ":: bffi_core",
-            "no attribute keeps the direct-dependency roots"
+            ":: bffi :: core",
+            "no attribute selects the facade roots"
         );
     }
 
@@ -313,6 +356,16 @@ mod tests {
         assert_eq!(model.paths.types.to_string(), ":: bffi :: types");
         assert_eq!(model.paths.dts.to_string(), ":: bffi :: dts");
         assert_eq!(model.paths.build.to_string(), ":: bffi :: build");
+    }
+
+    #[test]
+    fn crate_direct_selects_the_pre_merge_roots() {
+        let item = quote! { fn f(x: u32) -> u32 { x } };
+        let model = FnModel::parse(&quote! { crate = "direct" }, item).expect("accepted");
+        assert_eq!(model.paths.core.to_string(), ":: bffi_core");
+        assert_eq!(model.paths.types.to_string(), ":: bffi_types");
+        assert_eq!(model.paths.dts.to_string(), ":: bffi_dts");
+        assert_eq!(model.paths.build.to_string(), ":: bffi_build");
     }
 
     #[test]

@@ -197,11 +197,11 @@ chore: pin rust-toolchain to 1.98.0
 | Тема          | Решение                                  |
 | ------------- | ---------------------------------------- |
 | Макрос        | `#[bffi]`: C-функция-обёртка (debug - без обёртки / release - под `catch_unwind`) + дескриптор `bffi_meta_*` |
-| Возвраты `#[bffi]` | примитивы/bigint через выходной параметр; `String`/`Vec<u8>`/`CopiedBuf` (и `Option` от них) как дескрипторы буферов; `Result<T, E>` -> DomainError(13) |
+| Возвраты `#[bffi]` | примитивы/bigint через выходной параметр; `String`/`Vec<u8>`/`CopiedBuf` (и `Option` от них) как дескрипторы буферов; композиты (records/enums/`Vec<T>`/`Vec<Vec<u8>>` и `Option` от них) как wire-дескрипторы; `Result<T, E: Into<BffiError>>` -> статус конвертированной ошибки (`status_u32()`) |
 | Мин. Bun      | 1.4.0                                    |
 | Rust/Cargo    | 1.98.0                                   |
 | Дескрипторы   | Индекс с поколением + тег типа           |
-| Формат ошибок | `BffiError` = код + сообщение + источник; доменные ошибки конвертируются без потерь через `From` |
+| Формат ошибок | `BffiError` = код + сообщение + источник + rich-слот; доменные ошибки конвертируются без потерь через `From` |
 | Строки на границе | Каноничный UTF-8 (`bun:ffi cstring`) |
 | Таблицы       | Lock-free; освобождение слотов через hazard-указатели |
 | Проверка UTF-8| SIMD (x86 SSSE3, aarch64 NEON) + скалярный эталон |
@@ -209,16 +209,19 @@ chore: pin rust-toolchain to 1.98.0
 | Zero-copy     | Только через `bffi::unsafe_zero_copy`    |
 | Event loop    | `run()` опустошает очередь блокирующе; `pump()` - без блокировки; `marshal` - путь для вызова не из того потока (код 12) |
 | TS-типы       | IR (ModuleDef/FunctionDef/ClassDef) + детерминированная генерация; export_name с префиксом `bffi_` |
+| Композиты (B1+B4) | Records/enums/`Vec<T>` (включая `Vec<Vec<u8>>`) sync + async; `Option<Record>`/`Option<Vec<T>>` = `\| null` через конвенцию 0-хендла пустого буфера; более глубокая вложенность отклоняется |
+| Typed errors (B3) | `#[derive(BffiError)]`: юзер-коды 0x1000-0xFFFF заменяют статус 13; вариант = JS `e.name`, поля = `e.payload` (TAG_RECORD); rich-аксессоры best-effort; таблица `errors` в loader JSON |
+| Streams (B2)  | `#[bffi_stream]`: pull (`impl Iterator<Item = T> + Send`) или push (`async fn(ctx: Ctx<T>, ...)`, bounded 256, backpressure) как JS `AsyncIterableIterator<T>`; `bffi_stream_next(handle, max)` (TAG_SEQ буфер, 0 = конец; 14 = Pending) + `bffi_stream_drop` + `bffi_stream_set_wake` (wake-трамплин через event loop, best-effort); тег 0x0600; push-продюсеры доставляют `Result`-элементы (`ctx.push(Ok/Err)`) |
 | Макросы классов | `#[bffi_class]`/`#[bffi_impl]` поверх ObjectWrap (теги 0x0100-0x01FF): геттеры полей, методы `&self`, автоматический release; метаданные разделены: bffi_meta_<name> + bffi_meta_<name>_impl::CLASS; диагностика E005-E008 |
 | Macro support | `bffi-macro-support`: общие модель/маппинг/кодогенерация для крейтов-проц-макросов (bffi-macros, bffi-class); служебный крейт - без кода времени выполнения и ABI |
 | Паника (prod) | Преобразуется в JS Error                 |
 | Паника (dev)  | Может прерывать процесс (abort)          |
 | Совместимость | Только Bun                               |
 | Лицензия      | MIT                                      |
-| Фасад         | `bffi`: плоские реэкспорты стека; `unsafe_zero_copy` - единственная точка zero-copy; раскрытия макросов ссылаются на прямые зависимости пользователя |
-| Async         | `#[bffi_async]`: функция запуска возвращает дескриптор задачи; пул потоков-исполнителей; кооперативная отмена + таймауты; разрешение промиса доставляется через event-loop enqueue; tokio подключается опционально; теги 0x0500-0x05FF |
+| Фасад         | `bffi`: плоские реэкспорты стека; `unsafe_zero_copy` - единственная точка zero-copy; раскрытия макросов по умолчанию ссылаются на `::bffi::{core,types,dts,object,build,r#async}` (`crate = "<name>"` перенаправляет, `crate = "direct"` - pre-merge корни) |
+| Async         | `#[bffi_async]`: функция запуска возвращает дескриптор задачи; пул потоков-исполнителей; кооперативная отмена + таймауты; разрешение промиса доставляется через event-loop enqueue; tokio подключается опционально; теги 0x0500-0x05FF; композитные возвраты едут через wire-канал (`Promise<Record>` / `Promise<Vec<T>>` через `AsyncValue::Wire`, `Option` -> `Promise<... \| null>`); контракт `E: Into<BffiError>` |
 | Владение объектами | `ObjectWrap<T>` поверх глобального `Registry` (тег 0x0100-0x01FF); release освобождает слот |
-| Колбэки | `register`/`revoke` + `bind_js_callback`; теги 0x0200-0x0201; вызов не из того потока - отказ |
+| Колбэки | `register`/`revoke` + `bind_js_callback`; теги 0x0200-0x0201; вызов не из того потока - отказ; `invoke_wait` маршалит колбэк на JS-поток с ЛЮБОГО нативного потока с обязательным таймаутом (`Timeout = 15`) - обе таблицы (нативные замыкания и JS-bound хендлы) |
 | Runtime ABI | Экспорты времени выполнения (`bffi_error_*`, пара `bffi_buffer`, `bffi_types_free`) через `bffi_runtime_abi!()` в крейте пользователя; теги 0x0400-0x04FF; канонический контракт: bffi/CALLING-CONVENTION.md |
 | ABI дескрипторов | `AbiSig` (точные C-ширины + выходной слот) в `FunctionDef`/`MethodDef`; `export_name` геттера + выходной слот в `FieldDef`; `release_export` в `ClassDef` |
 | Формат обмена (wire) | `bffi_types::wire`: одна таблица `[tag][payload]` для async-результатов и сигнатур/аргументов/результатов колбэков |

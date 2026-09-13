@@ -55,6 +55,7 @@ export interface BffiConfig {
     runtime?: boolean;
     async?: boolean;
     callbacks?: boolean;
+    stream?: boolean;
   };
   /** Generation options. */
   generate: { apiGen: boolean; outFile: string };

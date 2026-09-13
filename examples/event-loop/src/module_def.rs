@@ -22,4 +22,7 @@ pub const MODULE: ModuleDef = ModuleDef {
     name: "event-loop",
     fns: FUNCTIONS,
     classes: &[],
+    records: &[],
+    enums: &[],
+    errors: &[],
 };

@@ -92,3 +92,4 @@ pub use unsafe_zero_copy::{ZeroCopyBuf, ZeroCopyStr, buf_view, str_view};
 pub use utf16::{
     string_to_utf16, string_to_utf32, utf16_to_string, utf16_to_string_lossy, utf32_to_string,
 };
+pub use wire::BffiWire;

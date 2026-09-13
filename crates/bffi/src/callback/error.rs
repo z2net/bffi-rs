@@ -40,16 +40,42 @@ pub enum CallbackError {
     /// The type tag is already declared - one tag serves one callback
     /// table per process.
     TagInUse(TypeTag),
+    /// The `invoke_wait` timeout expired before the JS thread
+    /// delivered the outcome (marshal-and-wait); the late outcome, if
+    /// any, is ignored and the loop/registry state stays usable.
+    Timeout,
+    /// `invoke_wait` could not queue its marshal job: the event loop
+    /// has been stopped (sticky, never restarts), so the wait fails
+    /// immediately instead of timing out.
+    LoopStopped,
+    /// A JS-bound call found the bound pointer null: the slot is live,
+    /// but there is no JS trampoline behind it (`0` is a legal opaque
+    /// value at bind time).
+    NullPointer,
+    /// A `Str` argument of a JS-bound call carries an interior NUL
+    /// byte and cannot cross as a `cstring`.
+    InvalidCString,
+    /// The signature of a JS-bound callback cannot cross the raw
+    /// C call that `invoke_wait`'s dispatch performs (a `Bytes`
+    /// parameter, a `Str`/`Bytes` return, or more than two
+    /// parameters).
+    UnsupportedSignature {
+        /// The declared signature that cannot be called.
+        sig: CallbackSig,
+    },
 }
 
 /// Renders a [`ValueType`] as it is spelled in signatures and error
-/// messages (`i32`, `i64`, `f64`, `bool`).
+/// messages (`i32`, `i64`, `f64`, `bool`, `str`).
 fn render_value_type(ty: ValueType) -> &'static str {
     match ty {
+        ValueType::Unit => "unit",
         ValueType::I32 => "i32",
         ValueType::I64 => "i64",
         ValueType::F64 => "f64",
         ValueType::Bool => "bool",
+        ValueType::Str => "str",
+        ValueType::Bytes => "bytes",
     }
 }
 
@@ -115,6 +141,31 @@ impl fmt::Display for CallbackError {
             Self::TagInUse(tag) => {
                 write!(f, "callback type tag {tag} is already declared")
             }
+            Self::Timeout => {
+                write!(
+                    f,
+                    "callback invoke_wait timed out waiting for the JS thread"
+                )
+            }
+            Self::LoopStopped => {
+                write!(
+                    f,
+                    "callback invoke_wait could not be queued: the event loop is stopped"
+                )
+            }
+            Self::NullPointer => {
+                write!(f, "the bound JS callback pointer is null")
+            }
+            Self::InvalidCString => {
+                write!(f, "callback string argument carries an interior NUL byte")
+            }
+            Self::UnsupportedSignature { sig } => {
+                write!(
+                    f,
+                    "callback signature {} cannot cross the JS-bound C call",
+                    render_expected(sig)
+                )
+            }
         }
     }
 }
@@ -125,8 +176,13 @@ impl std::error::Error for CallbackError {}
 /// `InvalidHandle`, signature mismatches to `InvalidArgument`,
 /// wrong-thread calls to the dedicated `WrongThread` code (P2; the
 /// message still distinguishes the cause), a full table to `TableFull`,
-/// an already-declared tag to `InvalidTag`; the domain error is
-/// preserved as the source.
+/// an already-declared tag to `InvalidTag`; an expired `invoke_wait`
+/// timeout to the dedicated `Timeout` code, and a marshal job that
+/// could not be queued (stopped loop) to `Error` - the same mapping
+/// the event-loop layer uses for its `Stopped`; a null JS-bound
+/// pointer to `NullPointer`, and the JS-bound C-call rejections
+/// (interior NUL, uncalleble signature) to `InvalidArgument` - the
+/// domain error is preserved as the source.
 impl From<CallbackError> for BffiError {
     fn from(error: CallbackError) -> Self {
         let code = match &error {
@@ -135,6 +191,11 @@ impl From<CallbackError> for BffiError {
             CallbackError::WrongThread => ErrorCode::WrongThread,
             CallbackError::TableFull => ErrorCode::TableFull,
             CallbackError::TagInUse(_) => ErrorCode::InvalidTag,
+            CallbackError::Timeout => ErrorCode::Timeout,
+            CallbackError::LoopStopped => ErrorCode::Error,
+            CallbackError::NullPointer => ErrorCode::NullPointer,
+            CallbackError::InvalidCString => ErrorCode::InvalidArgument,
+            CallbackError::UnsupportedSignature { .. } => ErrorCode::InvalidArgument,
         };
         BffiError::with_source(code, error.to_string(), error)
     }
@@ -202,6 +263,37 @@ mod tests {
     }
 
     #[test]
+    fn wait_failure_displays_display_their_cause() {
+        assert_eq!(
+            CallbackError::Timeout.to_string(),
+            "callback invoke_wait timed out waiting for the JS thread"
+        );
+        assert_eq!(
+            CallbackError::LoopStopped.to_string(),
+            "callback invoke_wait could not be queued: the event loop is stopped"
+        );
+    }
+
+    #[test]
+    fn js_bridge_failures_display_their_cause() {
+        assert_eq!(
+            CallbackError::NullPointer.to_string(),
+            "the bound JS callback pointer is null"
+        );
+        assert_eq!(
+            CallbackError::InvalidCString.to_string(),
+            "callback string argument carries an interior NUL byte"
+        );
+        assert_eq!(
+            CallbackError::UnsupportedSignature {
+                sig: CallbackSig::new(ValueType::Unit, &[ValueType::Bytes])
+            }
+            .to_string(),
+            "callback signature unit(bytes) cannot cross the JS-bound C call"
+        );
+    }
+
+    #[test]
     fn converts_to_bffi_error_on_existing_codes() {
         let tag = TypeTag(0x0200);
         let cases = [
@@ -219,6 +311,16 @@ mod tests {
             (CallbackError::WrongThread, ErrorCode::WrongThread),
             (CallbackError::TableFull, ErrorCode::TableFull),
             (CallbackError::TagInUse(tag), ErrorCode::InvalidTag),
+            (CallbackError::Timeout, ErrorCode::Timeout),
+            (CallbackError::LoopStopped, ErrorCode::Error),
+            (CallbackError::NullPointer, ErrorCode::NullPointer),
+            (CallbackError::InvalidCString, ErrorCode::InvalidArgument),
+            (
+                CallbackError::UnsupportedSignature {
+                    sig: CallbackSig::new(ValueType::Bytes, &[ValueType::Str]),
+                },
+                ErrorCode::InvalidArgument,
+            ),
         ];
         for (error, code) in cases {
             let converted = BffiError::from(error);

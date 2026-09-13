@@ -10,16 +10,25 @@ import type { FfiLib } from "./error.ts";
 import { ErrorCode, makeTakeError, sym } from "./error.ts";
 import { makeReadBuffer } from "./buffer.ts";
 import { decodeValue, type WireValue } from "./wire.ts";
+import { isCompositeTs, tablesOf, wireToJs } from "../loader/composite.ts";
+import type { ModuleJson } from "../loader/loader.ts";
 
 /**
  * Wraps a bffi-async task handle into a JS `Promise`. The
  * resolve/reject callbacks are handed to the native side as
  * `bun:ffi` JSCallback pointers; the value is decoded from the
  * transient-buffer payload, the rejection carries the native message.
+ *
+ * When `retTs` + `json` are given (the typed loader path), a
+ * composite return (`Promise<Sample>` / `Promise<number[]>`) maps
+ * through the module's composite tables exactly like the sync
+ * buffer channel.
  */
 export function wrapTask<T extends WireValue = WireValue>(
   lib: FfiLib,
   task: bigint,
+  retTs?: string,
+  json?: ModuleJson,
 ): Promise<T> {
   const readBuffer = makeReadBuffer(lib);
   return new Promise<T>((resolve, reject) => {
@@ -31,7 +40,30 @@ export function wrapTask<T extends WireValue = WireValue>(
         }
         settled = true;
         try {
-          resolve(decodeValue(readBuffer(valueHandle)) as T);
+          const decoded = decodeValue(readBuffer(valueHandle));
+          if (retTs !== undefined && json !== undefined) {
+            // The ret ts is the promised spelling (`Promise<Sample>` /
+            // `Promise<Sample | null>`): the wire payload is the
+            // inner value's encoding.
+            const inner = retTs.startsWith("Promise<") && retTs.endsWith(">")
+              ? retTs.slice("Promise<".length, -1)
+              : retTs;
+            // `Option::None` rides the unit record (undefined) and
+            // maps to `null` for the `| null` spellings.
+            if (inner.endsWith(" | null") && decoded === undefined) {
+              resolve(null as unknown as T);
+              return;
+            }
+            const tables = tablesOf(json);
+            if (isCompositeTs(inner, tables)) {
+              const bare = inner.endsWith(" | null")
+                ? inner.slice(0, -" | null".length)
+                : inner;
+              resolve(wireToJs(tables, bare, decoded, "task") as T);
+              return;
+            }
+          }
+          resolve(decoded as T);
         } catch (error) {
           reject(error as Error);
         }

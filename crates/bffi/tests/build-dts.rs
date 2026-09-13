@@ -50,6 +50,9 @@ fn add_module() -> ModuleDef {
         name: "test",
         fns: ADD_FNS,
         classes: &[],
+        records: &[],
+        enums: &[],
+        errors: &[],
     }
 }
 
@@ -58,6 +61,9 @@ fn ping_module() -> ModuleDef {
         name: "test",
         fns: PING_FNS,
         classes: &[],
+        records: &[],
+        enums: &[],
+        errors: &[],
     }
 }
 

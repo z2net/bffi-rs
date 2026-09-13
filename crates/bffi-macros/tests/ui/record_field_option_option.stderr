@@ -1,0 +1,5 @@
+error: bffi[E010]: nested `Option < Option < u32 > >` on `maybe`; `Option<Option<T>>` is not supported (v1)
+ --> tests/ui/record_field_option_option.rs:6:16
+  |
+6 |     pub maybe: Option<Option<u32>>,
+  |                ^^^^^^

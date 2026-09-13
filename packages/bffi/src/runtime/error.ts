@@ -22,6 +22,8 @@ export const ErrorCode = {
   InvalidArgument: 11,
   WrongThread: 12,
   DomainError: 13,
+  Pending: 14,
+  Timeout: 15,
 } as const;
 
 /** `bffi_error_name` values: `1` = Error, `2` = TypeError, `3` = RangeError. */
@@ -49,44 +51,109 @@ export function sym(lib: FfiLib, name: string): FfiSymbol {
 }
 
 import { toArrayBuffer } from "bun:ffi";
+import { decodeValue } from "./wire.ts";
 
 const decoder = new TextDecoder();
 
 /**
  * Builds the `takeError()` drain over `lib`: returns the stored last
- * error as a JS `Error` (the Rust source travels as `Error.cause`),
- * or `null` when no error is stored.
+ * error as a JS `Error` enriched with the B3 fields — `e.code` (the
+ * ABI status, including derived user codes), `e.name` (the derived
+ * variant name), `e.payload` (the decoded wire record) and
+ * `e.nativeStack` (the captured Rust backtrace) — or `null` when no
+ * error is stored.
  */
-export function makeTakeError(lib: FfiLib): () => Error | null {
-  return () => {
-    const handle = sym(lib, "bffi_error_take_last")();
+export function makeTakeError(lib: FfiLib): (status?: number) => Error | null {
+  const takeLast = sym(lib, "bffi_error_take_last");
+  const nameSym = sym(lib, "bffi_error_name");
+  const messagePtr = sym(lib, "bffi_error_message_ptr");
+  const messageLen = sym(lib, "bffi_error_message_len");
+  const causePtr = sym(lib, "bffi_error_cause_ptr");
+  const causeLen = sym(lib, "bffi_error_cause_len");
+  // The B3 rich accessors are optional: libraries built from older
+  // bffi versions do not export them, and mock test libraries omit
+  // them. Every read guards on the symbol being present.
+  const userCode = symOptional(lib, "bffi_error_user_code");
+  const variantPtr = symOptional(lib, "bffi_error_variant_ptr");
+  const variantLen = symOptional(lib, "bffi_error_variant_len");
+  const payloadPtr = symOptional(lib, "bffi_error_payload_ptr");
+  const payloadLen = symOptional(lib, "bffi_error_payload_len");
+  const stackPtr = symOptional(lib, "bffi_error_stack_ptr");
+  const stackLen = symOptional(lib, "bffi_error_stack_len");
+  const free = sym(lib, "bffi_error_free");
+  return (status?: number): Error | null => {
+    const handle = takeLast();
     if (typeof handle !== "bigint" || handle === 0n) {
       return null;
     }
-    const name = sym(lib, "bffi_error_name")(handle);
-    const len = Number(sym(lib, "bffi_error_message_len")(handle));
-    const messagePtr = sym(lib, "bffi_error_message_ptr")(handle);
+    const jsName = Number(nameSym(handle));
+    const len = Number(messageLen(handle));
+    const messagePointer = messagePtr(handle);
     let message = "";
-    if (typeof messagePtr === "number" && len > 0) {
+    if (typeof messagePointer === "number" && len > 0) {
       // The pointer is valid until bffi_error_free and covers exactly
       // `len` UTF-8 bytes (CALLING-CONVENTION.md §5).
-      message = decoder.decode(readPointer(messagePtr, len));
+      message = decoder.decode(readPointer(messagePointer, len));
     }
-    const causeLen = Number(sym(lib, "bffi_error_cause_len")(handle));
-    const causePtr = sym(lib, "bffi_error_cause_ptr")(handle);
+    const causeLenBytes = Number(causeLen(handle));
+    const causePointer = causePtr(handle);
     let cause: string | undefined;
-    if (typeof causePtr === "number" && causeLen > 0) {
+    if (typeof causePointer === "number" && causeLenBytes > 0) {
       // Same lifetime contract as the message pair; null/0 means no
       // cause.
-      cause = decoder.decode(readPointer(causePtr, causeLen));
+      cause = decoder.decode(readPointer(causePointer, causeLenBytes));
     }
-    sym(lib, "bffi_error_free")(handle);
-    const Ctor = JS_ERROR_NAMES[Number(name)] ?? Error;
-    return cause === undefined ? new Ctor(message) : new Ctor(message, { cause });
+    const Ctor = JS_ERROR_NAMES[jsName] ?? Error;
+    const error = cause === undefined ? new Ctor(message) : new Ctor(message, { cause });
+
+    // B3 rich fields (all optional, best-effort): every accessor
+    // group is guarded by its own symbol presence.
+    if (userCode && variantPtr && variantLen && payloadPtr && payloadLen && stackPtr && stackLen) {
+      const richCode = Number(userCode(handle));
+      if (richCode !== 0) {
+        (error as Error & { code: number }).code = status ?? richCode;
+      } else if (status !== undefined && status !== 0) {
+        (error as Error & { code: number }).code = status;
+      }
+      const vLen = Number(variantLen(handle));
+      const vPointer = variantPtr(handle) as unknown as number;
+      if (vLen > 0) {
+        error.name = decoder.decode(readPointer(vPointer, vLen));
+      }
+      const pLen = Number(payloadLen(handle));
+      const pPointer = payloadPtr(handle) as unknown as number;
+      if (pLen > 0) {
+        const decoded = decodeValue(new Uint8Array(toArrayBuffer(pPointer, 0, pLen)));
+        // A TAG_RECORD payload decodes as {fields: [...]} - unwrap it
+        // to the positional array so e.payload matches the Rust-side
+        // variant fields directly.
+        (error as Error & { payload: unknown }).payload =
+          decoded !== null && typeof decoded === "object" && "fields" in decoded
+            ? (decoded as { fields: unknown[] }).fields
+            : decoded;
+      }
+      const sLen = Number(stackLen(handle));
+      const sPointer = stackPtr(handle) as unknown as number;
+      if (sLen > 0) {
+        (error as Error & { nativeStack: string }).nativeStack = decoder.decode(
+          readPointer(sPointer, sLen),
+        );
+      }
+    }
+    free(handle);
+    return error;
   };
 }
 
 /** Reads `len` bytes at a non-null data pointer into a fresh view. */
 export function readPointer(pointer: number, len: number): Uint8Array {
   return new Uint8Array(toArrayBuffer(pointer, 0, len));
+}
+
+/** A `sym` that tolerates missing exports: returns `undefined` when
+ * the library does not provide the symbol (mock libraries, older
+ * bffi builds). */
+export function symOptional(lib: FfiLib, name: string): FfiSymbol | undefined {
+  const symbol = (lib as Record<string, unknown>)[name];
+  return typeof symbol === "function" ? (symbol as FfiSymbol) : undefined;
 }

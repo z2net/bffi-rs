@@ -11,7 +11,7 @@
 
 use bffi::{ErrorCode, Handle, take_last_error};
 
-#[bffi_macros::bffi_class(tag = 0x0150, crate = "bffi")]
+#[bffi_macros::bffi_class(tag = 0x0150)]
 /// A counter.
 pub struct Counter {
     /// The current value.
@@ -21,7 +21,7 @@ pub struct Counter {
     secret: u8,
 }
 
-#[bffi_macros::bffi_impl(crate = "bffi")]
+#[bffi_macros::bffi_impl]
 impl Counter {
     #[bffi_macros::bffi_constructor]
     /// Creates a counter.
@@ -72,15 +72,21 @@ impl std::fmt::Display for DivError {
 
 impl std::error::Error for DivError {}
 
+impl From<DivError> for bffi::BffiError {
+    fn from(error: DivError) -> Self {
+        bffi::BffiError::new(bffi::ErrorCode::DomainError, error.to_string())
+    }
+}
+
 /// A second class for wrong-tag tests (its own tag, own table).
-#[bffi_macros::bffi_class(tag = 0x0151, crate = "bffi")]
+#[bffi_macros::bffi_class(tag = 0x0151)]
 /// A gate.
 pub struct Gate {
     /// Open or closed.
     pub open: bool,
 }
 
-#[bffi_macros::bffi_impl(crate = "bffi")]
+#[bffi_macros::bffi_impl]
 impl Gate {
     #[bffi_macros::bffi_constructor]
     /// Creates a gate.
@@ -149,26 +155,38 @@ fn cstring(bytes: &[u8]) -> *const std::os::raw::c_char {
 #[test]
 fn constructor_getter_method_release_roundtrip() {
     let mut handle = 0_u64;
-    assert_eq!(bffi_counter_new(41, &mut handle), ErrorCode::Ok);
+    assert_eq!(bffi_counter_new(41, &mut handle), ErrorCode::Ok.as_u32());
     assert_ne!(handle, 0);
 
     let mut value = 0_u32;
-    assert_eq!(bffi_counter_value_get(handle, &mut value), ErrorCode::Ok);
+    assert_eq!(
+        bffi_counter_value_get(handle, &mut value),
+        ErrorCode::Ok.as_u32()
+    );
     assert_eq!(value, 41);
 
     let mut out = 0_u32;
-    assert_eq!(bffi_counter_increment(handle, &mut out), ErrorCode::Ok);
+    assert_eq!(
+        bffi_counter_increment(handle, &mut out),
+        ErrorCode::Ok.as_u32()
+    );
     assert_eq!(out, 42);
 
-    assert_eq!(bffi_counter_scaled(handle, 3, &mut out), ErrorCode::Ok);
+    assert_eq!(
+        bffi_counter_scaled(handle, 3, &mut out),
+        ErrorCode::Ok.as_u32()
+    );
     assert_eq!(out, 123);
 
     // The destructor frees the slot: the handle goes stale.
-    assert_eq!(bffi_counter_release(handle), ErrorCode::Ok);
-    assert_eq!(bffi_counter_release(handle), ErrorCode::InvalidHandle);
+    assert_eq!(bffi_counter_release(handle), ErrorCode::Ok.as_u32());
+    assert_eq!(
+        bffi_counter_release(handle),
+        ErrorCode::InvalidHandle.as_u32()
+    );
     assert_eq!(
         bffi_counter_value_get(handle, &mut value),
-        ErrorCode::InvalidHandle
+        ErrorCode::InvalidHandle.as_u32()
     );
     let error = take_last_error().expect("the stale getter must store an error");
     assert_eq!(error.code, ErrorCode::InvalidHandle);
@@ -177,12 +195,12 @@ fn constructor_getter_method_release_roundtrip() {
 #[test]
 fn string_and_result_method_returns_travel_the_p2_channels() {
     let mut handle = 0_u64;
-    assert_eq!(bffi_counter_new(7, &mut handle), ErrorCode::Ok);
+    assert_eq!(bffi_counter_new(7, &mut handle), ErrorCode::Ok.as_u32());
 
     let mut out_handle = 0_u64;
     assert_eq!(
         bffi_counter_greet(handle, cstring(b"val"), &mut out_handle),
-        ErrorCode::Ok
+        ErrorCode::Ok.as_u32()
     );
     // SAFETY: `buffer_ptr` handed out the pointer to exactly
     // `buffer_len(handle)` owned bytes; the handle is still live.
@@ -198,11 +216,14 @@ fn string_and_result_method_returns_travel_the_p2_channels() {
     )));
 
     let mut out = 0_u32;
-    assert_eq!(bffi_counter_divided(handle, 3, &mut out), ErrorCode::Ok);
+    assert_eq!(
+        bffi_counter_divided(handle, 3, &mut out),
+        ErrorCode::Ok.as_u32()
+    );
     assert_eq!(out, 2);
     assert_eq!(
         bffi_counter_divided(handle, 0, &mut out),
-        ErrorCode::DomainError
+        ErrorCode::DomainError.as_u32()
     );
     let error = take_last_error().expect("an Err must store the domain error");
     assert_eq!(error.message, "division by 0");
@@ -212,14 +233,14 @@ fn string_and_result_method_returns_travel_the_p2_channels() {
     let data = [5_u8, 10, 20];
     assert_eq!(
         bffi_counter_byte_sum(handle, data.as_ptr(), data.len() as u64, &mut out),
-        ErrorCode::Ok
+        ErrorCode::Ok.as_u32()
     );
     assert_eq!(out, 42);
 
     // Empty view through a null pointer is fine.
     assert_eq!(
         bffi_counter_byte_sum(handle, std::ptr::null(), 0, &mut out),
-        ErrorCode::Ok
+        ErrorCode::Ok.as_u32()
     );
     assert_eq!(out, 7);
 
@@ -232,27 +253,27 @@ fn invalid_and_foreign_handles_are_rejected_with_clear_errors() {
     let mut value = 0_u32;
     assert_eq!(
         bffi_counter_value_get(0, &mut value),
-        ErrorCode::InvalidHandle
+        ErrorCode::InvalidHandle.as_u32()
     );
     let error = take_last_error().expect("an invalid handle must store an error");
     assert_eq!(error.code, ErrorCode::InvalidHandle);
 
     // Live Gate handle used against Counter: the tag barrier rejects.
     let mut gate = 0_u64;
-    assert_eq!(bffi_gate_new(true, &mut gate), ErrorCode::Ok);
+    assert_eq!(bffi_gate_new(true, &mut gate), ErrorCode::Ok.as_u32());
     assert_eq!(
         bffi_counter_value_get(gate, &mut value),
-        ErrorCode::InvalidHandle
+        ErrorCode::InvalidHandle.as_u32()
     );
 
     // Forged generation on a real Counter handle.
     let mut counter = 0_u64;
-    assert_eq!(bffi_counter_new(1, &mut counter), ErrorCode::Ok);
+    assert_eq!(bffi_counter_new(1, &mut counter), ErrorCode::Ok.as_u32());
     let live = Handle::from_raw(counter);
     let forged = Handle::new(live.tag(), live.generation() + 1, live.index());
     assert_eq!(
         bffi_counter_value_get(forged.as_u64(), &mut value),
-        ErrorCode::InvalidHandle
+        ErrorCode::InvalidHandle.as_u32()
     );
 
     bffi_gate_release(gate);
@@ -262,7 +283,7 @@ fn invalid_and_foreign_handles_are_rejected_with_clear_errors() {
 #[test]
 fn constructor_null_out_pointer_is_rejected() {
     let code = bffi_counter_new(1, std::ptr::null_mut());
-    assert_eq!(code, ErrorCode::NullPointer);
+    assert_eq!(code, ErrorCode::NullPointer.as_u32());
     let error = take_last_error().expect("null out-pointer must store a last error");
     assert_eq!(error.code, ErrorCode::NullPointer);
 }
@@ -270,20 +291,23 @@ fn constructor_null_out_pointer_is_rejected() {
 #[test]
 fn crate_option_class_lifecycle_runs_through_the_probe_namespaces() {
     let mut handle = 0_u64;
-    assert_eq!(bffi_meter_new(8, &mut handle), ErrorCode::Ok);
+    assert_eq!(bffi_meter_new(8, &mut handle), ErrorCode::Ok.as_u32());
     assert_ne!(handle, 0);
 
     let mut level = 0_u32;
-    assert_eq!(bffi_meter_level_get(handle, &mut level), ErrorCode::Ok);
+    assert_eq!(
+        bffi_meter_level_get(handle, &mut level),
+        ErrorCode::Ok.as_u32()
+    );
     assert_eq!(level, 8);
 
     let mut out = 0_u32;
-    assert_eq!(bffi_meter_doubled(handle, &mut out), ErrorCode::Ok);
+    assert_eq!(bffi_meter_doubled(handle, &mut out), ErrorCode::Ok.as_u32());
     assert_eq!(out, 16);
 
     // The buffer path through `bffi_class_probe::build`.
     let mut label = 0_u64;
-    assert_eq!(bffi_meter_label(handle, &mut label), ErrorCode::Ok);
+    assert_eq!(bffi_meter_label(handle, &mut label), ErrorCode::Ok.as_u32());
     // SAFETY: `buffer_ptr` handed out the pointer to exactly
     // `buffer_len(label)` owned bytes; the handle is still live.
     let bytes = unsafe {
@@ -297,5 +321,5 @@ fn crate_option_class_lifecycle_runs_through_the_probe_namespaces() {
         label
     )));
 
-    assert_eq!(bffi_meter_release(handle), ErrorCode::Ok);
+    assert_eq!(bffi_meter_release(handle), ErrorCode::Ok.as_u32());
 }

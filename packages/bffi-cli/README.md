@@ -49,8 +49,9 @@ bffi-<module>` with dashes replaced by underscores) plus a minimal
 Rust crate:
 
 - `Cargo.toml` - `cdylib + rlib`, the `emit-json` binary
-  (`<binary>_emit_json`), and dependencies on the bffi stack with
-  `CHANGE_ME/path/to/...` placeholders you point at your checkout;
+  (`<binary>_emit_json`), and a single crates.io dependency on
+  `bffi` (the facade crate re-exports the macros and the runtime
+  ABI);
 - `src/lib.rs` - one sample `#[bffi::bffi]` function to replace;
 - `src/module_def.rs` - the single `ModuleDef` aggregation (THE
   source of the loader JSON);

@@ -73,10 +73,11 @@ describe("wire codec", () => {
     expect(decodeValue(bytes.subarray(5))).toBe(true);
   });
 
-  test("rejects i64 out of range and unknown tags", () => {
-    expect(() => encodeArgs([18446744073709551615n])).toThrow(/out of range/);
+  test("rejects out-of-range values, unknown tags and truncated payloads", () => {
+    expect(() => encodeArgs([18446744073709551616n])).toThrow(/out of range/);
+    expect(() => encodeArgs([-1n])).toThrow(/negative bigint/);
     expect(() => decodeValue(new Uint8Array([255]))).toThrow(/unknown wire value tag/);
-    expect(() => decodeValue(new Uint8Array())) .toThrow(/empty wire payload/);
+    expect(() => decodeValue(new Uint8Array())).toThrow(/truncated wire payload/);
   });
 });
 

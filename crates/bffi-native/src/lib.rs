@@ -30,20 +30,20 @@ pub mod module_def;
 use bffi::bffi;
 
 /// Adds two numbers.
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn add(a: u32, b: u32) -> u32 {
     a.wrapping_add(b)
 }
 
 /// Returns an uppercased greeting (string return through the
 /// transient-buffer pair).
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn shout(name: &str) -> String {
     format!("HELLO {name}!")
 }
 
 /// The version of this library (static string return).
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_owned()
 }

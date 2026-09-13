@@ -99,6 +99,74 @@ function canonClass(cls: unknown): Json {
   };
 }
 
+function canonRecordField(field: unknown): Json {
+  const record = field as { name: string; docs: string[]; ts: string };
+  return {
+    name: record.name,
+    docs: canonStringArray(record.docs),
+    ts: record.ts,
+  };
+}
+
+function canonRecord(entry: unknown): Json {
+  const record = entry as { name: string; docs: string[]; fields: unknown[] };
+  return {
+    name: record.name,
+    docs: canonStringArray(record.docs),
+    fields: (record.fields as unknown[]).map(canonRecordField),
+  };
+}
+
+function canonVariant(variant: unknown): Json {
+  const record = variant as { name: string; docs: string[] };
+  return {
+    name: record.name,
+    docs: canonStringArray(record.docs),
+  };
+}
+
+function canonEnum(entry: unknown): Json {
+  const record = entry as { name: string; docs: string[]; variants: unknown[] };
+  return {
+    name: record.name,
+    docs: canonStringArray(record.docs),
+    variants: (record.variants as unknown[]).map(canonVariant),
+  };
+}
+
+function canonErrorField(field: unknown): Json {
+  const record = field as { name: string; docs: string[]; ts: string };
+  return {
+    name: record.name,
+    docs: canonStringArray(record.docs),
+    ts: record.ts,
+  };
+}
+
+function canonErrorVariant(variant: unknown): Json {
+  const record = variant as {
+    name: string;
+    docs: string[];
+    code: string;
+    fields: unknown[];
+  };
+  return {
+    name: record.name,
+    docs: canonStringArray(record.docs),
+    code: record.code,
+    fields: (record.fields as unknown[]).map(canonErrorField),
+  };
+}
+
+function canonError(entry: unknown): Json {
+  const record = entry as { name: string; docs: string[]; variants: unknown[] };
+  return {
+    name: record.name,
+    docs: canonStringArray(record.docs),
+    variants: (record.variants as unknown[]).map(canonErrorVariant),
+  };
+}
+
 /** Rebuilds the module in the canonical field order. */
 function canonModule(raw: unknown): Json {
   const module = validateModule(raw);
@@ -107,6 +175,9 @@ function canonModule(raw: unknown): Json {
     module: module.module,
     functions: module.functions.map(canonFunction),
     classes: module.classes.map(canonClass),
+    records: module.records.map(canonRecord),
+    enums: module.enums.map(canonEnum),
+    errors: module.errors.map(canonError),
   };
 }
 

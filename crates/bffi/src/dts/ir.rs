@@ -33,6 +33,19 @@
 //! emitted by `#[bffi_async]`: an async export returns a task handle
 //! at the ABI level and a `Promise<T>` at the JS level - the
 //! descriptor describes the JS-level contract.
+//!
+//! # B1 composites
+//!
+//! Records (`#[derive(BffiRecord)]` structs) and unit enums
+//! (`#[derive(BffiEnum)]`) are **named** types: [`TsType::Record`]
+//! and [`TsType::Enum`] carry the declared name, and the shape lives
+//! in the [`RecordDef`]/[`EnumDef`] tables on [`ModuleDef`]. Names
+//! are `&'static str`, so the IR stays `Copy` and const-emittable.
+//! Sequences (`Vec<T>` with a non-`u8` item) are flat variants:
+//! [`TsType::NumberArray`] and friends render `T[]` and need no
+//! table entry; [`TsType::RecordArray`] names its element record.
+
+use std::borrow::Cow;
 
 /// A TypeScript type referenced by a declaration.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -53,6 +66,34 @@ pub enum TsType {
     /// The TypeScript `Uint8Array | null` type (`Option<Vec<u8>>` /
     /// `Option<CopiedBuf>` returns).
     NullableUint8Array,
+    /// The TypeScript `number | null` type (`Option` of the
+    /// number-ish primitives as a record field).
+    NullableNumber,
+    /// The TypeScript `bigint | null` type (`Option<i64>` /
+    /// `Option<u64>` record fields).
+    NullableBigInt,
+    /// The TypeScript `boolean | null` type (`Option<bool>` record
+    /// fields).
+    NullableBoolean,
+    /// The TypeScript `<name> | null` type (`Option` of a named
+    /// record/enum return).
+    NullableRecord(&'static str),
+    /// The TypeScript `number[] | null` type (`Option<Vec>` of
+    /// number-ish items).
+    NullableNumberArray,
+    /// The TypeScript `bigint[] | null` type (`Option<Vec<i64>>` /
+    /// `Option<Vec<u64>>`).
+    NullableBigIntArray,
+    /// The TypeScript `boolean[] | null` type (`Option<Vec<bool>>`).
+    NullableBooleanArray,
+    /// The TypeScript `string[] | null` type (`Option<Vec<String>>`).
+    NullableStringArray,
+    /// The TypeScript `Uint8Array[] | null` type
+    /// (`Option<Vec<Vec<u8>>>`).
+    NullableUint8ArrayArray,
+    /// The TypeScript `<name>[] | null` type (`Option<Vec>` of a
+    /// named record/enum).
+    NullableRecordArray(&'static str),
     /// The TypeScript `Promise<void>` type (`#[bffi_async]` exports).
     PromiseVoid,
     /// The TypeScript `Promise<number>` type (`#[bffi_async]` returns
@@ -70,30 +111,170 @@ pub enum TsType {
     /// The TypeScript `Promise<Uint8Array>` type (`#[bffi_async]`
     /// returns of `Vec<u8>` / `CopiedBuf`).
     PromiseUint8Array,
+    /// The TypeScript `Promise<name>` type (`#[bffi_async]` returns
+    /// of a named record/enum).
+    PromiseRecord(&'static str),
+    /// The TypeScript `Promise<number[]>` type (`#[bffi_async]` `Vec`
+    /// of number-ish items).
+    PromiseNumberArray,
+    /// The TypeScript `Promise<bigint[]>` type (`Vec<i64>`/`Vec<u64>`).
+    PromiseBigIntArray,
+    /// The TypeScript `Promise<boolean[]>` type (`Vec<bool>`).
+    PromiseBooleanArray,
+    /// The TypeScript `Promise<string[]>` type (`Vec<String>`).
+    PromiseStringArray,
+    /// The TypeScript `Promise<Uint8Array[]>` type (`Vec<Vec<u8>>`).
+    PromiseUint8ArrayArray,
+    /// The TypeScript `Promise<name[]>` type (`Vec` of a named
+    /// record/enum).
+    PromiseRecordArray(&'static str),
+    /// The TypeScript `Promise<string | null>` type (`Option<String>`
+    /// async returns).
+    PromiseNullableString,
+    /// The TypeScript `Promise<Uint8Array | null>` type.
+    PromiseNullableUint8Array,
+    /// The TypeScript `Promise<name | null>` type (`Option` of a
+    /// named record/enum).
+    PromiseNullableRecord(&'static str),
+    /// The TypeScript `Promise<number[] | null>` type.
+    PromiseNullableNumberArray,
+    /// The TypeScript `Promise<bigint[] | null>` type.
+    PromiseNullableBigIntArray,
+    /// The TypeScript `Promise<boolean[] | null>` type.
+    PromiseNullableBooleanArray,
+    /// The TypeScript `Promise<string[] | null>` type.
+    PromiseNullableStringArray,
+    /// The TypeScript `Promise<Uint8Array[] | null>` type.
+    PromiseNullableUint8ArrayArray,
+    /// The TypeScript `Promise<name[] | null>` type.
+    PromiseNullableRecordArray(&'static str),
     /// The TypeScript `void` type.
     Void,
+    /// A named record type, declared in [`ModuleDef::records`] (the
+    /// `#[derive(BffiRecord)]` table entry of the same name).
+    Record(&'static str),
+    /// A named unit-enum union, declared in [`ModuleDef::enums`] (the
+    /// `#[derive(BffiEnum)]` table entry of the same name).
+    Enum(&'static str),
+    /// The TypeScript `number[]` type (`Vec` of number-ish items).
+    NumberArray,
+    /// The TypeScript `bigint[]` type (`Vec<i64>` / `Vec<u64>`).
+    BigIntArray,
+    /// The TypeScript `boolean[]` type (`Vec<bool>`).
+    BooleanArray,
+    /// The TypeScript `string[]` type (`Vec<String>`).
+    StringArray,
+    /// The TypeScript `Uint8Array[]` type (`Vec<Vec<u8>>`).
+    Uint8ArrayArray,
+    /// The TypeScript `<name>[]` type (`Vec` of a named record).
+    RecordArray(&'static str),
+    /// `AsyncIterableIterator<number>` (a `#[bffi_stream]` of
+    /// number-ish items).
+    StreamNumber,
+    /// `AsyncIterableIterator<bigint>` (`#[bffi_stream]` of
+    /// `i64`/`u64` items).
+    StreamBigInt,
+    /// `AsyncIterableIterator<boolean>` (`#[bffi_stream]` of `bool`).
+    StreamBoolean,
+    /// `AsyncIterableIterator<string>` (`#[bffi_stream]` of
+    /// `String`).
+    StreamString,
+    /// `AsyncIterableIterator<Uint8Array>` (`#[bffi_stream]` of
+    /// `Vec<u8>` items).
+    StreamUint8Array,
+    /// `AsyncIterableIterator<Name>` (a `#[bffi_stream]` of a named
+    /// record/enum).
+    StreamRecord(&'static str),
+    /// `AsyncIterableIterator<number | Error>` (a `#[bffi_stream]`
+    /// whose items are `Result` values - `Err` items arrive as
+    /// `Error` instances).
+    StreamResultNumber,
+    /// `AsyncIterableIterator<bigint | Error>`.
+    StreamResultBigInt,
+    /// `AsyncIterableIterator<boolean | Error>`.
+    StreamResultBoolean,
+    /// `AsyncIterableIterator<string | Error>`.
+    StreamResultString,
+    /// `AsyncIterableIterator<Uint8Array | Error>`.
+    StreamResultUint8Array,
+    /// `AsyncIterableIterator<Name | Error>` (a stream of `Result`
+    /// items over a named record/enum).
+    StreamResultRecord(&'static str),
 }
 
 impl TsType {
     /// The TypeScript name of this type, as written in a `.d.ts`
-    /// file (e.g. `"number"`, `"Uint8Array"`, `"void"`).
+    /// file (e.g. `"number"`, `"Uint8Array"`, `"void"`). Composite
+    /// names (`RecordArray`) are built on the fly, hence the `Cow`.
     #[must_use]
-    pub const fn as_str(self) -> &'static str {
+    pub fn as_str(&self) -> Cow<'static, str> {
         match self {
-            Self::Number => "number",
-            Self::BigInt => "bigint",
-            Self::Boolean => "boolean",
-            Self::String => "string",
-            Self::Uint8Array => "Uint8Array",
-            Self::NullableString => "string | null",
-            Self::NullableUint8Array => "Uint8Array | null",
-            Self::PromiseVoid => "Promise<void>",
-            Self::PromiseNumber => "Promise<number>",
-            Self::PromiseBigInt => "Promise<bigint>",
-            Self::PromiseBoolean => "Promise<boolean>",
-            Self::PromiseString => "Promise<string>",
-            Self::PromiseUint8Array => "Promise<Uint8Array>",
-            Self::Void => "void",
+            Self::Number => Cow::Borrowed("number"),
+            Self::BigInt => Cow::Borrowed("bigint"),
+            Self::Boolean => Cow::Borrowed("boolean"),
+            Self::String => Cow::Borrowed("string"),
+            Self::Uint8Array => Cow::Borrowed("Uint8Array"),
+            Self::NullableString => Cow::Borrowed("string | null"),
+            Self::NullableUint8Array => Cow::Borrowed("Uint8Array | null"),
+            Self::NullableNumber => Cow::Borrowed("number | null"),
+            Self::NullableBigInt => Cow::Borrowed("bigint | null"),
+            Self::NullableBoolean => Cow::Borrowed("boolean | null"),
+            Self::NullableRecord(name) => Cow::Owned(format!("{name} | null")),
+            Self::NullableNumberArray => Cow::Borrowed("number[] | null"),
+            Self::NullableBigIntArray => Cow::Borrowed("bigint[] | null"),
+            Self::NullableBooleanArray => Cow::Borrowed("boolean[] | null"),
+            Self::NullableStringArray => Cow::Borrowed("string[] | null"),
+            Self::NullableUint8ArrayArray => Cow::Borrowed("Uint8Array[] | null"),
+            Self::NullableRecordArray(name) => Cow::Owned(format!("{name}[] | null")),
+            Self::PromiseVoid => Cow::Borrowed("Promise<void>"),
+            Self::PromiseNumber => Cow::Borrowed("Promise<number>"),
+            Self::PromiseBigInt => Cow::Borrowed("Promise<bigint>"),
+            Self::PromiseBoolean => Cow::Borrowed("Promise<boolean>"),
+            Self::PromiseString => Cow::Borrowed("Promise<string>"),
+            Self::PromiseUint8Array => Cow::Borrowed("Promise<Uint8Array>"),
+            Self::PromiseRecord(name) => Cow::Owned(format!("Promise<{name}>")),
+            Self::PromiseNumberArray => Cow::Borrowed("Promise<number[]>"),
+            Self::PromiseBigIntArray => Cow::Borrowed("Promise<bigint[]>"),
+            Self::PromiseBooleanArray => Cow::Borrowed("Promise<boolean[]>"),
+            Self::PromiseStringArray => Cow::Borrowed("Promise<string[]>"),
+            Self::PromiseUint8ArrayArray => Cow::Borrowed("Promise<Uint8Array[]>"),
+            Self::PromiseRecordArray(name) => Cow::Owned(format!("Promise<{name}[]>")),
+            Self::PromiseNullableString => Cow::Borrowed("Promise<string | null>"),
+            Self::PromiseNullableUint8Array => Cow::Borrowed("Promise<Uint8Array | null>"),
+            Self::PromiseNullableRecord(name) => Cow::Owned(format!("Promise<{name} | null>")),
+            Self::PromiseNullableNumberArray => Cow::Borrowed("Promise<number[] | null>"),
+            Self::PromiseNullableBigIntArray => Cow::Borrowed("Promise<bigint[] | null>"),
+            Self::PromiseNullableBooleanArray => Cow::Borrowed("Promise<boolean[] | null>"),
+            Self::PromiseNullableStringArray => Cow::Borrowed("Promise<string[] | null>"),
+            Self::PromiseNullableUint8ArrayArray => Cow::Borrowed("Promise<Uint8Array[] | null>"),
+            Self::PromiseNullableRecordArray(name) => {
+                Cow::Owned(format!("Promise<{name}[] | null>"))
+            }
+            Self::Void => Cow::Borrowed("void"),
+            Self::Record(name) => Cow::Borrowed(*name),
+            Self::Enum(name) => Cow::Borrowed(*name),
+            Self::NumberArray => Cow::Borrowed("number[]"),
+            Self::BigIntArray => Cow::Borrowed("bigint[]"),
+            Self::BooleanArray => Cow::Borrowed("boolean[]"),
+            Self::StringArray => Cow::Borrowed("string[]"),
+            Self::Uint8ArrayArray => Cow::Borrowed("Uint8Array[]"),
+            Self::RecordArray(name) => Cow::Owned(format!("{name}[]")),
+            Self::StreamNumber => Cow::Borrowed("AsyncIterableIterator<number>"),
+            Self::StreamBigInt => Cow::Borrowed("AsyncIterableIterator<bigint>"),
+            Self::StreamBoolean => Cow::Borrowed("AsyncIterableIterator<boolean>"),
+            Self::StreamString => Cow::Borrowed("AsyncIterableIterator<string>"),
+            Self::StreamUint8Array => Cow::Borrowed("AsyncIterableIterator<Uint8Array>"),
+            Self::StreamRecord(name) => Cow::Owned(format!("AsyncIterableIterator<{name}>")),
+            Self::StreamResultNumber => Cow::Borrowed("AsyncIterableIterator<number | Error>"),
+            Self::StreamResultBigInt => Cow::Borrowed("AsyncIterableIterator<bigint | Error>"),
+            Self::StreamResultBoolean => Cow::Borrowed("AsyncIterableIterator<boolean | Error>"),
+            Self::StreamResultString => Cow::Borrowed("AsyncIterableIterator<string | Error>"),
+            Self::StreamResultUint8Array => {
+                Cow::Borrowed("AsyncIterableIterator<Uint8Array | Error>")
+            }
+            Self::StreamResultRecord(name) => {
+                Cow::Owned(format!("AsyncIterableIterator<{name} | Error>"))
+            }
         }
     }
 }
@@ -299,8 +480,8 @@ pub struct FunctionDef {
     pub abi: AbiSig,
 }
 
-/// A named module grouping the native functions and classes it
-/// exports.
+/// A named module grouping the native functions, classes and B1
+/// composite types it exports.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ModuleDef {
     /// The module name as seen from JavaScript.
@@ -309,6 +490,94 @@ pub struct ModuleDef {
     pub fns: &'static [FunctionDef],
     /// The classes exported by this module.
     pub classes: &'static [ClassDef],
+    /// The record types (`#[derive(BffiRecord)]`) exported by this
+    /// module, in declaration order.
+    pub records: &'static [RecordDef],
+    /// The unit enums (`#[derive(BffiEnum)]`) exported by this
+    /// module, in declaration order.
+    pub enums: &'static [EnumDef],
+    /// The error enums (`#[derive(BffiError)]`) exported by this
+    /// module, in declaration order.
+    pub errors: &'static [ErrorDef],
+}
+
+/// One field of a record: its JS-visible name, type and docs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RecordFieldDef {
+    /// The field name as it appears in the generated interface.
+    pub name: &'static str,
+    /// Doc comment lines, rendered as a JSDoc block.
+    pub docs: &'static [&'static str],
+    /// The field type.
+    pub ty: TsType,
+}
+
+/// A record type crossing the boundary as a wire-encoded value: the
+/// TS side sees an `interface`, the ABI side a transient buffer
+/// (`Vec<u8>` of the wire encoding).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RecordDef {
+    /// The record name as seen from JavaScript (the identifier used
+    /// by [`TsType::Record`]).
+    pub js_name: &'static str,
+    /// Doc comment lines, rendered as a JSDoc block.
+    pub docs: &'static [&'static str],
+    /// The fields, in declaration order (the wire encoding is
+    /// positional and must match this order).
+    pub fields: &'static [RecordFieldDef],
+}
+
+/// One variant of a unit enum: just its name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EnumVariantDef {
+    /// The variant name as it appears in the generated union
+    /// (wire-encoded as a string of the same spelling).
+    pub name: &'static str,
+    /// Doc comment lines, rendered as a JSDoc block.
+    pub docs: &'static [&'static str],
+}
+
+/// A unit enum crossing the boundary as its variant name: the TS
+/// side sees a union of string literals.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EnumDef {
+    /// The enum name as seen from JavaScript (the identifier used by
+    /// [`TsType::Enum`]).
+    pub js_name: &'static str,
+    /// Doc comment lines, rendered as a JSDoc block.
+    pub docs: &'static [&'static str],
+    /// The variants, in declaration order.
+    pub variants: &'static [EnumVariantDef],
+}
+
+/// One variant of a derived error enum: its JS `e.name`, the
+/// reserved user code crossing in the ABI status and the payload
+/// fields (the wire record delivered as `e.payload`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ErrorVariantDef {
+    /// The variant name (JS `e.name`).
+    pub name: &'static str,
+    /// Doc comment lines, rendered as a JSDoc block.
+    pub docs: &'static [&'static str],
+    /// The user code in the reserved range `0x1000..=0xFFFF`.
+    pub code: u32,
+    /// The payload fields, in declaration order (the wire record is
+    /// positional and must match this order).
+    pub fields: &'static [RecordFieldDef],
+}
+
+/// A derived error enum (`#[derive(BffiError)]`): the TS side sees
+/// a union of typed variant shapes plus a `code`/`name` base, and
+/// the loader JSON carries the code table for the `Errors` codegen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ErrorDef {
+    /// The enum name as seen from JavaScript (the identifier used by
+    /// [`TsType::Error`]).
+    pub js_name: &'static str,
+    /// Doc comment lines, rendered as a JSDoc block.
+    pub docs: &'static [&'static str],
+    /// The variants, in declaration order.
+    pub variants: &'static [ErrorVariantDef],
 }
 
 /// A class constructor or method: the `FunctionDef` shape as seen
@@ -378,7 +647,10 @@ pub struct ClassDef {
 
 #[cfg(test)]
 mod tests {
-    use super::{AbiOut, AbiPrim, AbiSig, AbiType, FunctionDef, ModuleDef, ParamDef, TsType};
+    use super::{
+        AbiOut, AbiPrim, AbiSig, AbiType, Cow, EnumDef, EnumVariantDef, FunctionDef, ModuleDef,
+        ParamDef, RecordDef, RecordFieldDef, TsType,
+    };
 
     const UNIT_ABI: AbiSig = AbiSig {
         params: &[],
@@ -406,6 +678,9 @@ mod tests {
         assert_eq!(TsType::Uint8Array.as_str(), "Uint8Array");
         assert_eq!(TsType::NullableString.as_str(), "string | null");
         assert_eq!(TsType::NullableUint8Array.as_str(), "Uint8Array | null");
+        assert_eq!(TsType::NullableNumber.as_str(), "number | null");
+        assert_eq!(TsType::NullableBigInt.as_str(), "bigint | null");
+        assert_eq!(TsType::NullableBoolean.as_str(), "boolean | null");
         assert_eq!(TsType::Void.as_str(), "void");
     }
 
@@ -560,16 +835,25 @@ mod tests {
             name: "native",
             fns: &FNS_A,
             classes: &[],
+            records: &[],
+            enums: &[],
+            errors: &[],
         };
         let same = ModuleDef {
             name: "native",
             fns: &FNS_A,
             classes: &[],
+            records: &[],
+            enums: &[],
+            errors: &[],
         };
         let different = ModuleDef {
             name: "native",
             fns: &FNS_B,
             classes: &[],
+            records: &[],
+            enums: &[],
+            errors: &[],
         };
         assert_eq!(module, same, "identical modules must compare equal");
         assert_ne!(module, different, "different fns must not be equal");
@@ -605,9 +889,69 @@ mod tests {
             name: "native",
             fns: NULLABLE_FNS,
             classes: &[],
+            records: &[],
+            enums: &[],
+            errors: &[],
         };
         let rendered = crate::bffi_dts::render::render(&module);
         assert!(rendered.contains("export function maybe_name(): string | null;"));
+    }
+
+    #[test]
+    fn b1_composite_names_render() {
+        assert_eq!(TsType::Record("Point").as_str(), "Point");
+        assert_eq!(TsType::Enum("Color").as_str(), "Color");
+        assert_eq!(TsType::NumberArray.as_str(), "number[]");
+        assert_eq!(TsType::BigIntArray.as_str(), "bigint[]");
+        assert_eq!(TsType::BooleanArray.as_str(), "boolean[]");
+        assert_eq!(TsType::StringArray.as_str(), "string[]");
+        assert_eq!(
+            TsType::RecordArray("Point").as_str(),
+            Cow::<str>::Borrowed("Point[]")
+        );
+    }
+
+    #[test]
+    fn record_and_enum_defs_compare_by_value() {
+        fn assert_copy<T: Copy>() {}
+
+        assert_copy::<RecordFieldDef>();
+        assert_copy::<RecordDef>();
+        assert_copy::<EnumVariantDef>();
+        assert_copy::<EnumDef>();
+
+        static FIELDS: &[RecordFieldDef] = &[
+            RecordFieldDef {
+                name: "x",
+                docs: &[],
+                ty: TsType::Number,
+            },
+            RecordFieldDef {
+                name: "label",
+                docs: &[],
+                ty: TsType::String,
+            },
+        ];
+        static VARIANTS: &[EnumVariantDef] = &[EnumVariantDef {
+            name: "Red",
+            docs: &[],
+        }];
+
+        let record = RecordDef {
+            js_name: "Point",
+            docs: &[],
+            fields: FIELDS,
+        };
+        assert_eq!(record.fields.len(), 2);
+        assert_eq!(record.fields[1].name, "label");
+
+        let enumeration = EnumDef {
+            js_name: "Color",
+            docs: &[],
+            variants: VARIANTS,
+        };
+        assert_eq!(enumeration.variants.len(), 1);
+        assert_eq!(enumeration.variants[0].name, "Red");
     }
 
     static FNS: &[FunctionDef] = &[
@@ -633,5 +977,8 @@ mod tests {
         name: "native",
         fns: FNS,
         classes: &[],
+        records: &[],
+        enums: &[],
+        errors: &[],
     };
 }

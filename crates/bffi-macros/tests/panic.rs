@@ -7,7 +7,7 @@
 
 use bffi::{ErrorCode, take_last_error};
 
-#[bffi_macros::bffi(crate = "bffi")]
+#[bffi_macros::bffi]
 fn boom() -> u32 {
     panic!("boundary!");
 }
@@ -16,7 +16,7 @@ fn boom() -> u32 {
 fn panic_becomes_the_panic_code() {
     let mut out = 0_u32;
     let code = bffi_boom(&mut out);
-    assert_eq!(code, ErrorCode::Panic);
+    assert_eq!(code, ErrorCode::Panic.as_u32());
     let error = take_last_error().expect("panic must store the last error");
     assert_eq!(error.code, ErrorCode::Panic);
     assert_eq!(error.message, "boundary!");

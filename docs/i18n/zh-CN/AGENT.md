@@ -197,11 +197,11 @@ chore: pin rust-toolchain to 1.98.0
 | 主题        | 决策                                      |
 | ----------- | ----------------------------------------- |
 | 宏          | `#[bffi]`：shim（debug 直接 / release catch_unwind）+ bffi_meta_* 描述符 |
-| `#[bffi]` 返回值 | 原始类型/bigint 经 out-param;`String`/`Vec<u8>`/`CopiedBuf`(及 `Option`)作为缓冲区句柄;`Result<T, E>` -> DomainError(13) |
+| `#[bffi]` 返回值 | 原始类型/bigint 经 out-param;`String`/`Vec<u8>`/`CopiedBuf`(及 `Option`)作为缓冲区句柄;组合类型(records/enums/`Vec<T>`/`Vec<Vec<u8>>` 及其 `Option`)走 wire 句柄;`Result<T, E: Into<BffiError>>` -> 转换后错误的状态(`status_u32()`) |
 | 最低 Bun    | 1.4.0                                     |
 | Rust/Cargo  | 1.98.0                                    |
 | 句柄        | Generational Index + type-tag             |
-| 错误格式    | `BffiError` = 代码 + 消息 + 来源;领域错误通过 `From` 无损转换 |
+| 错误格式    | `BffiError` = 代码 + 消息 + 来源 + rich 槽;领域错误通过 `From` 无损转换 |
 | 边界字符串  | UTF-8 为规范编码(`bun:ffi cstring`)       |
 | 表格并发    | 无锁;危险指针回收                          |
 | UTF-8 校验  | SIMD(x86 SSSE3,aarch64 NEON);标量版作为参考 |
@@ -209,16 +209,19 @@ chore: pin rust-toolchain to 1.98.0
 | 零拷贝      | 仅通过 `bffi::unsafe_zero_copy`           |
 | 事件循环    | `run()` 阻塞式排空;`pump()` 非阻塞排空;`marshal` - 错误线程路径(代码 12) |
 | TS 类型 | IR（ModuleDef/FunctionDef/ClassDef）+ 确定性 render；export_name = bffi_ 前缀 |
+| 组合类型(B1+B4) | Records/enums/`Vec<T>`(含 `Vec<Vec<u8>>`)支持 sync + async;`Option<Record>`/`Option<Vec<T>>` = 通过空缓冲区 0 句柄约定的 `\| null`;更深的嵌套会被拒绝 |
+| 类型化错误(B3) | `#[derive(BffiError)]`:用户码 0x1000-0xFFFF 替换状态 13;variant = JS `e.name`,字段 = `e.payload`(TAG_RECORD);rich 访问器 best-effort;loader JSON 的 `errors` 表 |
+| 流(B2)  | `#[bffi_stream]`:pull(`impl Iterator<Item = T> + Send`)或 push(`async fn(ctx: Ctx<T>, ...)`,bounded 256,背压)作为 JS `AsyncIterableIterator<T>`;`bffi_stream_next(handle, max)`(TAG_SEQ 缓冲,0 = 结束;14 = Pending 重试)+ `bffi_stream_drop` + `bffi_stream_set_wake`(经 event-loop 的唤醒 trampoline,best-effort);标签 0x0600;push 生产者交付 `Result` 项(`ctx.push(Ok/Err)`) |
 | 类宏 | 基于 ObjectWrap（标签 0x0100-0x01FF）的 `#[bffi_class]`/`#[bffi_impl]`:pub 原始字段的 getter、`&self` 方法、自动生成 release;元数据拆分为 bffi_meta_<name> + bffi_meta_<name>_impl::CLASS;E005-E008 |
 | 宏支持 | `bffi-macro-support`:为 proc-macro crate(bffi-macros、bffi-class)提供共享的模型/映射/代码生成;工具 crate - 无运行时代码、无 ABI |
 | Panic(生产) | 转换为 JS Error                           |
 | Panic(开发) | 可以中止                                  |
 | 兼容性      | 仅支持 Bun                                |
 | 许可证      | MIT                                       |
-| 门面         | `bffi`:扁平化再导出整个栈;`unsafe_zero_copy` 是唯一的零拷贝入口;宏展开依赖用户的直接依赖 |
-| 异步         | `#[bffi_async]`:spawn 包装函数(shim)返回任务句柄;N-worker 执行器;协作式取消 + 超时;经 event-loop 入队交付;tokio opt-in;标签 0x0500-0x05FF |
+| 门面         | `bffi`:扁平化再导出整个栈;`unsafe_zero_copy` 是唯一的零拷贝入口;宏展开默认引用 `::bffi::{core,types,dts,object,build,r#async}`(`crate = "<name>"` 重定向,`crate = "direct"` 选择 pre-merge 根) |
+| 异步         | `#[bffi_async]`:spawn 包装函数(shim)返回任务句柄;N-worker 执行器;协作式取消 + 超时;经 event-loop 入队交付;tokio opt-in;标签 0x0500-0x05FF;组合类型返回走 wire 通道(`Promise<Record>` / `Promise<Vec<T>>` 经 `AsyncValue::Wire`,`Option` -> `Promise<... \| null>`);`E: Into<BffiError>` 契约 |
 | 对象所有权 | 基于全局 `Registry` 的 `ObjectWrap<T>`(标签 0x0100-0x01FF);release 释放槽位 |
-| 回调 | `register`/`revoke` + `bind_js_callback`;标签 0x0200-0x0201;错误线程 - 拒绝 |
+| 回调 | `register`/`revoke` + `bind_js_callback`;标签 0x0200-0x0201;错误线程 - 拒绝;`invoke_wait` 经 marshal 把回调投递到 JS 线程,可从任意原生线程调用,必带超时(`Timeout = 15`)- 两张表(原生闭包与 JS-bound 句柄) |
 | 构建 ABI | 运行时导出（`bffi_error_*`、`bffi_buffer` 对、`bffi_types_free`）通过在用户 crate 中展开的 `bffi_runtime_abi!()` 生成；标签 0x0400-0x04FF；规范契约：bffi/CALLING-CONVENTION.md |
 | 描述符 ABI | `FunctionDef`/`MethodDef` 携带 `AbiSig`（精确 C 宽度 + out 槽）；`FieldDef` 携带 getter 的 `export_name` + out；`ClassDef` 携带 `release_export` |
 | Wire 编解码 | `bffi_types::wire`:统一的 `[tag][payload]` 表,服务异步负载与回调签名/参数/结果 |

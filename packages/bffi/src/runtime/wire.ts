@@ -6,7 +6,13 @@
  *
  * - `Str` payloads are UTF-8 with a `u32` length prefix;
  * - `Bytes` payloads are raw bytes with a `u32` length prefix;
- * - every integer payload is LE, `i64`/`u64` without `f64` narrowing.
+ * - every integer payload is LE, `i64`/`u64` without `f64` narrowing;
+ * - `Record` (7) is a `u32` field count + one value record per field,
+ *   positional - the field names come from the module descriptor, not
+ *   the wire;
+ * - `Seq` (8) is a `u32` item count + one value record per item.
+ *
+ * Tags are ABI: never renumber, the Rust mirror must agree forever.
  */
 
 export const TAG_UNIT = 0;
@@ -16,25 +22,104 @@ export const TAG_F64 = 3;
 export const TAG_BOOL = 4;
 export const TAG_STR = 5;
 export const TAG_BYTES = 6;
+export const TAG_RECORD = 7;
+export const TAG_SEQ = 8;
+export const TAG_U64 = 10;
+export const TAG_ERROR = 11;
 
-/** A decoded wire value. */
+/** A decoded wire value: composites decode positionally, an error
+ * item decodes into an `Error` instance. */
 export type WireValue =
   | undefined
   | number
   | bigint
   | boolean
   | string
-  | Uint8Array;
-
+  | Uint8Array
+  | WireValue[]
+  | { fields: WireValue[] }
+  | Error;
 /**
  * Decodes one `[tag][payload]` record into a JS value. The bytes view
  * MUST be a subarray starting at the record; `Bytes` payloads are
- * copied out (the source buffer is transient by contract).
+ * copied out (the source buffer is transient by contract). Records
+ * decode as `{ fields: [...] }` (positional - the descriptor names
+ * them) and sequences as arrays.
  */
 export function decodeValue(bytes: Uint8Array): WireValue {
-  const tag = bytes[0];
+  return decodeAt(bytes, 0).value;
+}
+
+/** One decoded record plus the offset past it. */
+export interface Decoded {
+  value: WireValue;
+  next: number;
+}
+
+/** The decoded rich-error envelope (TAG_ERROR): code + variant +
+ * message + optional payload record fields. */
+export interface ErrorEnvelope {
+  code: number;
+  variant: string;
+  message: string;
+  payload: WireValue[] | null;
+}
+
+/** Decodes the rich-error envelope at `offset`: `[u32 code][str
+ * variant][str message][record|unit]`. `payload` carries the decoded
+ * record fields when present, `null` for the unit marker. */
+export function decodeErrorEnvelope(
+  bytes: Uint8Array,
+  offset: number,
+): { envelope: ErrorEnvelope; next: number } {
+  const tag = bytes[offset];
+  if (tag !== TAG_ERROR) {
+    throw new Error(`not an error record at offset ${offset}`);
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let at = offset + 1;
+  const code = view.getUint32(at, true);
+  at += 4;
+  const readStr = (): { value: string; next: number } => {
+    const len = view.getUint32(at, true);
+    const start = at + 4;
+    const value = new TextDecoder().decode(bytes.subarray(start, start + len));
+    return { value, next: start + len };
+  };
+  const variant = readStr();
+  at = variant.next;
+  const message = readStr();
+  at = message.next;
+  // The payload record (the envelope's last element): decode its
+  // fields; a unit marker means no payload.
+  let payload: WireValue[] | null = null;
+  let next = at;
+  const payloadTag = bytes[at];
+  if (payloadTag === TAG_RECORD) {
+    const count = view.getUint32(at + 1, true);
+    let cursor = at + 5;
+    const fields: WireValue[] = [];
+    for (let i = 0; i < count; i++) {
+      const decoded = decodeAt(bytes, cursor);
+      fields.push(decoded.value);
+      cursor = decoded.next;
+    }
+    payload = fields;
+    next = cursor;
+  } else if (payloadTag === TAG_UNIT) {
+    next = at + 1;
+  }
+  return {
+    envelope: { code, variant: variant.value ?? "", message: message.value, payload },
+    next,
+  };
+}
+
+/** Decodes one record at `offset`. */
+export function decodeAt(bytes: Uint8Array, offset: number): Decoded {
+  const tag = bytes[offset];
   if (tag === undefined) {
-    throw new Error("empty wire payload");
+    throw new Error(`truncated wire payload at offset ${offset}`);
   }
   const view = new DataView(
     bytes.buffer,
@@ -43,22 +128,56 @@ export function decodeValue(bytes: Uint8Array): WireValue {
   );
   switch (tag) {
     case TAG_UNIT:
-      return undefined;
+      return { value: undefined, next: offset + 1 };
     case TAG_I32:
-      return view.getInt32(1, true);
+      return { value: view.getInt32(offset + 1, true), next: offset + 5 };
     case TAG_I64:
-      return view.getBigInt64(1, true);
+      return { value: view.getBigInt64(offset + 1, true), next: offset + 9 };
     case TAG_F64:
-      return view.getFloat64(1, true);
+      return { value: view.getFloat64(offset + 1, true), next: offset + 9 };
     case TAG_BOOL:
-      return (bytes[1] ?? 0) !== 0;
+      return { value: (bytes[offset + 1] ?? 0) !== 0, next: offset + 2 };
     case TAG_STR: {
-      const len = view.getUint32(1, true);
-      return new TextDecoder().decode(bytes.subarray(5, 5 + len));
+      const len = view.getUint32(offset + 1, true);
+      const start = offset + 5;
+      const value = new TextDecoder().decode(bytes.subarray(start, start + len));
+      return { value, next: start + len };
     }
     case TAG_BYTES: {
-      const len = view.getUint32(1, true);
-      return bytes.slice(5, 5 + len);
+      const len = view.getUint32(offset + 1, true);
+      const start = offset + 5;
+      const value = bytes.slice(start, start + len);
+      return { value, next: start + len };
+    }
+    case TAG_U64:
+      return { value: view.getBigUint64(offset + 1, true), next: offset + 9 };
+    case TAG_ERROR: {
+      const len = view.getUint32(offset + 1, true);
+      const start = offset + 5;
+      const message = new TextDecoder().decode(bytes.subarray(start, start + len));
+      return { value: new Error(message), next: start + len };
+    }
+    case TAG_RECORD: {
+      const count = view.getUint32(offset + 1, true);
+      let at = offset + 5;
+      const fields: WireValue[] = [];
+      for (let i = 0; i < count; i++) {
+        const decoded = decodeAt(bytes, at);
+        fields.push(decoded.value);
+        at = decoded.next;
+      }
+      return { value: { fields }, next: at };
+    }
+    case TAG_SEQ: {
+      const count = view.getUint32(offset + 1, true);
+      let at = offset + 5;
+      const items: WireValue[] = [];
+      for (let i = 0; i < count; i++) {
+        const decoded = decodeAt(bytes, at);
+        items.push(decoded.value);
+        at = decoded.next;
+      }
+      return { value: items, next: at };
     }
     default:
       throw new Error(`unknown wire value tag: ${tag}`);
@@ -66,12 +185,15 @@ export function decodeValue(bytes: Uint8Array): WireValue {
 }
 
 /**
- * Encodes one JS value into the `[tag][payload]` record. Numbers
- * encode as `I32` when they are integral and fit `i32`, otherwise
- * `F64`; bigints encode as `I64` (exactness preserved).
+ * Encodes one JS value into the `[tag][payload]` record. `null` and
+ * `undefined` encode as the `Unit` record (the `None` of optional
+ * record fields); numbers encode as `I32` when they are integral and
+ * fit `i32`, otherwise `F64`; bigints encode as `I64` (exactness
+ * preserved). Arrays encode as `Seq` of their items; `{ fields }`
+ * objects encode as records.
  */
 export function encodeValue(out: number[], value: WireValue): void {
-  if (value === undefined) {
+  if (value === undefined || value === null) {
     out.push(TAG_UNIT);
   } else if (typeof value === "number") {
     if (Number.isInteger(value) && value >= -2147483648 && value <= 2147483647) {
@@ -82,13 +204,30 @@ export function encodeValue(out: number[], value: WireValue): void {
       pushF64(out, value);
     }
   } else if (typeof value === "bigint") {
-    if (value < -9223372036854775808n || value > 9223372036854775807n) {
-      throw new Error(`i64 value out of range: ${value}`);
+    if (value < 0n) {
+      throw new Error(`negative bigint value: ${value}`);
     }
-    out.push(TAG_I64);
-    pushI64(out, value);
+    if (value > 18446744073709551615n) {
+      throw new Error(`u64 value out of range: ${value}`);
+    }
+    // Exact carriers: I64 below i64::MAX (signed view agrees), U64
+    // above it (an i64 record would show a negative value).
+    if (value > 9223372036854775807n) {
+      out.push(TAG_U64);
+      pushU64(out, value);
+    } else {
+      out.push(TAG_I64);
+      pushI64(out, value);
+    }
   } else if (typeof value === "boolean") {
     out.push(TAG_BOOL, value ? 1 : 0);
+  } else if (value instanceof Error) {
+    out.push(TAG_ERROR);
+    const bytes = new TextEncoder().encode(value.message);
+    pushU32(out, bytes.length);
+    for (const byte of bytes) {
+      out.push(byte);
+    }
   } else if (typeof value === "string") {
     out.push(TAG_STR);
     const bytes = new TextEncoder().encode(value);
@@ -96,11 +235,23 @@ export function encodeValue(out: number[], value: WireValue): void {
     for (const byte of bytes) {
       out.push(byte);
     }
-  } else {
+  } else if (value instanceof Uint8Array) {
     out.push(TAG_BYTES);
     pushU32(out, value.length);
     for (const byte of value) {
       out.push(byte);
+    }
+  } else if (Array.isArray(value)) {
+    out.push(TAG_SEQ);
+    pushU32(out, value.length);
+    for (const item of value) {
+      encodeValue(out, item);
+    }
+  } else {
+    out.push(TAG_RECORD);
+    pushU32(out, value.fields.length);
+    for (const field of value.fields) {
+      encodeValue(out, field);
     }
   }
 }
@@ -140,6 +291,14 @@ function pushF64(out: number[], value: number): void {
 function pushI64(out: number[], value: bigint): void {
   const view = new DataView(new ArrayBuffer(8));
   view.setBigInt64(0, value, true);
+  for (let i = 0; i < 8; i++) {
+    out.push(view.getUint8(i));
+  }
+}
+
+function pushU64(out: number[], value: bigint): void {
+  const view = new DataView(new ArrayBuffer(8));
+  view.setBigUint64(0, value, true);
   for (let i = 0; i < 8; i++) {
     out.push(view.getUint8(i));
   }

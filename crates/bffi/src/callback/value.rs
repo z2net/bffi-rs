@@ -5,9 +5,16 @@
 //! classification, and [`CallbackSig`] validates that a slice of
 //! [`Value`]s matches a declared callback signature (arity first, then
 //! per-element types).
+//!
+//! The matrix mirrors the framework-wide wire codec (`bffi::types::
+//! wire`) plus the async-layer `AsyncValue` precedent: `Unit` (the
+//! `void` return / absent value), `Str` (UTF-8, crossing a JS-bound
+//! call as a `cstring`) and `Bytes` (raw bytes) extend the original
+//! primitive four.
 
 // Internal module aliases (the pre-merge crate names).
 use crate::bffi_types;
+use bffi_types::CopiedBuf;
 use bffi_types::wire;
 
 /// The static classification of a [`Value`] payload crossing the
@@ -15,6 +22,8 @@ use bffi_types::wire;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ValueType {
+    /// No value (`void` return, the `TAG_UNIT` wire record).
+    Unit,
     /// 32-bit signed integer.
     I32,
     /// 64-bit signed integer.
@@ -23,6 +32,10 @@ pub enum ValueType {
     F64,
     /// Boolean.
     Bool,
+    /// A UTF-8 string.
+    Str,
+    /// Raw bytes.
+    Bytes,
 }
 
 impl ValueType {
@@ -31,10 +44,13 @@ impl ValueType {
     #[must_use]
     pub const fn wire_tag(self) -> u8 {
         match self {
+            Self::Unit => wire::TAG_UNIT,
             Self::I32 => wire::TAG_I32,
             Self::I64 => wire::TAG_I64,
             Self::F64 => wire::TAG_F64,
             Self::Bool => wire::TAG_BOOL,
+            Self::Str => wire::TAG_STR,
+            Self::Bytes => wire::TAG_BYTES,
         }
     }
 
@@ -43,10 +59,13 @@ impl ValueType {
     #[must_use]
     pub const fn from_wire_tag(tag: u8) -> Option<Self> {
         match tag {
+            wire::TAG_UNIT => Some(Self::Unit),
             wire::TAG_I32 => Some(Self::I32),
             wire::TAG_I64 => Some(Self::I64),
             wire::TAG_F64 => Some(Self::F64),
             wire::TAG_BOOL => Some(Self::Bool),
+            wire::TAG_STR => Some(Self::Str),
+            wire::TAG_BYTES => Some(Self::Bytes),
             _ => None,
         }
     }
@@ -56,9 +75,11 @@ impl ValueType {
 ///
 /// Every variant pairs its payload with an implicit [`ValueType`]
 /// available through [`Value::ty`].
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum Value {
+    /// No value (`void` return of a JS-bound call).
+    Unit,
     /// A 32-bit signed integer.
     I32(i32),
     /// A 64-bit signed integer.
@@ -67,24 +88,31 @@ pub enum Value {
     F64(f64),
     /// A boolean.
     Bool(bool),
+    /// A UTF-8 string (copied into the payload).
+    Str(String),
+    /// Raw bytes (copied into the payload).
+    Bytes(CopiedBuf),
 }
 
 impl Value {
     /// The static [`ValueType`] of this value.
     #[must_use]
-    pub const fn ty(self) -> ValueType {
+    pub const fn ty(&self) -> ValueType {
         match self {
+            Self::Unit => ValueType::Unit,
             Self::I32(_) => ValueType::I32,
             Self::I64(_) => ValueType::I64,
             Self::F64(_) => ValueType::F64,
             Self::Bool(_) => ValueType::Bool,
+            Self::Str(_) => ValueType::Str,
+            Self::Bytes(_) => ValueType::Bytes,
         }
     }
 
     /// The wire bytes of this value: one `[tag][payload]` record in
     /// the framework-wide codec (`bffi::types::wire`).
     #[must_use]
-    pub fn encode(self) -> Vec<u8> {
+    pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::new();
         self.encode_into(&mut out);
         out
@@ -92,23 +120,34 @@ impl Value {
 
     /// Encodes this value into an existing buffer (the multi-argument
     /// form of [`Value::encode`]).
-    pub fn encode_into(self, out: &mut Vec<u8>) {
+    pub fn encode_into(&self, out: &mut Vec<u8>) {
         match self {
+            Self::Unit => out.push(wire::TAG_UNIT),
             Self::I32(v) => {
                 out.push(wire::TAG_I32);
-                wire::push_i32_le(out, v);
+                wire::push_i32_le(out, *v);
             }
             Self::I64(v) => {
                 out.push(wire::TAG_I64);
-                wire::push_i64_le(out, v);
+                wire::push_i64_le(out, *v);
             }
             Self::F64(v) => {
                 out.push(wire::TAG_F64);
-                wire::push_f64_le(out, v);
+                wire::push_f64_le(out, *v);
             }
             Self::Bool(v) => {
                 out.push(wire::TAG_BOOL);
-                wire::push_bool(out, v);
+                wire::push_bool(out, *v);
+            }
+            Self::Str(text) => {
+                out.push(wire::TAG_STR);
+                wire::push_u32_le(out, text.len() as u32);
+                out.extend_from_slice(text.as_bytes());
+            }
+            Self::Bytes(bytes) => {
+                out.push(wire::TAG_BYTES);
+                wire::push_u32_le(out, bytes.as_slice().len() as u32);
+                out.extend_from_slice(bytes.as_slice());
             }
         }
     }
@@ -162,7 +201,7 @@ impl CallbackSig {
 
 #[cfg(test)]
 mod tests {
-    use super::{CallbackSig, Value, ValueType};
+    use super::{CallbackSig, CopiedBuf, Value, ValueType, wire};
 
     #[test]
     fn value_matches_when_arity_and_types_align() {
@@ -204,10 +243,53 @@ mod tests {
 
     #[test]
     fn value_ty_reports_the_variant() {
+        assert_eq!(Value::Unit.ty(), ValueType::Unit);
         assert_eq!(Value::I32(1).ty(), ValueType::I32);
         assert_eq!(Value::I64(2).ty(), ValueType::I64);
         assert_eq!(Value::F64(3.0).ty(), ValueType::F64);
         assert_eq!(Value::Bool(true).ty(), ValueType::Bool);
+        assert_eq!(Value::Str("s".to_owned()).ty(), ValueType::Str);
+        assert_eq!(
+            Value::Bytes(CopiedBuf::from_slice(&[0])).ty(),
+            ValueType::Bytes
+        );
+    }
+
+    #[test]
+    fn value_wire_tags_round_trip_through_the_codec_table() {
+        for tag in [
+            ValueType::Unit,
+            ValueType::I32,
+            ValueType::I64,
+            ValueType::F64,
+            ValueType::Bool,
+            ValueType::Str,
+            ValueType::Bytes,
+        ] {
+            assert_eq!(
+                ValueType::from_wire_tag(tag.wire_tag()),
+                Some(tag),
+                "{tag:?} must round-trip through its wire tag"
+            );
+        }
+        assert_eq!(ValueType::from_wire_tag(0xFF), None);
+    }
+
+    #[test]
+    fn extended_values_encode_the_framework_wire_layout() {
+        assert_eq!(Value::Unit.encode(), vec![wire::TAG_UNIT]);
+        assert_eq!(Value::Str("héllo".to_owned()).encode(), {
+            let mut out = vec![wire::TAG_STR];
+            wire::push_u32_le(&mut out, 6);
+            out.extend_from_slice("héllo".as_bytes());
+            out
+        });
+        assert_eq!(Value::Bytes(CopiedBuf::from_slice(&[9, 8])).encode(), {
+            let mut out = vec![wire::TAG_BYTES];
+            wire::push_u32_le(&mut out, 2);
+            out.extend_from_slice(&[9, 8]);
+            out
+        });
     }
 
     #[test]
@@ -224,13 +306,12 @@ mod tests {
     }
 
     #[test]
-    fn sig_types_are_copy_and_comparable() {
-        fn assert_copy<T: Copy>() {}
+    fn sig_types_are_clone_and_comparable() {
         fn assert_clone<T: Clone>() {}
         fn assert_partial_eq<T: PartialEq>() {}
 
-        assert_copy::<Value>();
-        assert_copy::<ValueType>();
+        assert_clone::<Value>();
+        assert_clone::<ValueType>();
         assert_clone::<CallbackSig>();
         assert_partial_eq::<CallbackSig>();
 

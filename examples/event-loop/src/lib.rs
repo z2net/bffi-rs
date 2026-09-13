@@ -50,6 +50,12 @@ impl std::fmt::Display for LoopError {
 
 impl std::error::Error for LoopError {}
 
+impl From<LoopError> for bffi::BffiError {
+    fn from(error: LoopError) -> Self {
+        bffi::BffiError::new(bffi::ErrorCode::DomainError, error.0)
+    }
+}
+
 impl From<bffi::EventLoopError> for LoopError {
     fn from(error: bffi::EventLoopError) -> Self {
         Self(error.to_string())
@@ -71,7 +77,7 @@ fn store_code(error: BffiError) -> u32 {
 /// # Errors
 ///
 /// [`LoopError`] once [`loop_stop`] has been called (sticky).
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn enqueue_job(x: i64) -> Result<(), LoopError> {
     let job: Job = Box::new(move || LAST_RESULT.store(x * 2, Ordering::Relaxed));
     enqueue(job)?;
@@ -79,7 +85,7 @@ pub fn enqueue_job(x: i64) -> Result<(), LoopError> {
 }
 
 /// The value stored by the last executed job (`0` before the first).
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn last_result() -> i64 {
     LAST_RESULT.load(Ordering::Relaxed)
 }
@@ -88,20 +94,20 @@ pub fn last_result() -> i64 {
 /// executed by THIS call (`0` on an empty queue). The JS side calls
 /// it in a loop (`pumpUntil` from `@z2net/bffi`) to deliver async
 /// resolutions; here it demonstrates the raw mechanics.
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn loop_pump() -> u64 {
     pump()
 }
 
 /// The number of jobs waiting for execution.
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn loop_pending() -> u64 {
     pending()
 }
 
 /// The number of jobs executed since process start, across all
 /// runners.
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn loop_executed() -> u64 {
     executed_total()
 }
@@ -111,7 +117,7 @@ pub fn loop_executed() -> u64 {
 /// (the job executes on the runner thread), `12` = `WrongThread` (no
 /// runner is up). The status variant keeps the exact code observable;
 /// the last error carries the message.
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn marshal_status(x: i64) -> u32 {
     let job: Job = Box::new(move || LAST_RESULT.store(x * 2, Ordering::Relaxed));
     match marshal(job) {
@@ -123,14 +129,14 @@ pub fn marshal_status(x: i64) -> u32 {
 /// Blocks the calling thread draining the queue until [`loop_stop`];
 /// returns the number of jobs executed by THIS runner. Intended for
 /// the worker thread of the e2e test.
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn loop_run() -> u64 {
     run()
 }
 
 /// Stops the loop for good (sticky): `loop_run` returns and later
 /// `enqueue_job` calls report "the event loop has been stopped".
-#[bffi(crate = "bffi")]
+#[bffi]
 pub fn loop_stop() {
     stop();
 }

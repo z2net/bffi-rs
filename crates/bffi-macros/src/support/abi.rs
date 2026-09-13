@@ -72,7 +72,11 @@ pub fn abi_param(kind: ShimKind, ctx: &PathCtx) -> TokenStream {
             quote! { #dts::AbiType::#variant }
         }
         ShimKind::Str => quote! { #dts::AbiType::Cstring },
-        ShimKind::BufferView => quote! { #dts::AbiType::PtrLen },
+        // Records and sequences cross as one borrowed `(ptr, len)`
+        // wire payload, exactly like a `&[u8]` view.
+        ShimKind::BufferView | ShimKind::Record(_) | ShimKind::Seq(_) => {
+            quote! { #dts::AbiType::PtrLen }
+        }
     }
 }
 
@@ -86,7 +90,14 @@ pub fn abi_out(ret: &RetKind, ctx: &PathCtx) -> Option<TokenStream> {
         RetKind::Unit => None,
         RetKind::Prim(prim) => Some(prim_out(*prim, ctx)),
         RetKind::BigInt(big) => Some(bigint_out(*big, ctx)),
-        RetKind::Buffer(_) | RetKind::Nullable(_) => Some(quote! { #dts::AbiOut::Handle }),
+        // Records and sequences (plain or nullable) travel as one
+        // wire-encoded transient-buffer handle.
+        RetKind::Buffer(_)
+        | RetKind::Nullable(_)
+        | RetKind::Record(_)
+        | RetKind::Seq(_)
+        | RetKind::NullableRecord(_)
+        | RetKind::NullableSeq(_) => Some(quote! { #dts::AbiOut::Handle }),
         RetKind::Result(inner) => abi_out(inner, ctx),
     }
 }

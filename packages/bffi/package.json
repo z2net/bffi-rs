@@ -1,6 +1,6 @@
 {
   "name": "@z2net/bffi",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Bun-only bffi integration for TypeScript: config-driven pipeline (cargo build, api.gen generation, platform binary resolution) and a typed loader for bffi-rs native modules.",
   "license": "MIT",
   "repository": {

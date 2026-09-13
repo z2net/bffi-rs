@@ -91,6 +91,22 @@ where
     }
 }
 
+/// Like [`run_extern_body`] but the closure returns the raw exported
+/// `u32` status (a user code may replace the framework code), and a
+/// panic still produces `ErrorCode::Panic`.
+pub fn run_extern_body_u32<F>(f: F) -> u32
+where
+    F: FnOnce() -> u32,
+{
+    match catch_panic(f) {
+        Ok(code) => code,
+        Err(error) => {
+            set_last_error(error);
+            ErrorCode::Panic.as_u32()
+        }
+    }
+}
+
 /// Like [`run_extern_body`], but for entry points whose C ABI return is a
 /// plain value (a handle, a length, a pointer) instead of an
 /// [`ErrorCode`]: on panic the panic is recorded as the [last

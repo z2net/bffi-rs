@@ -33,7 +33,7 @@ pub(crate) fn expand(model: &FnModel) -> TokenStream {
     });
     let ret = mapping::ts_return(&model.ret).tokens(&model.paths);
     let abi = mapping::abi::abi_sig(
-        model.params.iter().map(|param| param.kind),
+        model.params.iter().map(|param| param.kind.clone()),
         &model.ret,
         &model.paths,
     );

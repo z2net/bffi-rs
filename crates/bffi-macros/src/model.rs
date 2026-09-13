@@ -13,7 +13,7 @@
 use crate::errors::{attr_options, fn_shape, param_pattern};
 use crate::mapping;
 use crate::support::kind::{RetKind, ShimKind};
-use crate::support::paths::{PathCtx, is_crate_name};
+use crate::support::paths::{self, PathCtx, is_crate_name};
 use crate::support::util::extract_docs;
 use proc_macro2::TokenStream;
 use syn::spanned::Spanned;
@@ -130,10 +130,12 @@ impl syn::parse::Parse for AttrPaths {
 }
 
 /// Resolves the attribute options into the path context: no attribute
-/// selects the default direct-dependency roots; `crate = "<name>"`
-/// redirects every generated path to `::<name>::{core, types, dts,
-/// build}`. Anything else (unknown keys, non-literal or invalid
-/// values, duplicates) is the `E004` rejection.
+/// selects the default facade roots (`::bffi::core`, ...);
+/// `crate = "<name>"` redirects every generated path to
+/// `::<name>::{core, types, dts, object, build}`, and the special
+/// `crate = "direct"` selects the pre-merge dependency roots.
+/// Anything else (unknown keys, non-literal or invalid values,
+/// duplicates) is the `E004` rejection.
 fn parse_paths(attrs: &TokenStream) -> syn::Result<PathCtx> {
     if attrs.is_empty() {
         return Ok(PathCtx::default());
@@ -141,7 +143,7 @@ fn parse_paths(attrs: &TokenStream) -> syn::Result<PathCtx> {
     let AttrPaths { crate_name } =
         syn::parse2(attrs.clone()).map_err(|_| attr_options(attrs.span()))?;
     match crate_name {
-        Some(name) if is_crate_name(&name) => Ok(PathCtx::from_attr(&name)),
+        Some(name) if is_crate_name(&name) => Ok(paths::from_option(&name)),
         _ => Err(attr_options(attrs.span())),
     }
 }

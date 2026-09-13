@@ -9,67 +9,226 @@ import { ErrorCode, type FfiLib, makeTakeError, sym } from "../runtime/error.ts"
 import { makeReadBuffer } from "../runtime/buffer.ts";
 import { assertSchema, buildDeclarations, type BuiltinFeatures, type FunctionJson, type ModuleJson, type TsName } from "./loader.ts";
 import { wrapTask } from "../runtime/async.ts";
+import { streamItemTs, wrapStream } from "../runtime/stream.ts";
+import { isCompositeTs, jsToWire, tablesOf, wireToJs } from "./composite.ts";
+import { decodeAt, encodeValue } from "../runtime/wire.ts";
 
 const decoder = new TextDecoder();
+
+/** The record table entry named `N` (`never` when absent). */
+type NamedRecord<M extends ModuleJson, N extends string> = Extract<
+  NonNullable<M["records"]>[number],
+  { name: N }
+>;
+
+/** The enum table entry named `N` (`never` when absent). */
+type NamedEnum<M extends ModuleJson, N extends string> = Extract<
+  NonNullable<M["enums"]>[number],
+  { name: N }
+>;
+
+/** The object shape of one record entry: fields keyed by name (the
+ * module context threads through - a record field may reference
+ * another composite of the same module). */
+type RecordShape<R extends { fields: { name: string; ts: TsName }[] }, M extends ModuleJson> = {
+  [F in R["fields"][number] as F["name"]]: TsOf<F["ts"], M>;
+};
+
+/** The string-literal union of one enum entry's variants. */
+type EnumUnion<E extends { variants: { name: string }[] }> =
+  E["variants"][number]["name"];
 
 /**
  * The TypeScript type for one `ts` name in the schema. The Promise
  * cases are spelled out (a closed table, no template-literal infer):
- * the schema names them exactly.
+ * the schema names them exactly. The B1 composites resolve against
+ * the module's own `records`/`enums` tables: a record maps to its
+ * field shape, an enum to the union of its variant names, and the
+ * array forms wrap their element type. An unknown name falls back to
+ * its own string literal (the validator rejects those upfront).
  */
-export type TsOf<S extends TsName> = S extends "Promise<void>"
-  ? Promise<void>
-  : S extends "Promise<number>"
-    ? Promise<number>
-    : S extends "Promise<bigint>"
-      ? Promise<bigint>
-      : S extends "Promise<boolean>"
-        ? Promise<boolean>
-        : S extends "Promise<string>"
-          ? Promise<string>
-          : S extends "Promise<Uint8Array>"
-            ? Promise<Uint8Array>
-            : S extends "string | null"
-              ? string | null
-              : S extends "Uint8Array | null"
-                ? Uint8Array | null
-                : S extends "number"
-                  ? number
-                  : S extends "bigint"
-                    ? bigint
-                    : S extends "boolean"
-                      ? boolean
-                      : S extends "string"
-                        ? string
-                        : S extends "Uint8Array"
-                          ? Uint8Array
-                          : void;
+export type TsOf<S extends TsName, M extends ModuleJson = ModuleJson> =
+  S extends "Promise<void>"
+    ? Promise<void>
+    : S extends "Promise<number>"
+      ? Promise<number>
+      : S extends "Promise<bigint>"
+        ? Promise<bigint>
+        : S extends "Promise<boolean>"
+          ? Promise<boolean>
+          : S extends "Promise<string>"
+            ? Promise<string>
+             : S extends "Promise<Uint8Array>"
+               ? Promise<Uint8Array>
+               : S extends "Promise<number[]>"
+                 ? Promise<number[]>
+                 : S extends "Promise<bigint[]>"
+                   ? Promise<bigint[]>
+                   : S extends "Promise<boolean[]>"
+                     ? Promise<boolean[]>
+                     : S extends "Promise<string[]>"
+                       ? Promise<string[]>
+                         : S extends "Promise<Uint8Array[]>"
+                           ? Promise<Uint8Array[]>
+                           : S extends "Promise<string | null>"
+                             ? Promise<string | null>
+                             : S extends "Promise<Uint8Array | null>"
+                               ? Promise<Uint8Array | null>
+                               : S extends "Promise<number[] | null>"
+                                 ? Promise<number[] | null>
+                                 : S extends "Promise<bigint[] | null>"
+                                   ? Promise<bigint[] | null>
+                                   : S extends "Promise<boolean[] | null>"
+                                     ? Promise<boolean[] | null>
+                                     : S extends "Promise<string[] | null>"
+                                       ? Promise<string[] | null>
+                                       : S extends "Promise<Uint8Array[] | null>"
+                                         ? Promise<Uint8Array[] | null>
+                                         : S extends `Promise<${infer P} | null>`
+                                           ? P extends TsName
+                                             ? [NamedRecord<M, P>] extends [never]
+                                               ? [NamedEnum<M, P>] extends [never]
+                                                 ? S
+                                                 : NamedEnum<M, P> extends infer E
+                                                   ? E extends { variants: { name: string }[] }
+                                                     ? Promise<EnumUnion<E> | null>
+                                                     : S
+                                                   : S
+                                               : NamedRecord<M, P> extends infer Rec
+                                                 ? Rec extends { fields: { name: string; ts: TsName }[] }
+                                                   ? Promise<RecordShape<Rec, M> | null>
+                                                   : S
+                                                 : S
+                                             : S
+                                           : S extends `Promise<${infer P}>`
+                           ? P extends TsName
+                             ? [NamedRecord<M, P>] extends [never]
+                               ? [NamedEnum<M, P>] extends [never]
+                                 ? S
+                                 : NamedEnum<M, P> extends infer E
+                                   ? E extends { variants: { name: string }[] }
+                                     ? Promise<EnumUnion<E>>
+                                     : S
+                                   : S
+                               : NamedRecord<M, P> extends infer Rec
+                                 ? Rec extends { fields: { name: string; ts: TsName }[] }
+                                   ? Promise<RecordShape<Rec, M>>
+                                   : S
+                                 : S
+                             : S
+                           : S extends "string | null"
+                ? string | null
+                : S extends "Uint8Array | null"
+                  ? Uint8Array | null
+                  : S extends "number[]"
+                    ? number[]
+                    : S extends "bigint[]"
+                      ? bigint[]
+                      : S extends "boolean[]"
+                        ? boolean[]
+                  : S extends "string[]"
+                    ? string[]
+                    : S extends "Uint8Array[]"
+                      ? Uint8Array[]
+                      : S extends "number[] | null"
+                        ? number[] | null
+                        : S extends "bigint[] | null"
+                          ? bigint[] | null
+                          : S extends "boolean[] | null"
+                            ? boolean[] | null
+                            : S extends "string[] | null"
+                              ? string[] | null
+                              : S extends "Uint8Array[] | null"
+                                ? Uint8Array[] | null
+                                : S extends `${infer N} | null`
+                                  ? N extends TsName
+                                    ? [NamedRecord<M, N>] extends [never]
+                                      ? [NamedEnum<M, N>] extends [never]
+                                        ? S
+                                        : NamedEnum<M, N> extends infer E
+                                          ? E extends { variants: { name: string }[] }
+                                            ? EnumUnion<E> | null
+                                            : S
+                                          : S
+                                      : NamedRecord<M, N> extends infer Rec
+                                        ? Rec extends { fields: { name: string; ts: TsName }[] }
+                                          ? RecordShape<Rec, M> | null
+                                          : S
+                                        : S
+                                    : S
+                                  : S extends "AsyncIterableIterator<number>"
+                            ? AsyncIterableIterator<number>
+                            : S extends "AsyncIterableIterator<bigint>"
+                              ? AsyncIterableIterator<bigint>
+                              : S extends "AsyncIterableIterator<boolean>"
+                                ? AsyncIterableIterator<boolean>
+                                : S extends "AsyncIterableIterator<string>"
+                                  ? AsyncIterableIterator<string>
+                                  : S extends "AsyncIterableIterator<Uint8Array>"
+                                    ? AsyncIterableIterator<Uint8Array>
+                                    : S extends `AsyncIterableIterator<${infer N2} | Error>`
+                                      ? N2 extends TsName
+                                        ? AsyncIterableIterator<TsOf<N2, M> | Error>
+                                        : S
+                                      : S extends `AsyncIterableIterator<${infer N}>`
+                                        ? N extends TsName
+                                          ? AsyncIterableIterator<TsOf<N, M>>
+                                          : S
+                                        : S extends `${infer N}[]`
+                            ? N extends TsName
+                              ? TsOf<N, M>[]
+                              : S
+                            : [NamedRecord<M, S & string>] extends [never]
+                              ? [NamedEnum<M, S & string>] extends [never]
+                                ? S extends "void"
+                                  ? void
+                                  : S extends "number"
+                                    ? number
+                                    : S extends "bigint"
+                                      ? bigint
+                                      : S extends "boolean"
+                                        ? boolean
+                                        : S extends "string"
+                                          ? string
+                                          : S extends "Uint8Array"
+                                            ? Uint8Array
+                                            : S
+                                : NamedEnum<M, S & string> extends infer E
+                                  ? E extends { variants: { name: string }[] }
+                                    ? EnumUnion<E>
+                                    : S
+                                  : S
+                              : NamedRecord<M, S & string> extends infer Rec
+                                ? Rec extends { fields: { name: string; ts: TsName }[] }
+                                  ? RecordShape<Rec, M>
+                                  : S
+                                : S;
 
 /** Maps a params array onto a positional tuple type. */
-export type ParamsOf<J extends readonly { ts: TsName }[]> = {
-  [K in keyof J]: J[K] extends { ts: infer T } ? (T extends TsName ? TsOf<T> : never) : never;
+export type ParamsOf<J extends readonly { ts: TsName }[], M extends ModuleJson = ModuleJson> = {
+  [K in keyof J]: J[K] extends { ts: infer T } ? (T extends TsName ? TsOf<T, M> : never) : never;
 };
 
 /** The callable signature of one function/method descriptor. */
-export type FnOf<J extends FunctionJson> = (
-  ...args: ParamsOf<J["params"]>
-) => TsOf<J["ret"]["ts"]>;
+export type FnOf<J extends FunctionJson, M extends ModuleJson = ModuleJson> = (
+  ...args: ParamsOf<J["params"], M>
+) => TsOf<J["ret"]["ts"], M>;
 
 /** The typed API object for a module literal. */
 export type ApiOf<J extends ModuleJson> = {
-  [F in J["functions"][number] as F["name"]]: FnOf<F>;
+  [F in J["functions"][number] as F["name"]]: FnOf<F, J>;
 } & {
-  [C in J["classes"][number] as C["name"]]: ClassOf<C>;
+  [C in J["classes"][number] as C["name"]]: ClassOf<C, J>;
 };
 
 /** The typed class constructor + instance shape for one class. */
-export type ClassOf<C extends ModuleJson["classes"][number]> = {
+export type ClassOf<C extends ModuleJson["classes"][number], M extends ModuleJson = ModuleJson> = {
   new (
-    ...args: ParamsOf<C["constructor"]["params"]>
+    ...args: ParamsOf<C["constructor"]["params"], M>
   ): {
-    readonly [F in C["fields"][number] as F["name"]]: TsOf<F["ts"]>;
+    readonly [F in C["fields"][number] as F["name"]]: TsOf<F["ts"], M>;
   } & {
-    [M in C["methods"][number] as M["name"]]: FnOf<M>;
+    [Me in C["methods"][number] as Me["name"]]: FnOf<Me, M>;
   } & {
     /** Releases the native handle early (also runs on GC). */
     release(): void;
@@ -113,18 +272,18 @@ export function createApiFromLib<J extends ModuleJson>(json: J, lib: FfiLib): Ap
     }
     const out = outName === undefined ? undefined : allocOut(outName);
     const full = out === undefined ? args : [...args, out];
-    const status = symbol(...full);
+    const status = Number(symbol(...full));
     if (status !== ErrorCode.Ok) {
-      throw takeError() ?? new Error(`${exportName} failed: ${String(status)}`);
+      throw takeError(status) ?? new Error(`${exportName} failed: ${String(status)}`);
     }
     return readOut(outName, out);
   };
 
   const callFunction = (fn: FunctionJson): (...args: unknown[]) => unknown => {
     return (...jsArgs: unknown[]) => {
-      const args = encodeArgs(fn.params, jsArgs, fn.name);
+      const args = encodeArgs(fn.params, jsArgs, fn.name, json);
       const raw = call(fn.export, args, fn.out);
-      return decodeReturn(fn, raw, readBuffer, lib);
+      return decodeReturn(fn, raw, readBuffer, lib, json);
     };
   };
 
@@ -132,9 +291,9 @@ export function createApiFromLib<J extends ModuleJson>(json: J, lib: FfiLib): Ap
    * NOT counted in the descriptor's own parameter list. */
   const callMethod = (method: FunctionJson): ((handle: bigint, ...jsArgs: unknown[]) => unknown) => {
     return (handle, ...jsArgs) => {
-      const args = encodeArgs(method.params, jsArgs, method.name);
+      const args = encodeArgs(method.params, jsArgs, method.name, json);
       const raw = call(method.export, [handle, ...args], method.out);
-      return decodeReturn(method, raw, readBuffer, lib);
+      return decodeReturn(method, raw, readBuffer, lib, json);
     };
   };
 
@@ -152,19 +311,23 @@ export function createApiFromLib<J extends ModuleJson>(json: J, lib: FfiLib): Ap
  * Encodes JS arguments onto the ABI: booleans coerce to `0`/`1`
  * (dlopen `"u8"`), an empty `Uint8Array` passes a null data pointer
  * with `len == 0` (bun:ffi rejects empty TypedArrays as pointers),
- * strings travel as cstrings verbatim, everything else passes
- * through (numbers, bigints).
+ * strings travel as cstrings verbatim, composite (record/enum/array)
+ * parameters wire-encode into one `Uint8Array` crossing as a
+ * borrowed `(ptr, len)` pair, everything else passes through
+ * (numbers, bigints).
  */
 function encodeArgs(
-  params: readonly { name: string; abi: string }[],
+  params: readonly { name: string; ts: TsName; abi: string }[],
   jsArgs: readonly unknown[],
   fnName: string,
+  json: ModuleJson,
 ): unknown[] {
   if (jsArgs.length !== params.length) {
     throw new Error(
       `${fnName}: expected ${String(params.length)} argument(s), got ${String(jsArgs.length)}`,
     );
   }
+  const tables = tablesOf(json);
   const args: unknown[] = [];
   for (const [index, param] of params.entries()) {
     const value = jsArgs[index];
@@ -177,8 +340,17 @@ function encodeArgs(
         break;
       }
       case "ptr_len": {
+        if (isCompositeTs(param.ts, tables)) {
+          const wire = jsToWire(tables, param.ts, value, `${fnName}(${param.name})`);
+          const out: number[] = [];
+          encodeValue(out, wire);
+          const bytes = new Uint8Array(out);
+          args.push(bytes.length > 0 ? ptr(bytes) : null);
+          args.push(bytes.length);
+          break;
+        }
         if (!(value instanceof Uint8Array)) {
-          throw new TypeError(`${fnName}(${param.name}): expected Uint8Array`);
+          throw new TypeError(`${fnName}(${param.name}): expected ${String(param.ts)}`);
         }
         args.push(value.length > 0 ? ptr(value) : null);
         args.push(value.length);
@@ -262,6 +434,7 @@ function decodeReturn(
   raw: unknown,
   readBuffer: (handle: bigint) => Uint8Array,
   lib: FfiLib,
+  json: ModuleJson,
 ): unknown {
   if (fn.ret.abi === "void") {
     return undefined;
@@ -270,13 +443,35 @@ function decodeReturn(
     if (typeof raw !== "bigint") {
       throw new TypeError(`${fn.name}: expected a task handle, got ${typeof raw}`);
     }
-    return wrapTask(lib, raw);
+    return wrapTask(lib, raw, fn.ret.ts, json);
+  }
+  if (fn.ret.abi === "stream") {
+    if (typeof raw !== "bigint") {
+      throw new TypeError(`${fn.name}: expected a stream handle, got ${typeof raw}`);
+    }
+    const itemTs = streamItemTs(fn.ret.ts);
+    if (itemTs === null) {
+      throw new Error(
+        `${fn.name}: stream return type must be AsyncIterableIterator<T>, got ${fn.ret.ts}`,
+      );
+    }
+    return wrapStream(lib, raw, itemTs, json);
   }
   if (fn.ret.abi === "buffer") {
     if (typeof raw !== "bigint") {
       throw new TypeError(`${fn.name}: expected a buffer handle, got ${typeof raw}`);
     }
+    // A `0` handle is the documented null marker of the nullable
+    // (`| null`) return forms.
+    if (raw === 0n && fn.ret.ts.endsWith(" | null")) {
+      return null;
+    }
     const bytes = readBuffer(raw);
+    const tables = tablesOf(json);
+    if (isCompositeTs(fn.ret.ts, tables)) {
+      const ts = fn.ret.ts.endsWith(" | null") ? fn.ret.ts.slice(0, -" | null".length) : fn.ret.ts;
+      return wireToJs(tables, ts, decodeAt(bytes, 0).value, `${fn.name}()`);
+    }
     if (fn.ret.ts === "string") {
       return decoder.decode(bytes);
     }
@@ -308,19 +503,19 @@ function makeClass(
   callFunction: (fn: FunctionJson) => (...args: unknown[]) => unknown,
   callMethod: (method: FunctionJson) => (handle: bigint, ...jsArgs: unknown[]) => unknown,
   lib: FfiLib,
-  takeError: () => Error | null,
+  takeError: (status?: number) => Error | null,
 ): new (...args: unknown[]) => unknown {
   const ctor = callFunction(cls.constructor);
   // A GC finalizer may race an explicit `release()`; the duplicate
   // release is `InvalidHandle` (4) and must stay silent - every other
   // status is a real error.
   const release = (handle: bigint): void => {
-    const status = sym(lib, cls.release)(handle);
+    const status = Number(sym(lib, cls.release)(handle));
     if (status === ErrorCode.InvalidHandle) {
       return;
     }
     if (status !== ErrorCode.Ok) {
-      throw takeError() ?? new Error(`${cls.release} failed: ${String(status)}`);
+      throw takeError(status) ?? new Error(`${cls.release} failed: ${String(status)}`);
     }
   };
   const finalizers = new FinalizationRegistry((handle: bigint) => {
@@ -343,9 +538,9 @@ function makeClass(
     Object.defineProperty(Wrapper.prototype, field.name, {
       get(this: NativeInstance) {
         const out = allocOut(field.out);
-        const status = sym(lib, field.export)(this.handle, out);
+        const status = Number(sym(lib, field.export)(this.handle, out));
         if (status !== ErrorCode.Ok) {
-          throw takeError() ?? new Error(`${field.export} failed: ${String(status)}`);
+          throw takeError(status) ?? new Error(`${field.export} failed: ${String(status)}`);
         }
         return readOut(field.out, out);
       },

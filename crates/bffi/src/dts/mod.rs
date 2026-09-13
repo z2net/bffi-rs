@@ -49,7 +49,7 @@
 //!     },
 //! }];
 //!
-//! let module = ModuleDef { name: "math", fns: FNS, classes: &[] };
+//! let module = ModuleDef { name: "math", fns: FNS, classes: &[], records: &[], enums: &[], errors: &[] };
 //! let dts = bffi::dts::render(&module);
 //! assert!(dts.contains("/** Adds two numbers. */"));
 //! assert!(dts.contains("export function add(a: number, b: number): number;"));
@@ -64,7 +64,7 @@ pub mod render;
 
 pub use ident::sanitize;
 pub use ir::{
-    AbiOut, AbiPrim, AbiSig, AbiType, ClassDef, FieldDef, FunctionDef, MethodDef, ModuleDef,
-    ParamDef, TsType,
+    AbiOut, AbiPrim, AbiSig, AbiType, ClassDef, EnumDef, EnumVariantDef, ErrorDef, ErrorVariantDef,
+    FieldDef, FunctionDef, MethodDef, ModuleDef, ParamDef, RecordDef, RecordFieldDef, TsType,
 };
 pub use render::render;

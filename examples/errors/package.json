@@ -1,0 +1,14 @@
+{
+  "name": "bffi-example-errors",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Example bffi-rs native module: the B3 typed error surface (#[derive(BffiError)] codes, variant payloads, backtraces) consumed through the @z2net/bffi pipeline. Dependencies come from the package registries (npm: @z2net/bffi, crates.io: bffi).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@z2net/bffi": "^0.1.0"
+  }
+}

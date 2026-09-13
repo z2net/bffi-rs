@@ -215,13 +215,16 @@ When unsure about architecture, prefer asking (or opening a draft PR) instead of
 | Panic (dev)   | May abort                                    |
 | Compatibility | Bun only                                     |
 | License       | MIT                                          |
-| Facade        | `bffi`: flat re-exports of the stack; `unsafe_zero_copy` is the only zero-copy door; macro expansions stay on the user's direct deps |
-| Async         | `#[bffi_async]`: spawn shim returns a task handle; N-worker executor; cooperative cancel + timeout; resolve via event-loop enqueue; tokio opt-in; tags 0x0500-0x05FF |
+| Facade        | `bffi`: flat re-exports of the stack; `unsafe_zero_copy` is the only zero-copy door; macro expansions name `::bffi::{core,types,dts,object,build,r#async}` by default (`crate = "<name>"` redirects, `crate = "direct"` selects the pre-merge roots) |
+| Async         | `#[bffi_async]`: spawn shim returns a task handle; N-worker executor; cooperative cancel + timeout; resolve via event-loop enqueue; tokio opt-in; tags 0x0500-0x05FF; composite returns ride the wire channel (`Promise<Record>` / `Promise<Vec<T>>` via `AsyncValue::Wire`); `E: Into<BffiError>` contract |
+| Streams       | `#[bffi_stream]` (B2): pull (`impl Iterator<Item = T> + Send`) or push (`async fn(ctx: Ctx<T>, ...)`, bounded 256, backpressure) as a JS `AsyncIterableIterator<T>`; generic `bffi_stream_next(handle, max)` (TAG_SEQ buffer, 0 = done; 14 = Pending retry) + `bffi_stream_drop` + `bffi_stream_set_wake` (event-loop wake trampoline, best-effort); tag 0x0600; push producers deliver `Result` items (`ctx.push(Ok/Err)`) |
 | Object ownership | `ObjectWrap<T>` over global `Registry` (tag 0x0100-0x01FF); release frees the slot |
 | Callbacks | `register`/`revoke` + `bind_js_callback`; tags 0x0200-0x0201; wrong-thread reject |
 | Build ABI | Runtime exports (`bffi_error_*`, `bffi_buffer` pair, `bffi_types_free`) via `bffi_runtime_abi!()` in the user crate; tags 0x0400-0x04FF; canonical contract: bffi/CALLING-CONVENTION.md |
 | Descriptor ABI | `AbiSig` (exact C widths + out slot) on `FunctionDef`/`MethodDef`; getter `export_name` + out on `FieldDef`; `release_export` on `ClassDef` |
 | Wire codec | `bffi_types::wire`: one `[tag][payload]` table for async payloads and callback sigs/args/results |
+| Composites (B1+B4) | Records/enums/`Vec<T>` (incl. `Vec<Vec<u8>>`) sync + async; `Option<Record>`/`Option<Vec<T>>` returns = `| null` over the 0-handle empty-buffer convention; item/field matrix rejects deeper nesting |
+| Typed errors | `#[derive(BffiError)]`: user codes 0x1000-0xFFFF replace status 13; variant = JS `e.name`, fields = `e.payload` (TAG_RECORD); rich accessors best-effort; loader JSON `errors` table |
 | Callback ABI | Generic exports via `bffi_callback_abi!()` (`bffi_callback_set_thread`/`_bind`/`_invoke`/`_revoke`) in the user crate; wire-encoded; CALLING-CONVENTION.md §9 |
 | Loader JSON | `bffi_build::loader_json`: canonical deterministic schema v1 from the aggregated `ModuleDef` |
 | TS API codegen | `bun bffi codegen <json> -o <ts>`: deterministic renderer; embeds the schema literal; `ApiOf<>` derives exact types over `packages/bffi` |

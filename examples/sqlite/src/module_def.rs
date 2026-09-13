@@ -19,4 +19,7 @@ pub const MODULE: ModuleDef = ModuleDef {
     name: "sqlite",
     fns: FUNCTIONS,
     classes: &[],
+    records: &[],
+    enums: &[],
+    errors: &[],
 };

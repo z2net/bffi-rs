@@ -79,6 +79,44 @@ const api: Api = await bffi();       // one call: build -> json -> gen -> dlopen
 api.add(1, 2);                       // number, typed; errors throw JS Errors
 const counter = new api.counter(10); // classes: FinalizationRegistry + release()
 await api.compute(21);               // `#[bffi_async]` -> Promise
+const sample = await api.report(7n); // records: Promise<Report> / Sample / Sample[] | null
+```
+
+Composites cross the boundary as wire-encoded buffers, copy by
+default: `#[derive(BffiRecord)]` structs, `#[derive(BffiEnum)]`
+unit enums, `Vec<T>` sequences (including `Vec<Vec<u8>>`), and
+`Option<Record>` / `Option<Vec<T>>` returns rendering as
+`| null` (async: `Promise<Sample>`, `Promise<number[]>`).
+
+## Typed errors
+
+Domain errors derive `BffiError` with stable user codes in the
+reserved range `0x1000..=0xFFFF`; the code replaces the framework
+status in the ABI return and surfaces as `e.code` on the JS side,
+with `e.name` (the variant), `e.payload` (the variant fields) and
+`e.nativeStack` (a `RUST_BACKTRACE`-gated backtrace) alongside.
+
+```rust
+#[derive(BffiError, Debug)]
+pub enum UsersError {
+    #[bffi(code = 0x1001)]
+    NotFound { id: u64 },
+    #[bffi(code = 0x1002)]
+    InvalidAge { age: u32, min: u32 },
+}
+
+#[bffi]
+pub fn find_user(id: u64) -> Result<User, UsersError> { ... }
+```
+
+```ts
+try {
+  api.find_user(99n);
+} catch (e) {
+  e.code;    // 0x1001 (4097)
+  e.name;    // "NotFound"
+  e.payload; // [99n]
+}
 ```
 
 The pipeline, its config (`.bffi/bffi.json`) and every subtlety are
@@ -86,9 +124,21 @@ documented in
 [`packages/bffi`](https://github.com/z2net/bffi-rs/blob/main/packages/bffi);
 a full worked example lives in
 [`examples/sqlite`](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite).
-Async, event-loop and callbacks each have a dedicated example
-(`examples/async`, `examples/event-loop`, `examples/callbacks`), and
-every example doubles as an e2e suite (`bun test examples`).
+
+## Examples
+
+Every example is a working native module and an e2e suite
+(`bun test examples` runs them all):
+
+| Example | Demonstrates |
+| ------- | ------------ |
+| [`examples/sqlite`](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite) | the full pipeline over rusqlite - the entry example |
+| [`examples/records`](https://github.com/z2net/bffi-rs/blob/main/examples/records) | B1/B4 composites: records, enums, `Vec<T>`, `Vec<Vec<u8>>`, `Option<Sample>` |
+| [`examples/streams`](https://github.com/z2net/bffi-rs/blob/main/examples/streams) | B2 streams: pull and push producers, backpressure, `Result` items, wake-driven delivery |
+| [`examples/errors`](https://github.com/z2net/bffi-rs/blob/main/examples/errors) | B3 typed errors: `#[derive(BffiError)]`, user codes, `e.name`/`e.payload` |
+| [`examples/async`](https://github.com/z2net/bffi-rs/blob/main/examples/async) | `#[bffi_async]`: Promises, cancellation, timeouts, composite and `Option` results |
+| [`examples/event-loop`](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop) | the event loop: enqueue/marshal/pump/run/stop |
+| [`examples/callbacks`](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks) | both callback directions, the thread gate, marshal delivery |
 
 ## Conventions
 

@@ -21,8 +21,15 @@
 //! - `"bffi": 1` - the schema version; the codegen rejects unknown
 //!   versions.
 //! - `"module"` - the [`ModuleDef::name`].
-//! - `"functions"` / `"classes"` - the descriptors, in declaration
-//!   order.
+//! - `"functions"` / `"classes"` / `"records"` / `"enums"` - the
+//!   descriptors, in declaration order. The `records`/`enums` tables
+//!   are the B1 composite types: a record entry is
+//!   `{ name, docs, fields: [{ name, docs, ts }] }` (fields have no
+//!   ABI of their own - the whole value crosses as one wire payload),
+//!   an enum entry is `{ name, docs, variants: [{ name, docs }] }`.
+//!   Their `ts` names (and the array forms `Name[]`) are referenced
+//!   by the function `ts` strings. Both arrays are always present
+//!   (empty when unused) so the shape stays fixed.
 //!
 //! Every function and method entry records the JS view (`params` with
 //! `ts` types, `ret.ts`) AND the exact C ABI view: one `abi` name per
@@ -89,6 +96,36 @@ pub fn to_json(module: &ModuleDef) -> String {
         push_class(class, &mut out, index == module.classes.len() - 1);
     }
     if !module.classes.is_empty() {
+        push_indent(&mut out, 1);
+    }
+    out.push_str("],\n  \"records\": [");
+    for (index, record) in module.records.iter().enumerate() {
+        if index == 0 {
+            out.push('\n');
+        }
+        push_record(record, &mut out, index == module.records.len() - 1);
+    }
+    if !module.records.is_empty() {
+        push_indent(&mut out, 1);
+    }
+    out.push_str("],\n  \"enums\": [");
+    for (index, enumeration) in module.enums.iter().enumerate() {
+        if index == 0 {
+            out.push('\n');
+        }
+        push_enum(enumeration, &mut out, index == module.enums.len() - 1);
+    }
+    if !module.enums.is_empty() {
+        push_indent(&mut out, 1);
+    }
+    out.push_str("],\n  \"errors\": [");
+    for (index, error) in module.errors.iter().enumerate() {
+        if index == 0 {
+            out.push('\n');
+        }
+        push_error(error, &mut out, index == module.errors.len() - 1);
+    }
+    if !module.errors.is_empty() {
         push_indent(&mut out, 1);
     }
     out.push_str("]\n}\n");
@@ -196,7 +233,7 @@ fn push_field(field: &FieldDef, out: &mut String, last: bool) {
     out.push_str(",\n");
     push_docs(out, 5, field.docs);
     out.push_str(",\n");
-    push_key_string(out, 5, "ts", field.ty.as_str());
+    push_key_string(out, 5, "ts", &field.ty.as_str());
     out.push_str(",\n");
     push_key_string(out, 5, "out", field.out.as_str());
     out.push('\n');
@@ -250,7 +287,7 @@ fn push_params(out: &mut String, depth: usize, params: &[ParamDef], abi: &AbiSig
         out.push_str("{\n");
         push_key_string(out, depth + 2, "name", param.name);
         out.push_str(",\n");
-        push_key_string(out, depth + 2, "ts", param.ty.as_str());
+        push_key_string(out, depth + 2, "ts", &param.ty.as_str());
         out.push_str(",\n");
         push_key_string(out, depth + 2, "abi", abi.params[index].as_str());
         out.push('\n');
@@ -272,7 +309,7 @@ fn push_params(out: &mut String, depth: usize, params: &[ParamDef], abi: &AbiSig
 fn push_ret(out: &mut String, depth: usize, ret: TsType, abi: &AbiSig) {
     push_indent(out, depth);
     out.push_str("\"ret\": {\n");
-    push_key_string(out, depth + 1, "ts", ret.as_str());
+    push_key_string(out, depth + 1, "ts", &ret.as_str());
     out.push_str(",\n");
     push_key_string(out, depth + 1, "abi", ret_abi_str(ret, abi));
     out.push('\n');
@@ -286,6 +323,158 @@ fn push_out(out: &mut String, depth: usize, abi: &AbiSig) {
         out.push_str(",\n");
         push_key_string(out, depth, "out", slot.as_str());
     }
+}
+
+/// One record entry: name, docs, fields (`name`/`docs`/`ts` each -
+/// a record field has no ABI of its own, the whole value travels as
+/// one wire payload).
+fn push_record(record: &bffi_dts::RecordDef, out: &mut String, last: bool) {
+    push_indent(out, 2);
+    out.push_str("{\n");
+    push_key_string(out, 3, "name", record.js_name);
+    out.push_str(",\n");
+    push_docs(out, 3, record.docs);
+    out.push_str(",\n");
+    push_indent(out, 3);
+    out.push_str("\"fields\": [");
+    for (index, field) in record.fields.iter().enumerate() {
+        if index == 0 {
+            out.push('\n');
+        }
+        push_indent(out, 4);
+        out.push_str("{\n");
+        push_key_string(out, 5, "name", field.name);
+        out.push_str(",\n");
+        push_docs(out, 5, field.docs);
+        out.push_str(",\n");
+        push_key_string(out, 5, "ts", &field.ty.as_str());
+        out.push('\n');
+        push_indent(out, 4);
+        out.push('}');
+        if index != record.fields.len() - 1 {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    if !record.fields.is_empty() {
+        push_indent(out, 3);
+    }
+    out.push_str("]\n");
+    push_indent(out, 2);
+    out.push('}');
+    if !last {
+        out.push(',');
+    }
+    out.push('\n');
+}
+
+/// One enum entry: name, docs, variants (`name`/`docs` each).
+fn push_enum(enumeration: &bffi_dts::EnumDef, out: &mut String, last: bool) {
+    push_indent(out, 2);
+    out.push_str("{\n");
+    push_key_string(out, 3, "name", enumeration.js_name);
+    out.push_str(",\n");
+    push_docs(out, 3, enumeration.docs);
+    out.push_str(",\n");
+    push_indent(out, 3);
+    out.push_str("\"variants\": [");
+    for (index, variant) in enumeration.variants.iter().enumerate() {
+        if index == 0 {
+            out.push('\n');
+        }
+        push_indent(out, 4);
+        out.push_str("{\n");
+        push_key_string(out, 5, "name", variant.name);
+        out.push_str(",\n");
+        push_docs(out, 5, variant.docs);
+        out.push('\n');
+        push_indent(out, 4);
+        out.push('}');
+        if index != enumeration.variants.len() - 1 {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    if !enumeration.variants.is_empty() {
+        push_indent(out, 3);
+    }
+    out.push_str("]\n");
+    push_indent(out, 2);
+    out.push('}');
+    if !last {
+        out.push(',');
+    }
+    out.push('\n');
+}
+
+/// One error-enum entry, indented at depth 2 inside the `errors`
+/// array: `name`, `docs` and the `variants` table (name, docs, the
+/// hex `code` and the payload `fields` in declaration order).
+fn push_error(error: &bffi_dts::ErrorDef, out: &mut String, last: bool) {
+    push_indent(out, 2);
+    out.push_str("{\n");
+    push_key_string(out, 3, "name", error.js_name);
+    out.push_str(",\n");
+    push_docs(out, 3, error.docs);
+    out.push_str(",\n");
+    push_indent(out, 3);
+    out.push_str("\"variants\": [");
+    for (index, variant) in error.variants.iter().enumerate() {
+        if index == 0 {
+            out.push('\n');
+        }
+        push_indent(out, 4);
+        out.push_str("{\n");
+        push_key_string(out, 5, "name", variant.name);
+        out.push_str(",\n");
+        push_docs(out, 5, variant.docs);
+        out.push_str(",\n");
+        push_indent(out, 5);
+        out.push_str("\"code\": \"0x");
+        out.push_str(&format!("{:04X}", variant.code));
+        out.push_str("\",\n");
+        push_indent(out, 5);
+        out.push_str("\"fields\": [");
+        for (index, field) in variant.fields.iter().enumerate() {
+            if index == 0 {
+                out.push('\n');
+            }
+            push_indent(out, 6);
+            out.push_str("{\n");
+            push_key_string(out, 7, "name", field.name);
+            out.push_str(",\n");
+            push_docs(out, 7, field.docs);
+            out.push_str(",\n");
+            push_key_string(out, 7, "ts", &field.ty.as_str());
+            out.push('\n');
+            push_indent(out, 6);
+            out.push('}');
+            if index != variant.fields.len() - 1 {
+                out.push(',');
+            }
+            out.push('\n');
+        }
+        if !variant.fields.is_empty() {
+            push_indent(out, 5);
+        }
+        out.push_str("]\n");
+        push_indent(out, 4);
+        out.push('}');
+        if index != error.variants.len() - 1 {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    if !error.variants.is_empty() {
+        push_indent(out, 3);
+    }
+    out.push_str("]\n");
+    push_indent(out, 2);
+    out.push('}');
+    if !last {
+        out.push(',');
+    }
+    out.push('\n');
 }
 
 /// The docs array; rendered even when empty (fixed key order).
@@ -369,7 +558,35 @@ fn ret_abi_str(ret: TsType, abi: &AbiSig) -> &'static str {
             | TsType::PromiseBigInt
             | TsType::PromiseBoolean
             | TsType::PromiseString
-            | TsType::PromiseUint8Array => "task",
+            | TsType::PromiseUint8Array
+            | TsType::PromiseRecord(_)
+            | TsType::PromiseNumberArray
+            | TsType::PromiseBigIntArray
+            | TsType::PromiseBooleanArray
+            | TsType::PromiseStringArray
+            | TsType::PromiseUint8ArrayArray
+            | TsType::PromiseRecordArray(_)
+            | TsType::PromiseNullableString
+            | TsType::PromiseNullableUint8Array
+            | TsType::PromiseNullableRecord(_)
+            | TsType::PromiseNullableNumberArray
+            | TsType::PromiseNullableBigIntArray
+            | TsType::PromiseNullableBooleanArray
+            | TsType::PromiseNullableStringArray
+            | TsType::PromiseNullableUint8ArrayArray
+            | TsType::PromiseNullableRecordArray(_) => "task",
+            TsType::StreamNumber
+            | TsType::StreamBigInt
+            | TsType::StreamBoolean
+            | TsType::StreamString
+            | TsType::StreamUint8Array
+            | TsType::StreamRecord(_)
+            | TsType::StreamResultNumber
+            | TsType::StreamResultBigInt
+            | TsType::StreamResultBoolean
+            | TsType::StreamResultString
+            | TsType::StreamResultUint8Array
+            | TsType::StreamResultRecord(_) => "stream",
             TsType::BigInt => "handle",
             _ => "buffer",
         },
@@ -392,10 +609,13 @@ mod tests {
             name: "probe",
             fns: &[],
             classes: &[],
+            records: &[],
+            enums: &[],
+            errors: &[],
         };
         assert_eq!(
             to_json(&module),
-            "{\n  \"bffi\": 1,\n  \"module\": \"probe\",\n  \"functions\": [],\n  \"classes\": []\n}\n"
+            "{\n  \"bffi\": 1,\n  \"module\": \"probe\",\n  \"functions\": [],\n  \"classes\": [],\n  \"records\": [],\n  \"enums\": [],\n  \"errors\": []\n}\n"
         );
     }
 
@@ -406,6 +626,9 @@ mod tests {
             name: "esc\"ape",
             fns: &[],
             classes: &[],
+            records: &[],
+            enums: &[],
+            errors: &[],
         };
         // Reuse the emitter through a docs-shaped key: the module name
         // travels through the same escaper.

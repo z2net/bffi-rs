@@ -17,4 +17,7 @@ pub const MODULE: ModuleDef = ModuleDef {
     name: "native",
     fns: FUNCTIONS,
     classes: &[],
+    records: &[],
+    enums: &[],
+    errors: &[],
 };

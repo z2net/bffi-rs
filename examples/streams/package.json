@@ -1,0 +1,14 @@
+{
+  "name": "bffi-example-streams",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Example bffi-rs native module: the B2 stream surface (pull-chunk iterators as JS async iterators) consumed through the @z2net/bffi pipeline. Dependencies come from the package registries (npm: @z2net/bffi, crates.io: bffi).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@z2net/bffi": "^0.1.0"
+  }
+}

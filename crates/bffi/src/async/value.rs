@@ -32,6 +32,11 @@ pub enum AsyncValue {
     Str(String),
     /// Raw bytes (copied into the payload).
     Bytes(CopiedBuf),
+    /// A pre-encoded wire record (a named composite or a sequence):
+    /// the bytes already carry their leading tag (`TAG_RECORD` /
+    /// `TAG_SEQ`), so the payload is byte-identical to the value
+    /// channel the sync shims produce.
+    Wire(Vec<u8>),
 }
 
 impl AsyncValue {
@@ -70,6 +75,9 @@ impl AsyncValue {
                 wire::push_u32_le(&mut out, bytes.as_slice().len() as u32);
                 out.extend_from_slice(bytes.as_slice());
             }
+            // The bytes are already a complete `[tag][payload]`
+            // record - append verbatim.
+            Self::Wire(bytes) => out.extend_from_slice(bytes.as_slice()),
         }
         out
     }

@@ -1,12 +1,12 @@
 [package]
 name = "bffi-example-callbacks"
 description = "Example bffi-rs native module: the callback surface (JS->Rust lifecycle, Rust->JS ownership, wrong-thread + marshal delivery), doubling as the e2e test of the .bffi pipeline."
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
-authors.workspace = true
-rust-version.workspace = true
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/z2net/bffi-rs"
+rust-version = "1.98.0"
+publish = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -17,8 +17,5 @@ crate-type = ["cdylib", "rlib"]
 name = "emit-json"
 path = "src/bin/emit_json.rs"
 
-[lints]
-workspace = true
-
 [dependencies]
-bffi = { path = "../../crates/bffi" }
+bffi = "0.1.2"

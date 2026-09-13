@@ -2,7 +2,13 @@
   "name": "bffi-example-event-loop",
   "version": "0.1.0",
   "private": true,
-  "description": "Example bffi-rs native module: the event-loop surface (enqueue/pump drain, marshal, blocking run on a worker thread, sticky stop) consumed through the @z2net/bffi pipeline. @z2net/bffi resolves via the root tsconfig paths inside this monorepo; in a standalone project use `bun add @z2net/bffi`.",
+  "description": "Example bffi-rs native module: the event-loop surface (queue/drains/marshal/sticky stop) consumed through the @z2net/bffi pipeline. Dependencies come from the package registries (npm: @z2net/bffi, crates.io: bffi).",
   "license": "MIT",
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@z2net/bffi": "^0.1.0"
+  }
 }

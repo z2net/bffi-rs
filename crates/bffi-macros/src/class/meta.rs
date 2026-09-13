@@ -73,8 +73,10 @@ pub(crate) fn impl_meta(model: &ImplModel) -> TokenStream {
         let ty = mapping::ts_type(&param.kind).tokens(&model.paths);
         quote! { #dts::ParamDef { name: #name, ty: #ty } }
     });
-    let ctor_abi =
-        mapping::abi::abi_sig_task(ctor.params.iter().map(|param| param.kind), &model.paths);
+    let ctor_abi = mapping::abi::abi_sig_task(
+        ctor.params.iter().map(|param| param.kind.clone()),
+        &model.paths,
+    );
     let methods = model.methods.iter().map(|method| {
         let name = method.ident.to_string();
         let export = format!("bffi_{}_{}", model.js_name, method.ident);
@@ -85,7 +87,7 @@ pub(crate) fn impl_meta(model: &ImplModel) -> TokenStream {
         });
         let ret = mapping::ts_return(&method.ret).tokens(&model.paths);
         let abi = mapping::abi::abi_sig(
-            method.params.iter().map(|param| param.kind),
+            method.params.iter().map(|param| param.kind.clone()),
             &method.ret,
             &model.paths,
         );

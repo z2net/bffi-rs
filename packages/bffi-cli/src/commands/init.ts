@@ -78,8 +78,7 @@ name = "${emitJsonName}"
 path = "src/bin/emit_json.rs"
 
 [dependencies]
-bffi = "0.1.0"
-bffi-macros = "0.1.0"
+bffi = "0.1.2"
 `;
   await Bun.write(joinOut(crateRoot, "Cargo.toml"), cargoToml);
 
@@ -89,7 +88,7 @@ bffi-macros = "0.1.0"
 
 pub mod module_def;
 
-bffi_build::bffi_runtime_abi!();
+bffi::bffi_runtime_abi!();
 
 /// Sample export: replace with your surface.
 #[bffi::bffi]
@@ -99,7 +98,7 @@ pub fn hello() -> String {
 `;
   await Bun.write(joinOut(crateRoot, "src", "lib.rs"), libRs);
 
-  const moduleDef = `use bffi_dts::{FunctionDef, ModuleDef};
+  const moduleDef = `use bffi::{FunctionDef, ModuleDef};
 
 pub const FUNCTIONS: &[FunctionDef] = &[crate::bffi_meta_hello::FUNCTION];
 
@@ -107,13 +106,17 @@ pub const MODULE: ModuleDef = ModuleDef {
     name: "${moduleNameOf(crateName)}",
     fns: FUNCTIONS,
     classes: &[],
+    records: &[],
+    enums: &[],
+    errors: &[],
 };
 `;
   await Bun.write(joinOut(crateRoot, "src", "module_def.rs"), moduleDef);
 
   const emitJson = `fn main() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".bffi/bffi.api.json");
-    if let Err(error) = bffi_build::loader_json::write_to_file(&${libIdent}::module_def::MODULE, &path)
+    if let Err(error) =
+        bffi::build::loader_json::write_to_file(&${libIdent}::module_def::MODULE, &path)
     {
         eprintln!("emit-json: {error}");
         std::process::exit(1);

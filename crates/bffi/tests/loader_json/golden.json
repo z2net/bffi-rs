@@ -159,6 +159,47 @@
         "abi": "task"
       },
       "out": "handle"
+    },
+    {
+      "name": "recenter",
+      "export": "bffi_recenter",
+      "docs": [
+        "Recenters a sample."
+      ],
+      "params": [
+        {
+          "name": "sample",
+          "ts": "Sample",
+          "abi": "ptr_len"
+        },
+        {
+          "name": "dx",
+          "ts": "number",
+          "abi": "f64"
+        }
+      ],
+      "ret": {
+        "ts": "Sample",
+        "abi": "buffer"
+      },
+      "out": "handle"
+    },
+    {
+      "name": "distances",
+      "export": "bffi_distances",
+      "docs": [],
+      "params": [
+        {
+          "name": "samples",
+          "ts": "Sample[]",
+          "abi": "ptr_len"
+        }
+      ],
+      "ret": {
+        "ts": "number[]",
+        "abi": "buffer"
+      },
+      "out": "handle"
     }
   ],
   "classes": [
@@ -214,5 +255,49 @@
         }
       ]
     }
-  ]
+  ],
+  "records": [
+    {
+      "name": "Sample",
+      "docs": [
+        "A sample point."
+      ],
+      "fields": [
+        {
+          "name": "at",
+          "docs": [
+            "The position."
+          ],
+          "ts": "number"
+        },
+        {
+          "name": "label",
+          "docs": [],
+          "ts": "string"
+        },
+        {
+          "name": "axis",
+          "docs": [],
+          "ts": "Axis"
+        }
+      ]
+    }
+  ],
+  "enums": [
+    {
+      "name": "Axis",
+      "docs": [],
+      "variants": [
+        {
+          "name": "Horizontal",
+          "docs": []
+        },
+        {
+          "name": "Vertical",
+          "docs": []
+        }
+      ]
+    }
+  ],
+  "errors": []
 }

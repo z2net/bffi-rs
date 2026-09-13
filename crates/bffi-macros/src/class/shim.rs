@@ -35,12 +35,12 @@ pub(crate) fn wrap_ident(js_name: &str) -> proc_macro2::Ident {
 /// the other's generated items; diverges with `return`, so it fits
 /// both value positions and nested matches.
 fn error_arm(ctx: &PathCtx) -> TokenStream {
-    let core = &ctx.core;
+    let _ = ctx;
     quote! {
         {
-            let converted: #core::BffiError = error.into();
-            let code = converted.code;
-            #core::set_last_error(converted);
+            let converted: ::bffi::BffiError = ::std::convert::Into::into(error);
+            let code = converted.status_u32();
+            ::bffi::set_last_error(converted);
             return code;
         }
     }
@@ -105,7 +105,7 @@ fn release_body(ctx: &PathCtx, wrap_fn: &proc_macro2::Ident) -> TokenStream {
         match #wrap_fn() {
             ::std::result::Result::Ok(wrap) => {
                 match wrap.release(#core::Handle::from_raw(handle)) {
-                    ::std::result::Result::Ok(_arc) => #core::ErrorCode::Ok,
+                    ::std::result::Result::Ok(_arc) => #core::ErrorCode::Ok.as_u32(),
                     ::std::result::Result::Err(error) => #error_arm,
                 }
             }
@@ -136,7 +136,7 @@ fn field_getter(model: &ClassModel, field: &crate::class::model::FieldModel) -> 
                 "output pointer is null",
             );
             #core::set_last_error(error);
-            return #core::ErrorCode::NullPointer;
+            return #core::ErrorCode::NullPointer.as_u32();
         }
         let __arc = match #wrap_fn() {
             ::std::result::Result::Ok(wrap) => {
@@ -150,7 +150,7 @@ fn field_getter(model: &ClassModel, field: &crate::class::model::FieldModel) -> 
         // SAFETY: `__ret` is non-null (checked above) and valid for one
         // write per the bun:ffi out-parameter contract.
         unsafe { ::std::ptr::write(__ret, __arc.#field_ident); }
-        #core::ErrorCode::Ok
+        #core::ErrorCode::Ok.as_u32()
     };
     shim_pair(
         &model.paths,
@@ -195,11 +195,11 @@ fn constructor_shim(model: &ImplModel) -> TokenStream {
         .params
         .iter()
         .enumerate()
-        .map(|(index, param)| shim_param(&param.name, param.kind, index))
+        .map(|(index, param)| shim_param(&param.name, param.kind.clone(), index))
         .collect();
     let args = ctor.params.iter().enumerate().map(|(index, param)| {
         let name = param_ident(&param.name, index);
-        match param.kind {
+        match &param.kind {
             ShimKind::Str => {
                 let view = format_ident!("{name}_view");
                 quote! { &#view }
@@ -210,13 +210,14 @@ fn constructor_shim(model: &ImplModel) -> TokenStream {
                 quote! { &#view }
             }
             ShimKind::Prim(_) | ShimKind::BigInt(_) => quote! { #name },
+            ShimKind::Record(_) | ShimKind::Seq(_) => quote! { #name },
         }
     });
     let conversion = param_conversions(
         &model.paths,
         ctor.params
             .iter()
-            .map(|param| (param.name.as_str(), param.kind)),
+            .map(|param| (param.name.as_str(), param.kind.clone())),
     );
     let body = quote! {
         if __ret.is_null() {
@@ -225,7 +226,7 @@ fn constructor_shim(model: &ImplModel) -> TokenStream {
                 "output pointer is null",
             );
             #core::set_last_error(error);
-            return #core::ErrorCode::NullPointer;
+            return #core::ErrorCode::NullPointer.as_u32();
         }
         #conversion
         let __value = #type_ident::#ctor_ident(#(#args,)*);
@@ -236,7 +237,7 @@ fn constructor_shim(model: &ImplModel) -> TokenStream {
                         // SAFETY: `__ret` is non-null (checked above) and valid
                         // for one `u64` write per the bun:ffi out-parameter contract.
                         unsafe { ::std::ptr::write(__ret, handle.as_u64()); }
-                        #core::ErrorCode::Ok
+                        #core::ErrorCode::Ok.as_u32()
                     }
                     ::std::result::Result::Err(error) => #error_arm,
                 }
@@ -269,12 +270,12 @@ fn method_shim(model: &ImplModel, method: &MethodModel) -> TokenStream {
         .params
         .iter()
         .enumerate()
-        .map(|(index, param)| shim_param(&param.name, param.kind, index))
+        .map(|(index, param)| shim_param(&param.name, param.kind.clone(), index))
         .collect();
     let out = out_param(&method.ret);
     let args = method.params.iter().enumerate().map(|(index, param)| {
         let name = param_ident(&param.name, index);
-        match param.kind {
+        match &param.kind {
             ShimKind::Str => {
                 let view = format_ident!("{name}_view");
                 quote! { &#view }
@@ -285,6 +286,7 @@ fn method_shim(model: &ImplModel, method: &MethodModel) -> TokenStream {
                 quote! { &#view }
             }
             ShimKind::Prim(_) | ShimKind::BigInt(_) => quote! { #name },
+            ShimKind::Record(_) | ShimKind::Seq(_) => quote! { #name },
         }
     });
     let conversion = param_conversions(
@@ -292,7 +294,7 @@ fn method_shim(model: &ImplModel, method: &MethodModel) -> TokenStream {
         method
             .params
             .iter()
-            .map(|param| (param.name.as_str(), param.kind)),
+            .map(|param| (param.name.as_str(), param.kind.clone())),
     );
     let call = quote! { #type_ident::#method_ident(&__arc, #(#args,)*) };
     let transport = ret_body(&model.paths, &method.ret, call);
@@ -332,7 +334,7 @@ fn shim_pair(
         #[unsafe(no_mangle)]
         #[doc = #doc]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
-        pub extern "C" fn #ident(#params) -> #core::ErrorCode {
+        pub extern "C" fn #ident(#params) -> u32 {
             #body
         }
     };
@@ -341,8 +343,8 @@ fn shim_pair(
         #[unsafe(no_mangle)]
         #[doc = #doc]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
-        pub extern "C" fn #ident(#params) -> #core::ErrorCode {
-            #core::boundary::run_extern_body(move || { #body })
+        pub extern "C" fn #ident(#params) -> u32 {
+            #core::boundary::run_extern_body_u32(move || { #body })
         }
     };
     quote! { #debug_shim #release_shim }

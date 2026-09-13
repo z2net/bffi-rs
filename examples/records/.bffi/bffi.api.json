@@ -1,0 +1,243 @@
+{
+  "bffi": 1,
+  "module": "records",
+  "functions": [
+    {
+      "name": "make_sample",
+      "export": "bffi_make_sample",
+      "docs": [
+        "Builds a sample from primitives."
+      ],
+      "params": [
+        {
+          "name": "at",
+          "ts": "number",
+          "abi": "f64"
+        },
+        {
+          "name": "weight",
+          "ts": "number",
+          "abi": "i32"
+        },
+        {
+          "name": "label",
+          "ts": "string",
+          "abi": "cstring"
+        },
+        {
+          "name": "axis",
+          "ts": "Axis",
+          "abi": "ptr_len"
+        }
+      ],
+      "ret": {
+        "ts": "Sample",
+        "abi": "buffer"
+      },
+      "out": "handle"
+    },
+    {
+      "name": "recenter",
+      "export": "bffi_recenter",
+      "docs": [
+        "Shifts a sample along its axis (record in, record out)."
+      ],
+      "params": [
+        {
+          "name": "sample",
+          "ts": "Sample",
+          "abi": "ptr_len"
+        },
+        {
+          "name": "dx",
+          "ts": "number",
+          "abi": "f64"
+        }
+      ],
+      "ret": {
+        "ts": "Sample",
+        "abi": "buffer"
+      },
+      "out": "handle"
+    },
+    {
+      "name": "total_weight",
+      "export": "bffi_total_weight",
+      "docs": [
+        "Sums the weights of a sample sequence."
+      ],
+      "params": [
+        {
+          "name": "samples",
+          "ts": "Sample[]",
+          "abi": "ptr_len"
+        }
+      ],
+      "ret": {
+        "ts": "bigint",
+        "abi": "i64"
+      },
+      "out": "i64"
+    },
+    {
+      "name": "distances",
+      "export": "bffi_distances",
+      "docs": [
+        "The absolute positions of a sample sequence."
+      ],
+      "params": [
+        {
+          "name": "samples",
+          "ts": "Sample[]",
+          "abi": "ptr_len"
+        }
+      ],
+      "ret": {
+        "ts": "number[]",
+        "abi": "buffer"
+      },
+      "out": "handle"
+    },
+    {
+      "name": "labels",
+      "export": "bffi_labels",
+      "docs": [
+        "The station labels of a sample sequence."
+      ],
+      "params": [
+        {
+          "name": "samples",
+          "ts": "Sample[]",
+          "abi": "ptr_len"
+        }
+      ],
+      "ret": {
+        "ts": "string[]",
+        "abi": "buffer"
+      },
+      "out": "handle"
+    },
+    {
+      "name": "label_bytes",
+      "export": "bffi_label_bytes",
+      "docs": [
+        "The UTF-8 bytes of each label: the nested byte-vector sequence",
+        "(`Vec<Vec<u8>>`) round trip."
+      ],
+      "params": [
+        {
+          "name": "samples",
+          "ts": "Sample[]",
+          "abi": "ptr_len"
+        }
+      ],
+      "ret": {
+        "ts": "Uint8Array[]",
+        "abi": "buffer"
+      },
+      "out": "handle"
+    },
+    {
+      "name": "heaviest",
+      "export": "bffi_heaviest",
+      "docs": [
+        "The heaviest sample, or `None` on an empty sequence (`Option`",
+        "of a named composite: `Sample | null` on the JS side)."
+      ],
+      "params": [
+        {
+          "name": "samples",
+          "ts": "Sample[]",
+          "abi": "ptr_len"
+        }
+      ],
+      "ret": {
+        "ts": "Sample | null",
+        "abi": "buffer"
+      },
+      "out": "handle"
+    },
+    {
+      "name": "classify",
+      "export": "bffi_classify",
+      "docs": [
+        "The axis of the first sample; an empty sequence is a domain",
+        "error."
+      ],
+      "params": [
+        {
+          "name": "samples",
+          "ts": "Sample[]",
+          "abi": "ptr_len"
+        }
+      ],
+      "ret": {
+        "ts": "Axis",
+        "abi": "buffer"
+      },
+      "out": "handle"
+    }
+  ],
+  "classes": [],
+  "records": [
+    {
+      "name": "Sample",
+      "docs": [
+        "One measurement sample."
+      ],
+      "fields": [
+        {
+          "name": "at",
+          "docs": [
+            "Where it was taken."
+          ],
+          "ts": "number"
+        },
+        {
+          "name": "weight",
+          "docs": [
+            "How heavy the reading was."
+          ],
+          "ts": "number"
+        },
+        {
+          "name": "label",
+          "docs": [
+            "The station label."
+          ],
+          "ts": "string"
+        },
+        {
+          "name": "axis",
+          "docs": [
+            "The axis it was taken along."
+          ],
+          "ts": "Axis"
+        }
+      ]
+    }
+  ],
+  "enums": [
+    {
+      "name": "Axis",
+      "docs": [
+        "The measurement axis."
+      ],
+      "variants": [
+        {
+          "name": "Horizontal",
+          "docs": [
+            "Along the X axis."
+          ]
+        },
+        {
+          "name": "Vertical",
+          "docs": [
+            "Along the Y axis."
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

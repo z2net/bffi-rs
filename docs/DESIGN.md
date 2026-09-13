@@ -21,7 +21,7 @@ A native module is written in Rust, compiled to a `cdylib`, and consumed from Ty
 - **Safety at the FFI boundary** - the boundary is where Rust's guarantees end; the framework puts explicit rules in its place.
 - **Clear ownership** - every value crossing the boundary has one side responsible for it, expressed in the types.
 - **Developer experience** - annotate, build, import typed functions; errors are diagnostics, not mysteries.
-- **Long-term maintainability** - small crates, built bottom-up; deterministic artifacts that can be committed and diffed.
+- **Long-term maintainability** - small modules, built bottom-up; deterministic artifacts that can be committed and diffed.
 - **Bun-first** - no compromises for other runtimes.
 
 ## 3. Architecture overview
@@ -30,14 +30,14 @@ Three planes, connected by one contract:
 
 ```mermaid
 flowchart LR
-    R["Rust stack<br/>(14 small crates, facade on top)"]
+    R["Rust stack<br/>(one crate: feature-gated modules, facade on top)"]
     A["thin C ABI<br/>(uniform shape: status + out-param)"]
     J["JS integration<br/>(pipeline, loader, CLI)"]
 
     R --> A --> J
 ```
 
-**Rust side, bottom-up.** `bffi-core` is the foundation: generational handles, the object registry, and the boundary policy. Above it sit single-purpose crates - `bffi-error`, `bffi-types` (conversions plus the shared wire codec), `bffi-object` (ObjectWrap), `bffi-callback` (two-direction callbacks and the generic callback ABI), `bffi-event-loop` (queue and drains), `bffi-async` (Rust futures as JS Promises), `bffi-dts` (descriptor IR and renderers), `bffi-build` (runtime ABI exports and the loader JSON). The proc-macro crates - `bffi-macros` (`#[bffi]`, `#[bffi_async]`) and `bffi-class` (`#[bffi_class]`) - share their internals in `bffi-macro-support`. `bffi` is the facade: one dependency re-exporting the stack. `bffi-native` is the reference cdylib.
+**Rust side, bottom-up.** The published crate `bffi` contains the whole stack as feature-gated modules with the pre-merge names preserved (`bffi::bffi_core`, `bffi::bffi_types`, ...): `bffi-core` is the foundation (generational handles, the object registry, the boundary policy); above it `bffi-error` (the `BffiError` -> JS Error mapping), `bffi-types` (conversions, SIMD UTF-8, the shared wire codec), `bffi-object` (ObjectWrap), `bffi-callback` (two-direction callbacks and the generic callback ABI), `bffi-event-loop` (queue and drains), `bffi-async` (Rust futures as JS Promises), `bffi-dts` (descriptor IR and renderers), `bffi-build` (runtime ABI exports and the loader JSON). The separate proc-macro crate `bffi-macros` (physically unavoidable: a proc-macro cannot live inside a normal crate) provides `#[bffi]`, `#[bffi_async]` and the class macros, sharing internals in its `support`/`class` modules. The facade re-exports everything flat, plus the `core`/`types`/`dts`/`object`/`build`/`r#async` namespaces the macro expansions name by default. `bffi-native` is the reference cdylib.
 
 **JS side.** `@z2net/bffi` (packages/bffi) is the config-driven pipeline - cargo build, loader JSON, generated TypeScript, dlopen - plus the typed runtime loader. `@z2net/bffi-cli` (packages/bffi-cli) is the `bffi` CLI: init, build, check, doctor, codegen, pack, fetch. `@z2net/bffi-native` (packages/native) is the published reference native module family.
 

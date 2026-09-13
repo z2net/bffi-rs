@@ -124,9 +124,21 @@ documented in
 [`packages/bffi`](https://github.com/z2net/bffi-rs/blob/main/packages/bffi);
 a full worked example lives in
 [`examples/sqlite`](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite).
-Async, event-loop and callbacks each have a dedicated example
-(`examples/async`, `examples/event-loop`, `examples/callbacks`), and
-every example doubles as an e2e suite (`bun test examples`).
+
+## Examples
+
+Every example is a working native module and an e2e suite
+(`bun test examples` runs them all):
+
+| Example | Demonstrates |
+| ------- | ------------ |
+| [`examples/sqlite`](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite) | the full pipeline over rusqlite - the entry example |
+| [`examples/records`](https://github.com/z2net/bffi-rs/blob/main/examples/records) | B1/B4 composites: records, enums, `Vec<T>`, `Vec<Vec<u8>>`, `Option<Sample>` |
+| [`examples/streams`](https://github.com/z2net/bffi-rs/blob/main/examples/streams) | B2 streams: pull and push producers, backpressure, `Result` items, wake-driven delivery |
+| [`examples/errors`](https://github.com/z2net/bffi-rs/blob/main/examples/errors) | B3 typed errors: `#[derive(BffiError)]`, user codes, `e.name`/`e.payload` |
+| [`examples/async`](https://github.com/z2net/bffi-rs/blob/main/examples/async) | `#[bffi_async]`: Promises, cancellation, timeouts, composite and `Option` results |
+| [`examples/event-loop`](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop) | the event loop: enqueue/marshal/pump/run/stop |
+| [`examples/callbacks`](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks) | both callback directions, the thread gate, marshal delivery |
 
 ## Conventions
 

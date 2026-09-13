@@ -43,7 +43,7 @@ describe("bffi init", () => {
     expect(await Bun.file(`${ROOT}/crate/src/module_def.rs`).exists()).toBeTrue();
     expect(await Bun.file(`${ROOT}/crate/src/bin/emit_json.rs`).exists()).toBeTrue();
     const lib = await Bun.file(`${ROOT}/crate/src/lib.rs`).text();
-    expect(lib).toContain("bffi_build::bffi_runtime_abi!()");
+    expect(lib).toContain("bffi::bffi_runtime_abi!()");
     expect(lib).toContain("#[bffi::bffi]");
   });
 

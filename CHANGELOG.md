@@ -7,6 +7,14 @@ any minor).
 
 ## [0.1.2] - unreleased
 
+### Release alignment
+
+- The npm family (`@z2net/bffi`, `@z2net/bffi-cli`,
+  `@z2net/bffi-native` and the seven platform packages) is aligned
+  at one version: 0.1.2; `bun.lock` re-synced (the platform
+  `optionalDependencies` pins move 0.1.0 -> 0.1.2 - publish order
+  is platform packages first).
+
 ### Breaking
 
 - `#[bffi]` / `#[bffi_async]` / class macros without options emit
@@ -55,8 +63,24 @@ any minor).
   stays as the lost-wake-up fallback.
 - **A3 stress e2e**: mixed concurrency (24 parallel tasks with a
   failure and a timeout) and interleaved push streams.
+- **Phase 3.5 `invoke_wait` + JS-bound handles**: the marshalled
+  callback invocation (any native thread, bounded timeout) now
+  dispatches both callback tables - natively registered closures
+  and JS-bound callbacks (`bffi_callback_bind`); `Value` grows
+  `Unit`/`Str`/`Bytes`. The `examples/wry` webview binding drops
+  its forwarder workaround and calls the JS-bound handler
+  directly.
+- **Phase 3 `examples/wry`**: a full webview window driven from
+  Bun - wry 0.57 + winit 0.30 pinned, the window and event loop
+  on a dedicated native thread, IPC round trips through
+  `invoke_wait`, graceful shutdown, window-free Rust tests plus
+  an env-gated real-window e2e (`BFFI_WRY_E2E=1`).
+- **Phase 4 guide**: `docs/BINDING-GUI.md` - the threading model,
+  the `invoke_wait` contract, IPC round trips, keep-alive and
+  shutdown, packaging notes (WebView2 / GTK / WKWebView).
 - The repository `AGENTS.md`, `DESIGN.md`, `CALLING-CONVENTION.md`
-  (sections 4, 10, 11) and the README document every contract above.
+  (sections 4, 9.1, 10, 11) and the README document every contract
+  above.
 
 ### Fixed
 

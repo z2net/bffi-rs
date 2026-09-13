@@ -18,6 +18,10 @@ import type { Api } from "../.bffi/api.gen.ts";
  * literal: `axis` is the Axis variant union, `label` a string. */
 type Sample = Parameters<Api["recenter"]>[0];
 
+/** The Profile shape: every field is `X | null` (the Option-field
+ * flavors over the wire). */
+type Profile = Parameters<Api["echo_profile"]>[0];
+
 let api: Api;
 
 describe("records through the full pipeline", () => {
@@ -97,6 +101,52 @@ describe("records through the full pipeline", () => {
       { at: 0, weight: 1, label: "x", axis: "Vertical" },
     ];
     expect(api.classify(samples)).toBe("Vertical");
+  });
+
+  test("Option fields: Some values round trip through the record", () => {
+    const profile: Profile = {
+      nick: "ada",
+      level: 7,
+      rank: 9007199254740993n,
+      muted: true,
+      avatar: new Uint8Array([1, 2, 3]),
+      home: {
+        at: 1.5,
+        weight: 10,
+        label: "alpha",
+        axis: "Vertical",
+      },
+    };
+    expect(api.echo_profile(profile)).toEqual(profile);
+  });
+
+  test("Option fields: null crosses as None and back", () => {
+    const profile: Profile = {
+      nick: null,
+      level: null,
+      rank: null,
+      muted: null,
+      avatar: null,
+      home: null,
+    };
+    expect(api.echo_profile(profile)).toEqual(profile);
+  });
+
+  test("Option fields: mixed Some/null and nested record field", () => {
+    const profile: Profile = {
+      nick: "bo",
+      level: null,
+      rank: null,
+      muted: null,
+      avatar: null,
+      home: {
+        at: -0.5,
+        weight: -3,
+        label: "",
+        axis: "Horizontal",
+      },
+    };
+    expect(api.echo_profile(profile)).toEqual(profile);
   });
 
   test("empty input reports the domain error", () => {

@@ -66,6 +66,15 @@ pub enum TsType {
     /// The TypeScript `Uint8Array | null` type (`Option<Vec<u8>>` /
     /// `Option<CopiedBuf>` returns).
     NullableUint8Array,
+    /// The TypeScript `number | null` type (`Option` of the
+    /// number-ish primitives as a record field).
+    NullableNumber,
+    /// The TypeScript `bigint | null` type (`Option<i64>` /
+    /// `Option<u64>` record fields).
+    NullableBigInt,
+    /// The TypeScript `boolean | null` type (`Option<bool>` record
+    /// fields).
+    NullableBoolean,
     /// The TypeScript `<name> | null` type (`Option` of a named
     /// record/enum return).
     NullableRecord(&'static str),
@@ -207,6 +216,9 @@ impl TsType {
             Self::Uint8Array => Cow::Borrowed("Uint8Array"),
             Self::NullableString => Cow::Borrowed("string | null"),
             Self::NullableUint8Array => Cow::Borrowed("Uint8Array | null"),
+            Self::NullableNumber => Cow::Borrowed("number | null"),
+            Self::NullableBigInt => Cow::Borrowed("bigint | null"),
+            Self::NullableBoolean => Cow::Borrowed("boolean | null"),
             Self::NullableRecord(name) => Cow::Owned(format!("{name} | null")),
             Self::NullableNumberArray => Cow::Borrowed("number[] | null"),
             Self::NullableBigIntArray => Cow::Borrowed("bigint[] | null"),
@@ -666,6 +678,9 @@ mod tests {
         assert_eq!(TsType::Uint8Array.as_str(), "Uint8Array");
         assert_eq!(TsType::NullableString.as_str(), "string | null");
         assert_eq!(TsType::NullableUint8Array.as_str(), "Uint8Array | null");
+        assert_eq!(TsType::NullableNumber.as_str(), "number | null");
+        assert_eq!(TsType::NullableBigInt.as_str(), "bigint | null");
+        assert_eq!(TsType::NullableBoolean.as_str(), "boolean | null");
         assert_eq!(TsType::Void.as_str(), "void");
     }
 

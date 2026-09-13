@@ -15,10 +15,14 @@ pub const FUNCTIONS: &[bffi::FunctionDef] = &[
     crate::bffi_meta_label_bytes::FUNCTION,
     crate::bffi_meta_heaviest::FUNCTION,
     crate::bffi_meta_classify::FUNCTION,
+    crate::bffi_meta_echo_profile::FUNCTION,
 ];
 
 /// The record types of this example.
-pub const RECORDS: &[RecordDef] = &[crate::Sample::BFFI_RECORD_DEF];
+pub const RECORDS: &[RecordDef] = &[
+    crate::Sample::BFFI_RECORD_DEF,
+    crate::Profile::BFFI_RECORD_DEF,
+];
 
 /// The enum types of this example.
 pub const ENUMS: &[EnumDef] = &[crate::Axis::BFFI_ENUM_DEF];

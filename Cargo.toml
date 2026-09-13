@@ -11,6 +11,7 @@ members = [
     "examples/records",
     "examples/streams",
     "examples/errors",
+    "examples/wry",
 ]
 
 [workspace.package]

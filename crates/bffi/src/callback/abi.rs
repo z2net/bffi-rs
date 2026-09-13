@@ -18,9 +18,12 @@
 //!
 //! Signature and argument bytes use the framework-wide wire codec
 //! (`bffi::types::wire`): a signature is the return tag byte followed by
-//! one parameter tag byte each (`I32`=1, `I64`=2, `F64`=3, `Bool`=4);
-//! arguments are concatenated `[tag][payload]` records. Malformed
-//! bytes surface as `ErrorCode::InvalidArgument` with a stored message.
+//! one parameter tag byte each (`Unit`=0, `I32`=1, `I64`=2, `F64`=3,
+//! `Bool`=4, `Str`=5, `Bytes`=6); arguments are concatenated
+//! `[tag][payload]` records. Malformed bytes surface as
+//! `ErrorCode::InvalidArgument` with a stored message. Note that not
+//! every tag the bind accepts can cross the JS-bound C call that
+//! `invoke_wait` performs (see `registry::check_js_call_matrix`).
 //!
 //! # User-crate requirements
 //!
@@ -112,37 +115,44 @@ pub fn decode_args(bytes: &[u8]) -> Result<Vec<Value>, BffiError> {
     let mut offset = 0_usize;
     while offset < bytes.len() {
         let tag = bytes[offset];
-        let value = match tag {
-            wire::TAG_I32 => wire::read_i32_le(bytes, offset + 1).map(Value::I32),
-            wire::TAG_I64 => wire::read_i64_le(bytes, offset + 1).map(Value::I64),
-            wire::TAG_F64 => wire::read_f64_le(bytes, offset + 1).map(Value::F64),
-            wire::TAG_BOOL => wire::read_bool(bytes, offset + 1).map(Value::Bool),
-            _ => None,
-        };
-        let value = value.ok_or_else(|| {
+        let malformed = || {
             BffiError::new(
                 ErrorCode::InvalidArgument,
                 format!(
                     "malformed callback arguments: unknown or truncated value tag {tag} at byte {offset}"
                 ),
             )
-        })?;
-        offset += 1 + payload_len(tag);
+        };
+        let decoded = match tag {
+            // Fixed-width records: read the payload, step past it.
+            wire::TAG_UNIT => Some((Value::Unit, offset + 1)),
+            wire::TAG_I32 => {
+                wire::read_i32_le(bytes, offset + 1).map(|v| (Value::I32(v), offset + 1 + 4))
+            }
+            wire::TAG_I64 => {
+                wire::read_i64_le(bytes, offset + 1).map(|v| (Value::I64(v), offset + 1 + 8))
+            }
+            wire::TAG_F64 => {
+                wire::read_f64_le(bytes, offset + 1).map(|v| (Value::F64(v), offset + 1 + 8))
+            }
+            wire::TAG_BOOL => {
+                wire::read_bool(bytes, offset + 1).map(|v| (Value::Bool(v), offset + 1 + 1))
+            }
+            // Var-length records decode through the shared codec
+            // readers (which also validate the UTF-8 payload).
+            wire::TAG_STR => wire::decode_str(bytes, offset)
+                .ok()
+                .map(|(text, next)| (Value::Str(text.to_owned()), next)),
+            wire::TAG_BYTES => wire::decode_bytes(bytes, offset)
+                .ok()
+                .map(|(payload, next)| (Value::Bytes(CopiedBuf::from_slice(payload)), next)),
+            _ => None,
+        };
+        let (value, next) = decoded.ok_or_else(malformed)?;
         values.push(value);
+        offset = next;
     }
     Ok(values)
-}
-
-/// The payload byte length of a fixed-width callback value record.
-fn payload_len(tag: u8) -> usize {
-    match tag {
-        wire::TAG_I32 => 4,
-        wire::TAG_I64 | wire::TAG_F64 => 8,
-        wire::TAG_BOOL => 1,
-        // Unknown tags never reach this function through `decode_args`
-        // (they error out before the length is consulted).
-        _ => 0,
-    }
 }
 
 /// Encodes the callback result into the wire record stored in the

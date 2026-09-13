@@ -211,6 +211,27 @@ pub fn decode_u64(bytes: &[u8], offset: usize) -> Result<(u64, usize), BffiError
     Ok((u64::from_le_bytes(raw), at + 8))
 }
 
+/// Decodes one exact `u64` value record at `offset`: `TAG_U64` or
+/// `TAG_I64` (the JS encoder picks the tag by value - bigints below
+/// `i64::MAX` ride `I64`, where the signed view agrees - so exact
+/// `u64` fields decode tolerantly and exactly; a negative `i64`
+/// payload is an error).
+pub fn decode_u64_lenient(bytes: &[u8], offset: usize) -> Result<(u64, usize), BffiError> {
+    let tag = *bytes
+        .get(offset)
+        .ok_or_else(|| wire_error("wire: expected u64"))?;
+    if tag == TAG_U64 {
+        return decode_u64(bytes, offset);
+    }
+    if tag == TAG_I64 {
+        let (value, next) = decode_i64(bytes, offset)?;
+        let value =
+            u64::try_from(value).map_err(|_| wire_error("wire: negative i64 payload for u64"))?;
+        return Ok((value, next));
+    }
+    Err(wire_error("wire: expected u64 or i64"))
+}
+
 /// Decodes one error-message record at `offset` (the wire form of a
 /// `Result` item's `Err`); validated UTF-8.
 pub fn decode_error(bytes: &[u8], offset: usize) -> Result<(String, usize), BffiError> {
@@ -459,10 +480,10 @@ mod tests {
         TAG_BOOL, TAG_BYTES, TAG_ERROR, TAG_F64, TAG_I32, TAG_I64, TAG_RECORD, TAG_SEQ, TAG_STR,
         TAG_U64, TAG_UNIT, decode_bool, decode_bytes, decode_error, decode_error_rich, decode_f64,
         decode_i32, decode_i64, decode_record_header, decode_seq_header, decode_str, decode_u64,
-        decode_variant, encode_bool, encode_bytes, encode_error, encode_error_rich, encode_f64,
-        encode_i32, encode_i64, encode_record_header, encode_seq_header, encode_str, encode_u64,
-        push_bool, push_f64_le, push_i32_le, push_i64_le, push_u32_le, read_bool, read_f64_le,
-        read_i32_le, read_i64_le, read_u32_le,
+        decode_u64_lenient, decode_variant, encode_bool, encode_bytes, encode_error,
+        encode_error_rich, encode_f64, encode_i32, encode_i64, encode_record_header,
+        encode_seq_header, encode_str, encode_u64, push_bool, push_f64_le, push_i32_le,
+        push_i64_le, push_u32_le, read_bool, read_f64_le, read_i32_le, read_i64_le, read_u32_le,
     };
 
     #[test]
@@ -633,6 +654,30 @@ mod tests {
         assert!(decode_u64(&[TAG_U64, 0, 0], 0).is_err());
         // Length prefix promising more than the buffer holds.
         assert!(decode_error(&[TAG_ERROR, 5, 0, 0, 0], 0).is_err());
+    }
+
+    #[test]
+    fn lenient_u64_decode_accepts_both_exact_carriers() {
+        let mut out = Vec::new();
+        // Small u64 as the JS encoder sends it: the I64 carrier.
+        encode_i64(&mut out, 9_007_199_254_740_993);
+        // Large u64: the U64 carrier.
+        encode_u64(&mut out, u64::MAX);
+
+        let (value, next) = decode_u64_lenient(&out, 0).expect("i64 carrier");
+        assert_eq!((value, next), (9_007_199_254_740_993, 9));
+        let (value, next) = decode_u64_lenient(&out, next).expect("u64 carrier");
+        assert_eq!((value, next), (u64::MAX, 18));
+        assert_eq!(next, out.len());
+
+        // A negative i64 payload is not a u64.
+        let mut negative = Vec::new();
+        encode_i64(&mut negative, -1);
+        assert!(decode_u64_lenient(&negative, 0).is_err());
+        // Wrong tags are clean errors.
+        assert!(decode_u64_lenient(&[TAG_BOOL, 0], 0).is_err());
+        assert!(decode_u64_lenient(&[TAG_STR, 0, 0, 0, 0], 0).is_err());
+        assert!(decode_u64_lenient(&[], 0).is_err());
     }
 
     #[test]

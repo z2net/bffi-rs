@@ -185,13 +185,15 @@ export function decodeAt(bytes: Uint8Array, offset: number): Decoded {
 }
 
 /**
- * Encodes one JS value into the `[tag][payload]` record. Numbers
- * encode as `I32` when they are integral and fit `i32`, otherwise
- * `F64`; bigints encode as `I64` (exactness preserved). Arrays encode
- * as `Seq` of their items; `{ fields }` objects encode as records.
+ * Encodes one JS value into the `[tag][payload]` record. `null` and
+ * `undefined` encode as the `Unit` record (the `None` of optional
+ * record fields); numbers encode as `I32` when they are integral and
+ * fit `i32`, otherwise `F64`; bigints encode as `I64` (exactness
+ * preserved). Arrays encode as `Seq` of their items; `{ fields }`
+ * objects encode as records.
  */
 export function encodeValue(out: number[], value: WireValue): void {
-  if (value === undefined) {
+  if (value === undefined || value === null) {
     out.push(TAG_UNIT);
   } else if (typeof value === "number") {
     if (Number.isInteger(value) && value >= -2147483648 && value <= 2147483647) {

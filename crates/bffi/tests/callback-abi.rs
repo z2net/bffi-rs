@@ -34,21 +34,49 @@ fn i32_args(values: &[i32]) -> Vec<u8> {
 #[test]
 fn decode_args_round_trips_the_full_matrix() {
     let mut bytes = Vec::new();
+    Value::Unit.encode_into(&mut bytes);
     Value::I32(-2).encode_into(&mut bytes);
     Value::I64(1).encode_into(&mut bytes);
     Value::F64(1.5).encode_into(&mut bytes);
     Value::Bool(true).encode_into(&mut bytes);
+    Value::Str("héllo".to_owned()).encode_into(&mut bytes);
+    Value::Bytes(bffi::CopiedBuf::from_slice(&[9, 8])).encode_into(&mut bytes);
 
     assert_eq!(
         decode_args(&bytes).expect("valid records"),
         vec![
+            Value::Unit,
             Value::I32(-2),
             Value::I64(1),
             Value::F64(1.5),
             Value::Bool(true),
+            Value::Str("héllo".to_owned()),
+            Value::Bytes(bffi::CopiedBuf::from_slice(&[9, 8])),
         ]
     );
     assert!(decode_args(&[]).expect("empty args are valid").is_empty());
+}
+
+#[test]
+fn bind_body_accepts_the_extended_tag_matrix() {
+    // The wry IPC signature: `unit(str)` - a void-returning callback
+    // taking one cstring.
+    let mut slot: u64 = 0;
+    let status = bind_body(wire::TAG_UNIT, &[wire::TAG_STR], 0xBEEF, &mut slot);
+    assert_eq!(status, ErrorCode::Ok);
+    let info = bffi::bffi_callback::js_callback(bffi::bffi_core::Handle::from_raw(slot))
+        .expect("the bound slot is readable");
+    assert_eq!(
+        info.sig,
+        CallbackSig::new(ValueType::Unit, &[ValueType::Str])
+    );
+    assert!(revoke_body(slot) == ErrorCode::Ok.as_u32());
+
+    // `Bytes` binds too (the dispatch is what rejects it later).
+    let mut slot: u64 = 0;
+    let status = bind_body(wire::TAG_BYTES, &[], 0, &mut slot);
+    assert_eq!(status, ErrorCode::Ok);
+    assert!(revoke_body(slot) == ErrorCode::Ok.as_u32());
 }
 
 #[test]
@@ -101,13 +129,14 @@ fn bind_body_rejects_unknown_signature_tags() {
     let error = take_last_error().expect("a last error is stored");
     assert!(error.message.contains("unknown callback return tag 200"));
 
-    let status = bind_body(wire::TAG_I32, &[wire::TAG_STR], 0, &mut slot);
+    // Tag 50 is outside the framework-wide wire table.
+    let status = bind_body(wire::TAG_I32, &[50], 0, &mut slot);
     assert_eq!(status, ErrorCode::InvalidArgument);
     let error = take_last_error().expect("a last error is stored");
     assert!(
         error
             .message
-            .contains("unknown callback parameter tag 5 at index 0")
+            .contains("unknown callback parameter tag 50 at index 0")
     );
 }
 

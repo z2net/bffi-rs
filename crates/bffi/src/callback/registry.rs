@@ -19,6 +19,7 @@
 
 // Internal module aliases (the pre-merge crate names).
 use crate::bffi_core;
+use std::ffi::CString;
 use std::sync::{Arc, OnceLock};
 // `invoke_wait` (marshal-and-wait) rides the event loop, which is a
 // strict superset of this crate's own feature set.
@@ -31,7 +32,7 @@ use bffi_core::{Handle, Registry, TypeTag};
 
 use super::error::CallbackError;
 use super::thread::ensure_js_thread;
-use super::value::{CallbackSig, Value};
+use super::value::{CallbackSig, Value, ValueType};
 
 /// The type tag of the native (JS -> Rust) callback table.
 const NATIVE_TAG: TypeTag = TypeTag(0x0200);
@@ -220,30 +221,326 @@ impl WaitSlot {
     }
 }
 
+/// The value types a JS-bound parameter may take so the
+/// `invoke_wait` dispatch can convert it to a C argument.
+#[cfg(feature = "event-loop")]
+const JS_CALL_PARAMS: &[ValueType] = &[
+    ValueType::I32,
+    ValueType::I64,
+    ValueType::F64,
+    ValueType::Bool,
+    ValueType::Str,
+];
+
+/// The value types a JS-bound return may take so the `invoke_wait`
+/// dispatch can wrap the raw C result.
+#[cfg(feature = "event-loop")]
+const JS_CALL_RETS: &[ValueType] = &[
+    ValueType::I32,
+    ValueType::I64,
+    ValueType::F64,
+    ValueType::Bool,
+    ValueType::Unit,
+];
+
+/// The largest arity the JS-bound C-call dispatch implements (v1:
+/// the concrete `extern "C"` signatures are enumerated per shape).
+#[cfg(feature = "event-loop")]
+const JS_CALL_MAX_PARAMS: usize = 2;
+
+/// The value types actually received, in arrival order (the `got`
+/// half of a [`CallbackError::SignatureMismatch`]).
+#[cfg(feature = "event-loop")]
+fn got_types(args: &[Value]) -> Vec<ValueType> {
+    args.iter().map(Value::ty).collect()
+}
+
+/// Whether [`invoke_wait`]'s JS-bound dispatch can call a callback
+/// declared with `sig` through its bound C pointer: the return and
+/// every parameter must be inside the implemented matrix and the
+/// arity within the enumerated shapes.
+#[cfg(feature = "event-loop")]
+fn check_js_call_matrix(sig: &CallbackSig) -> Result<(), CallbackError> {
+    let ret_ok = JS_CALL_RETS.contains(&sig.ret());
+    let params_ok = sig.params().len() <= JS_CALL_MAX_PARAMS
+        && sig
+            .params()
+            .iter()
+            .all(|param| JS_CALL_PARAMS.contains(param));
+    if ret_ok && params_ok {
+        Ok(())
+    } else {
+        Err(CallbackError::UnsupportedSignature { sig: sig.clone() })
+    }
+}
+
+/// One argument of a JS-bound call, already converted to its C form.
+#[cfg(feature = "event-loop")]
+enum CArg {
+    /// `i32` by value.
+    I32(i32),
+    /// `i64` by value.
+    I64(i64),
+    /// `f64` by value.
+    F64(f64),
+    /// `u8` by value (bun:ffi's spelling of `bool`).
+    U8(u8),
+    /// A NUL-terminated UTF-8 string (bun:ffi's `cstring`); owned by
+    /// the carrier so the pointer stays valid across the call.
+    Str(CString),
+}
+
+/// The prepared C side of one JS-bound call: the converted arguments
+/// (owned, so `cstring` pointers live across the call) plus the
+/// signature and the original values for the defensive error paths.
+#[cfg(feature = "event-loop")]
+struct JsCall<'a> {
+    sig: &'a CallbackSig,
+    args: &'a [Value],
+    cargs: Vec<CArg>,
+}
+
+#[cfg(feature = "event-loop")]
+impl<'a> JsCall<'a> {
+    /// Converts the arguments to their C forms, guided by the
+    /// declared signature.
+    fn marshal(sig: &'a CallbackSig, args: &'a [Value]) -> Result<Self, CallbackError> {
+        let mismatch = || CallbackError::SignatureMismatch {
+            expected: sig.clone(),
+            got: got_types(args),
+        };
+        let mut cargs = Vec::with_capacity(args.len());
+        for (param, value) in sig.params().iter().zip(args.iter()) {
+            let converted = match (param, value) {
+                (ValueType::I32, Value::I32(v)) => CArg::I32(*v),
+                (ValueType::I64, Value::I64(v)) => CArg::I64(*v),
+                (ValueType::F64, Value::F64(v)) => CArg::F64(*v),
+                (ValueType::Bool, Value::Bool(v)) => CArg::U8(u8::from(*v)),
+                (ValueType::Str, Value::Str(text)) => {
+                    CArg::Str(CString::new(text.as_str()).map_err(|_| {
+                        // An interior NUL cannot cross as a cstring.
+                        CallbackError::InvalidCString
+                    })?)
+                }
+                // Unreachable after `matches` + the matrix check;
+                // defended for the mismatch error only.
+                _ => return Err(mismatch()),
+            };
+            cargs.push(converted);
+        }
+        Ok(Self { sig, args, cargs })
+    }
+
+    /// The mismatch error of this call (defensive paths only).
+    fn mismatch(&self) -> CallbackError {
+        CallbackError::SignatureMismatch {
+            expected: self.sig.clone(),
+            got: got_types(self.args),
+        }
+    }
+
+    /// The `i`-th argument as a C `i32`.
+    fn arg_i32(&self, i: usize) -> Result<i32, CallbackError> {
+        match self.cargs.get(i) {
+            Some(CArg::I32(v)) => Ok(*v),
+            _ => Err(self.mismatch()),
+        }
+    }
+
+    /// The `i`-th argument as a C `i64`.
+    fn arg_i64(&self, i: usize) -> Result<i64, CallbackError> {
+        match self.cargs.get(i) {
+            Some(CArg::I64(v)) => Ok(*v),
+            _ => Err(self.mismatch()),
+        }
+    }
+
+    /// The `i`-th argument as a C `f64`.
+    fn arg_f64(&self, i: usize) -> Result<f64, CallbackError> {
+        match self.cargs.get(i) {
+            Some(CArg::F64(v)) => Ok(*v),
+            _ => Err(self.mismatch()),
+        }
+    }
+
+    /// The `i`-th argument as a C `u8` (bun:ffi's `bool`).
+    fn arg_u8(&self, i: usize) -> Result<u8, CallbackError> {
+        match self.cargs.get(i) {
+            Some(CArg::U8(v)) => Ok(*v),
+            _ => Err(self.mismatch()),
+        }
+    }
+
+    /// The `i`-th argument as a borrowed `cstring` pointer.
+    fn arg_cstring(&self, i: usize) -> Result<*const std::os::raw::c_char, CallbackError> {
+        match self.cargs.get(i) {
+            Some(CArg::Str(text)) => Ok(text.as_ptr()),
+            _ => Err(self.mismatch()),
+        }
+    }
+}
+
+/// Invokes the JS callback bound behind `handle` with `args` on the
+/// CURRENT thread: the shared body of [`invoke_wait`]'s direct path
+/// and of its marshal job (both are required to run on the JS thread,
+/// where calling a `bun:ffi` JSCallback pointer is synchronous).
+///
+/// Check order: table lookup (dead handles land in
+/// [`CallbackError::InvalidHandle`]) -> signature
+/// ([`CallbackError::SignatureMismatch`]) -> null pointer
+/// ([`CallbackError::NullPointer`]) -> the C-call matrix
+/// ([`CallbackError::UnsupportedSignature`]) -> the call itself.
+#[cfg(feature = "event-loop")]
+fn invoke_js_entry(handle: Handle, args: &[Value]) -> Result<Value, CallbackError> {
+    let entry = Registry::global()
+        .get_typed::<JsEntry>(handle)
+        .ok_or(CallbackError::InvalidHandle(handle))?;
+    if !entry.sig.matches(args) {
+        return Err(CallbackError::SignatureMismatch {
+            expected: entry.sig.clone(),
+            got: got_types(args),
+        });
+    }
+    if entry.ptr == 0 {
+        return Err(CallbackError::NullPointer);
+    }
+    check_js_call_matrix(&entry.sig)?;
+    call_js_ptr(&entry.sig, entry.ptr, args)
+}
+
+/// Calls the raw JS-callback pointer through the concrete `extern "C"`
+/// signature the stored [`CallbackSig`] declares, and wraps the raw
+/// result back into a [`Value`].
+///
+/// # Safety contract
+///
+/// `ptr` must be a live `bun:ffi` JSCallback pointer declared with
+/// exactly this C shape (the bun:ffi spellings: `i32`, `i64`, `f64`,
+/// `u8` for `Bool`, `cstring` for `Str`, `void` for `Unit`), and the
+/// call MUST happen on the JS thread - here: inside the
+/// `invoke_wait` dispatch, whose direct path and marshal job both
+/// run there. The pointer stays valid while the JS side keeps the
+/// `JSCallback` alive and has not closed it.
+#[cfg(feature = "event-loop")]
+fn call_js_ptr(sig: &CallbackSig, ptr: usize, args: &[Value]) -> Result<Value, CallbackError> {
+    /// Builds the whole call dispatch: for every callable shape (up
+    /// to [`JS_CALL_MAX_PARAMS`] parameters) the five return arms -
+    /// each transmutes the bound pointer to the declared C
+    /// signature, calls it, and wraps the raw result into a
+    /// [`Value`].
+    macro_rules! js_dispatch {
+        ($js:expr, $sig:expr, $ptr:expr; $( [$($fty:ty => $vt:ident),*] => ($($arg:expr),*) ),* $(,)?) => {
+            match ($sig.ret(), $sig.params()) {
+                $(
+                    (ValueType::Unit, &[$(ValueType::$vt),*]) => {{
+                        // SAFETY: the pointer is a live JSCallback with
+                        // this declared shape, called on the JS thread
+                        // (see the safety contract above).
+                        let call: extern "C" fn($($fty),*) = unsafe { std::mem::transmute($ptr) };
+                        call($($arg),*);
+                        Ok(Value::Unit)
+                    }},
+                    (ValueType::Bool, &[$(ValueType::$vt),*]) => {{
+                        // SAFETY: see the `Unit` arm.
+                        let call: extern "C" fn($($fty),*) -> u8 = unsafe { std::mem::transmute($ptr) };
+                        Ok(Value::Bool(call($($arg),*) != 0))
+                    }},
+                    (ValueType::I32, &[$(ValueType::$vt),*]) => {{
+                        // SAFETY: see the `Unit` arm.
+                        let call: extern "C" fn($($fty),*) -> i32 = unsafe { std::mem::transmute($ptr) };
+                        Ok(Value::I32(call($($arg),*)))
+                    }},
+                    (ValueType::I64, &[$(ValueType::$vt),*]) => {{
+                        // SAFETY: see the `Unit` arm.
+                        let call: extern "C" fn($($fty),*) -> i64 = unsafe { std::mem::transmute($ptr) };
+                        Ok(Value::I64(call($($arg),*)))
+                    }},
+                    (ValueType::F64, &[$(ValueType::$vt),*]) => {{
+                        // SAFETY: see the `Unit` arm.
+                        let call: extern "C" fn($($fty),*) -> f64 = unsafe { std::mem::transmute($ptr) };
+                        Ok(Value::F64(call($($arg),*)))
+                    }},
+                )*
+                // Unreachable after `check_js_call_matrix`; kept total
+                // so the dispatch stays honest about its limits.
+                _ => Err(CallbackError::UnsupportedSignature { sig: $sig.clone() }),
+            }
+        };
+    }
+
+    let js = JsCall::marshal(sig, args)?;
+    js_dispatch!(js, sig, ptr;
+        [] => (),
+        [i32 => I32] => (js.arg_i32(0)?),
+        [i64 => I64] => (js.arg_i64(0)?),
+        [f64 => F64] => (js.arg_f64(0)?),
+        [u8 => Bool] => (js.arg_u8(0)?),
+        [*const std::os::raw::c_char => Str] => (js.arg_cstring(0)?),
+        [i32 => I32, i32 => I32] => (js.arg_i32(0)?, js.arg_i32(1)?),
+        [i32 => I32, i64 => I64] => (js.arg_i32(0)?, js.arg_i64(1)?),
+        [i32 => I32, f64 => F64] => (js.arg_i32(0)?, js.arg_f64(1)?),
+        [i32 => I32, u8 => Bool] => (js.arg_i32(0)?, js.arg_u8(1)?),
+        [i32 => I32, *const std::os::raw::c_char => Str] => (js.arg_i32(0)?, js.arg_cstring(1)?),
+        [i64 => I64, i32 => I32] => (js.arg_i64(0)?, js.arg_i32(1)?),
+        [i64 => I64, i64 => I64] => (js.arg_i64(0)?, js.arg_i64(1)?),
+        [i64 => I64, f64 => F64] => (js.arg_i64(0)?, js.arg_f64(1)?),
+        [i64 => I64, u8 => Bool] => (js.arg_i64(0)?, js.arg_u8(1)?),
+        [i64 => I64, *const std::os::raw::c_char => Str] => (js.arg_i64(0)?, js.arg_cstring(1)?),
+        [f64 => F64, i32 => I32] => (js.arg_f64(0)?, js.arg_i32(1)?),
+        [f64 => F64, i64 => I64] => (js.arg_f64(0)?, js.arg_i64(1)?),
+        [f64 => F64, f64 => F64] => (js.arg_f64(0)?, js.arg_f64(1)?),
+        [f64 => F64, u8 => Bool] => (js.arg_f64(0)?, js.arg_u8(1)?),
+        [f64 => F64, *const std::os::raw::c_char => Str] => (js.arg_f64(0)?, js.arg_cstring(1)?),
+        [u8 => Bool, i32 => I32] => (js.arg_u8(0)?, js.arg_i32(1)?),
+        [u8 => Bool, i64 => I64] => (js.arg_u8(0)?, js.arg_i64(1)?),
+        [u8 => Bool, f64 => F64] => (js.arg_u8(0)?, js.arg_f64(1)?),
+        [u8 => Bool, u8 => Bool] => (js.arg_u8(0)?, js.arg_u8(1)?),
+        [u8 => Bool, *const std::os::raw::c_char => Str] => (js.arg_u8(0)?, js.arg_cstring(1)?),
+        [*const std::os::raw::c_char => Str, i32 => I32] => (js.arg_cstring(0)?, js.arg_i32(1)?),
+        [*const std::os::raw::c_char => Str, i64 => I64] => (js.arg_cstring(0)?, js.arg_i64(1)?),
+        [*const std::os::raw::c_char => Str, f64 => F64] => (js.arg_cstring(0)?, js.arg_f64(1)?),
+        [*const std::os::raw::c_char => Str, u8 => Bool] => (js.arg_cstring(0)?, js.arg_u8(1)?),
+        [*const std::os::raw::c_char => Str, *const std::os::raw::c_char => Str] => (js.arg_cstring(0)?, js.arg_cstring(1)?),
+    )
+}
+
 /// Invokes the native callback behind `handle` with `args` from ANY
 /// thread, blocking until the outcome arrives or `timeout` expires
 /// (marshal-and-wait, the cross-thread counterpart of [`invoke`]).
 ///
+/// The dispatch is by handle kind:
+///
+/// - A JS-bound handle (`bind_js_callback`, tag `0x0201`): the same
+///   slot mechanics, but the job calls the bound `bun:ffi`
+///   JSCallback pointer on the JS thread - the arguments cross as
+///   the declared C types (`i32`/`i64`/`f64`/`u8`/`cstring`) and the
+///   raw C result is wrapped back into a [`Value`]. The signature
+///   and the C-call matrix are checked on the CALLING thread first
+///   (fail fast, nothing queued); the job re-validates the lookup,
+///   so a revocation during the wait crosses the slot as
+///   [`CallbackError::InvalidHandle`].
+/// - A native handle (`register`, tag `0x0200`): as before.
+///
 /// - The calling thread is the bound JS thread, or the process is
-///   unbound (the P1 policy admits every caller then): delegates to
-///   [`invoke`] directly - no channel, no extra latency.
+///   unbound (the P1 policy admits every caller then): the call runs
+///   directly - no channel, no extra latency.
 /// - Any other native thread: the call is marshalled through the
-///   event loop. A queued job runs the ordinary [`invoke`] on the JS
-///   thread (i.e. while it drains with `bffi::pump` / `bffi::run`)
-///   and stores the full outcome in a shared [`WaitSlot`]; the
-///   calling thread parks on the slot until it fills. The value AND
-///   every [`CallbackError`] - dead handle, signature mismatch -
-///   cross the slot unchanged.
+///   event loop. A queued job runs the invocation on the JS thread
+///   (i.e. while it drains with `bffi::pump` / `bffi::run`) and
+///   stores the full outcome in a shared [`WaitSlot`]; the calling
+///   thread parks on the slot until it fills. The value AND every
+///   [`CallbackError`] - dead handle, signature mismatch - cross the
+///   slot unchanged.
 ///
 /// Timeout semantics: an expired `timeout` yields
 /// [`CallbackError::Timeout`] even though the job may still run
 /// later; the late outcome is stored into the abandoned slot and
 /// ignored (ignore-after-timeout), leaving the loop and the registry
-/// fully usable - a following `invoke_wait` is unaffected. A native
-/// body that panics is contained by the loop's boundary policy and
-/// never reaches the slot, so the waiter observes the timeout. A
-/// loop stopped after the job was queued does not wake the waiter
-/// either - the timeout is the only exit there.
+/// fully usable - a following `invoke_wait` is unaffected. A body
+/// that panics is contained by the loop's boundary policy and never
+/// reaches the slot, so the waiter observes the timeout. A loop
+/// stopped after the job was queued does not wake the waiter either
+/// - the timeout is the only exit there.
 ///
 /// Deadlock contract: the JS thread MUST keep draining the loop while
 /// a native thread waits. A re-entrant wait - the JS thread itself
@@ -253,17 +550,28 @@ impl WaitSlot {
 /// # Errors
 ///
 /// [`CallbackError::InvalidHandle`] / [`CallbackError::SignatureMismatch`]
-/// from the inner [`invoke`]; [`CallbackError::Timeout`] when
-/// `timeout` expired before the JS thread delivered; [`CallbackError::
-/// LoopStopped`] when the event loop has been stopped, so the job
-/// could not be queued at all (immediate failure, nothing to wait
-/// for).
+/// / [`CallbackError::NullPointer`] / [`CallbackError::
+/// UnsupportedSignature`] from the invoked entry;
+/// [`CallbackError::Timeout`] when `timeout` expired before the JS
+/// thread delivered; [`CallbackError::LoopStopped`] when the event
+/// loop has been stopped, so the job could not be queued at all
+/// (immediate failure, nothing to wait for).
 #[cfg(feature = "event-loop")]
 pub fn invoke_wait(
     handle: Handle,
     args: &[Value],
     timeout: Duration,
 ) -> Result<Value, CallbackError> {
+    tables()?;
+    if handle.is_null() {
+        return Err(CallbackError::InvalidHandle(handle));
+    }
+    // JS-bound table first: it shares the slot mechanics but has no
+    // ordinary `invoke` to delegate to (its pointer is called, not
+    // its body).
+    if Registry::global().get_typed::<JsEntry>(handle).is_some() {
+        return invoke_js_entry_wait(handle, args, timeout);
+    }
     if ensure_js_thread().is_ok() {
         return invoke(handle, args);
     }
@@ -277,18 +585,59 @@ pub fn invoke_wait(
     slot.take_within(timeout)
 }
 
+/// The JS-bound half of [`invoke_wait`]: fail-fast validation on the
+/// calling thread, then the direct call (JS thread or unbound
+/// process) or the marshal job with the shared [`WaitSlot`].
+#[cfg(feature = "event-loop")]
+fn invoke_js_entry_wait(
+    handle: Handle,
+    args: &[Value],
+    timeout: Duration,
+) -> Result<Value, CallbackError> {
+    {
+        let entry = Registry::global()
+            .get_typed::<JsEntry>(handle)
+            .ok_or(CallbackError::InvalidHandle(handle))?;
+        check_js_call_matrix(&entry.sig)?;
+        if !entry.sig.matches(args) {
+            return Err(CallbackError::SignatureMismatch {
+                expected: entry.sig.clone(),
+                got: got_types(args),
+            });
+        }
+    }
+    if ensure_js_thread().is_ok() {
+        return invoke_js_entry(handle, args);
+    }
+    let slot = Arc::new(WaitSlot::default());
+    let job_slot = Arc::clone(&slot);
+    let job_args = args.to_vec();
+    crate::bffi_event_loop::enqueue(Box::new(move || {
+        // Fresh lookup: a revocation during the wait lands here, like
+        // the native path - no call through a dead slot.
+        job_slot.fill(invoke_js_entry(handle, &job_args));
+    }))
+    .map_err(|_| CallbackError::LoopStopped)?;
+    slot.take_within(timeout)
+}
+
 /// Binds a JS-side callback (Rust -> JS direction) and returns its
 /// fresh, opaque [`Handle`].
 ///
-/// `ptr` is an opaque, handle-sized token - in the P2 world, the
-/// `JSCallback` pointer `bun:ffi` hands out. It is stored and handed
-/// back by [`js_callback`] but NEVER dereferenced here: the whole
-/// crate is zero-unsafe. A `ptr` of `0` is a legal opaque value in v1
-/// - no validation is performed beyond the type.
+/// `ptr` is an opaque, handle-sized token - in practice the
+/// `JSCallback` pointer `bun:ffi` hands out. Two things happen with
+/// it: [`js_callback`] hands it back as part of the slot snapshot,
+/// and [`invoke_wait`]'s JS-bound dispatch CALLS it - on the JS
+/// thread, through the concrete `extern "C"` shape the stored
+/// [`CallbackSig`] declares (`i32`/`i64`/`f64`/`u8`/`cstring`
+/// parameters, `i32`/`i64`/`f64`/`u8`/`void` return; see
+/// [`check_js_call_matrix`]). A `ptr` of `0` is a legal opaque value
+/// in v1 - no validation is performed beyond the type; an invocation
+/// through such a handle reports [`CallbackError::NullPointer`].
 ///
 /// The declared [`CallbackSig`] is carried verbatim in the slot;
-/// checking it when the callback is actually raised is the JS side's
-/// job.
+/// checking the arguments when the callback is raised is shared by
+/// the JS side (its own convention) and this crate's dispatch.
 ///
 /// # Errors
 ///
@@ -376,6 +725,8 @@ pub fn revoke(handle: Handle) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::CStr;
+    use std::os::raw::c_char;
     use std::sync::Arc;
 
     use crate::bffi_core::{Handle, Registry, TypeTag};
@@ -388,7 +739,31 @@ mod tests {
     // NOTE (test isolation): these tests run in the lib test binary
     // where the process stays UNBOUND - they must never call
     // `set_js_thread` (see `src/thread.rs`). `ensure_js_thread` admits
-    // every caller while unbound, so `invoke` needs no binding ritual.
+    // every caller while unbound, so `invoke` needs no binding ritual,
+    // and `invoke_wait` takes the direct path even on a spawned
+    // thread. The JS-bound dispatch therefore runs on the calling
+    // thread - the stand-in fns below play the JSCallback pointers.
+
+    /// Stand-in for a `bun:ffi` JSCallback pointer: `(i32) -> i32`.
+    extern "C" fn fake_js_double(x: i32) -> i32 {
+        x.wrapping_mul(2)
+    }
+
+    /// Stand-in for a `bun:ffi` JSCallback pointer: `() -> u8` (bool).
+    extern "C" fn fake_js_ping() -> u8 {
+        1
+    }
+
+    /// Stand-in for a `bun:ffi` JSCallback pointer:
+    /// `(cstring) -> i32` (the string's length).
+    extern "C" fn fake_js_len(text: *const c_char) -> i32 {
+        if text.is_null() {
+            return 0;
+        }
+        // SAFETY: the test contract passes a NUL-terminated literal
+        // that outlives the call.
+        unsafe { CStr::from_ptr(text) }.count_bytes() as i32
+    }
 
     #[test]
     fn register_invoke_returns_the_closure_result() {
@@ -490,6 +865,80 @@ mod tests {
         .join()
         .unwrap();
         assert_eq!(joined, Ok(Value::I32(5)));
+    }
+
+    #[test]
+    fn invoke_wait_js_bound_calls_the_bound_pointer() {
+        // The dispatch transmutes the bound pointer to the declared C
+        // shape; a plain extern "C" fn stands in for the JSCallback.
+        let handle = bind_js_callback(
+            CallbackSig::new(ValueType::I32, &[ValueType::I32]),
+            fake_js_double as extern "C" fn(i32) -> i32 as usize,
+        )
+        .unwrap();
+        let result = invoke_wait(handle, &[Value::I32(21)], Duration::ZERO);
+        assert_eq!(result, Ok(Value::I32(42)));
+
+        // The bool return (bun:ffi spells it `u8`).
+        let handle = bind_js_callback(
+            CallbackSig::new(ValueType::Bool, &[]),
+            fake_js_ping as extern "C" fn() -> u8 as usize,
+        )
+        .unwrap();
+        let result = invoke_wait(handle, &[], Duration::ZERO);
+        assert_eq!(result, Ok(Value::Bool(true)));
+    }
+
+    #[test]
+    fn invoke_wait_js_bound_crosses_strings_as_cstrings() {
+        let handle = bind_js_callback(
+            CallbackSig::new(ValueType::I32, &[ValueType::Str]),
+            fake_js_len as extern "C" fn(*const c_char) -> i32 as usize,
+        )
+        .unwrap();
+        let result = invoke_wait(handle, &[Value::Str("héllo".to_owned())], Duration::ZERO);
+        // "héllo" is 6 bytes of UTF-8.
+        assert_eq!(result, Ok(Value::I32(6)));
+    }
+
+    #[test]
+    fn invoke_wait_js_bound_null_pointer_is_rejected() {
+        let handle = bind_js_callback(CallbackSig::new(ValueType::Bool, &[]), 0).unwrap();
+        assert_eq!(
+            invoke_wait(handle, &[], Duration::ZERO).err(),
+            Some(CallbackError::NullPointer)
+        );
+    }
+
+    #[test]
+    fn invoke_wait_js_bound_rejects_uncalleble_signatures_early() {
+        // `Bytes` parameters have no C spelling in the dispatch.
+        let handle = bind_js_callback(
+            CallbackSig::new(ValueType::Unit, &[ValueType::Bytes]),
+            fake_js_ping as extern "C" fn() -> u8 as usize,
+        )
+        .unwrap();
+        assert_eq!(
+            invoke_wait(handle, &[], Duration::ZERO).err(),
+            Some(CallbackError::UnsupportedSignature {
+                sig: CallbackSig::new(ValueType::Unit, &[ValueType::Bytes]),
+            })
+        );
+    }
+
+    #[test]
+    fn invoke_wait_js_bound_rejects_wrong_typing_without_a_queue() {
+        let handle = bind_js_callback(CallbackSig::new(ValueType::Bool, &[]), 0).unwrap();
+        // The mismatch is detected on the CALLING thread - no timeout
+        // wait, no marshal job.
+        assert_eq!(
+            invoke_wait(handle, &[Value::I32(1)], Duration::ZERO).err(),
+            Some(CallbackError::SignatureMismatch {
+                expected: CallbackSig::new(ValueType::Bool, &[]),
+                got: vec![ValueType::I32],
+            })
+        );
+        assert_eq!(crate::bffi_event_loop::pending(), 0);
     }
 
     #[test]

@@ -10,31 +10,31 @@
 //!
 //! - a `winit::EventLoopProxy` (`send_event`): the JS-facing exports
 //!   proxy every window/webview request onto the loop thread;
-//! - [`bffi::invoke_wait`]: the loop-thread IPC handler parks until
-//!   the JS thread delivers the callback answer by pumping;
+//! - [`bffi::invoke_wait`] over a JS-BOUND callback handle: the
+//!   loop-thread IPC handler passes the request body as a
+//!   `Value::Str` and parks until the JS thread delivers the
+//!   callback answer by pumping - the dispatch job calls the bound
+//!   `JSCallback` pointer directly (the marshal-and-wait mechanics
+//!   serve both callback tables);
 //! - `evaluate_script`: the loop thread resolves the page-side
 //!   promise once the answer is in.
 //!
 //! The UI -> native -> JS -> native -> UI roundtrip, step by step:
 //! the page calls `window.ipc.postMessage(JSON)` (wry delivers the
-//! body to the ipc handler ON THE LOOP THREAD) -> the handler stores
-//! the body in the per-webview message box and calls `invoke_wait`
-//! on a registered FORWARDER callback (the loop thread parks) -> the
-//! JS thread pumps, the marshal job invokes the forwarder body ON
-//! THE JS THREAD, which calls the bound `JSCallback` pointer
-//! synchronously; the JS handler reads the request from the
-//! argument, computes the reply and stores it with
-//! [`webview_ipc_reply`] -> the forwarder returns, `invoke_wait`
-//! wakes the loop thread, which reads the reply back and queues an
-//! `Eval` command resolving `window.__bffiResolve(json)` in the
-//! page.
+//! body to the ipc handler ON THE LOOP THREAD) -> the handler calls
+//! `invoke_wait(js_handle, [Value::Str(body)], 30s)` (the loop
+//! thread parks) -> the JS thread pumps, the marshal job converts
+//! the argument to a `cstring` and calls the bound `JSCallback`
+//! pointer synchronously; the JS handler computes the reply and
+//! stores it with [`webview_ipc_reply`] -> the dispatch returns,
+//! `invoke_wait` wakes the loop thread, which reads the reply back
+//! and queues an `Eval` command resolving `window.__bffiResolve(json)`
+//! in the page.
 //!
-//! The callback `Value` matrix is primitives-only in v1 (no
-//! `Value::Str`), so the string payload rides the message box and
-//! the `JSCallback` crosses as a raw pointer with a `cstring`
-//! argument - the exact raw-pointer convention of
-//! `bffi_async_attach`'s resolver pair (the bffi-async delivery
-//! pattern); `invoke_wait` remains the synchronization backbone.
+//! The string payload crosses the callback boundary itself
+//! (`Value::Str` <-> the JSCallback's `cstring` argument); the reply
+//! rides the per-webview message box (`webview_ipc_reply`), and
+//! `invoke_wait` remains the synchronization backbone.
 //!
 //! Aggregation lives in [`module_def`] (single source); the
 //! `emit-json` binary materializes `.bffi/bffi.api.json` from it for
@@ -158,36 +158,26 @@ impl WebviewConfig {
 }
 
 /// The registry slot behind a webview handle: the IPC binding wired
-/// by [`webview_bind_ipc`], if any.
+/// by [`webview_bind_ipc`], if any - the JS-BOUND callback handle
+/// (`bffi_callback_bind`) the loop-thread handler waits on.
 #[derive(Default)]
 struct WebviewSlot {
-    ipc: Mutex<Option<IpcBinding>>,
+    ipc: Mutex<Option<u64>>,
 }
 
-/// One IPC binding: the raw bun:ffi `JSCallback` pointer the JS side
-/// handed over (`(cstring) -> void`: the request body in, the reply
-/// stored through `webview_ipc_reply`), plus the forwarder NATIVE
-/// callback (`bffi::register`) whose body calls that pointer - the
-/// body `invoke_wait` marshals onto the JS thread.
-struct IpcBinding {
-    forwarder: u64,
-    js_ptr: u64,
-}
-
-/// The IPC binding of a webview slot, if any.
-fn bound_ipc(slot: u64) -> Option<(u64, u64)> {
+/// The IPC callback handle of a webview slot, if any.
+fn bound_ipc(slot: u64) -> Option<u64> {
     let entry = Registry::global().get_typed::<WebviewSlot>(Handle::from_raw(slot))?;
     let binding = entry.ipc.lock().unwrap_or_else(PoisonError::into_inner);
-    binding.as_ref().map(|b| (b.forwarder, b.js_ptr))
+    *binding
 }
 
-/// The per-webview IPC message box: the pending request body
-/// written by the loop-thread handler and the reply written back by
-/// the JS callback. The `Value` matrix is primitives-only in v1, so
-/// the string payload rides here while `invoke_wait` synchronizes.
+/// The per-webview IPC message box: the reply written back by the
+/// JS callback (`webview_ipc_reply`). The request body crosses the
+/// callback boundary itself (`Value::Str`); only the reply rides
+/// the box.
 #[derive(Default)]
 struct IpcBox {
-    request: Option<String>,
     reply: Option<String>,
 }
 
@@ -199,29 +189,9 @@ fn with_boxes<R>(f: impl FnOnce(&mut HashMap<u64, IpcBox>) -> R) -> R {
     f(&mut boxes)
 }
 
-/// Stores the request body the IPC handler is about to block on.
-fn ipc_put_request(handle: u64, body: String) {
-    with_boxes(|boxes| boxes.entry(handle).or_default().request = Some(body));
-}
-
-/// Takes the pending request body (one-shot) from the message box.
-fn ipc_take_request(handle: u64) -> Option<String> {
-    with_boxes(|boxes| {
-        boxes
-            .get_mut(&handle)
-            .and_then(|entry| entry.request.take())
-    })
-}
-
 /// Stores the reply computed by the JS callback.
 fn ipc_put_reply(handle: u64, body: String) {
     with_boxes(|boxes| boxes.entry(handle).or_default().reply = Some(body));
-}
-
-/// Peeks at the stored reply WITHOUT taking it (the forwarder checks
-/// that the JS handler answered before it returns).
-fn ipc_peek_reply(handle: u64) -> Option<String> {
-    with_boxes(|boxes| boxes.get(&handle).and_then(|entry| entry.reply.clone()))
 }
 
 /// Takes the stored reply (one-shot) on the loop thread.
@@ -465,17 +435,18 @@ fn close_webview(app: &mut LoopApp, event_loop: &ActiveEventLoop, handle: u64) {
 }
 
 /// The IPC roundtrip ON the loop thread: park until the JS thread
-/// answers, then queue the resolve script. Blocking the UI thread
-/// for up to [`IPC_TIMEOUT`] is the price of the synchronous
-/// roundtrip - the Bun thread pumps meanwhile.
+/// answers, then queue the resolve script. The request body crosses
+/// the callback boundary itself (`Value::Str` -> the JSCallback's
+/// `cstring` argument). Blocking the UI thread for up to
+/// [`IPC_TIMEOUT`] is the price of the synchronous roundtrip - the
+/// Bun thread pumps meanwhile.
 fn handle_ipc(slot: u64, body: String, proxy: EventLoopProxy<Command>) {
-    let Some((forwarder, _)) = bound_ipc(slot) else {
+    let Some(ipc) = bound_ipc(slot) else {
         // Nothing bound: drop the message instead of stalling the
         // UI thread for a guaranteed timeout.
         return;
     };
-    ipc_put_request(slot, body);
-    let outcome = invoke_wait(Handle::from_raw(forwarder), &[], IPC_TIMEOUT);
+    let outcome = invoke_wait(Handle::from_raw(ipc), &[Value::Str(body)], IPC_TIMEOUT);
     let reply = if outcome.is_ok() {
         ipc_take_reply(slot)
     } else {
@@ -486,52 +457,6 @@ fn handle_ipc(slot: u64, body: String, proxy: EventLoopProxy<Command>) {
         handle: slot,
         js: script,
     });
-}
-
-/// The body of the registered forwarder callback: it runs ON THE
-/// JS THREAD (inside the `invoke_wait` marshal job, while the JS
-/// side pumps) - the only thread where calling the JSCallback
-/// pointer is synchronous. Reads the pending request from the
-/// message box, hands it to the JS handler (which answers through
-/// `webview_ipc_reply`) and reports whether an answer arrived.
-fn forward_ipc(slot: u64) -> Value {
-    let Some((_, js_ptr)) = bound_ipc(slot) else {
-        return Value::Bool(false);
-    };
-    let Some(body) = ipc_take_request(slot) else {
-        return Value::Bool(false);
-    };
-    call_js_ipc(js_ptr, &body);
-    Value::Bool(ipc_peek_reply(slot).is_some())
-}
-
-/// Calls a bun:ffi `JSCallback` pointer declared as
-/// `(cstring) -> void` with `body`.
-///
-/// # Safety contract
-///
-/// `js_ptr` must be the pointer of a live bun:ffi `JSCallback`
-/// declared as `{ args: ["cstring"], returns: "void" }` (the
-/// `webview_bind_ipc` contract), and the call MUST happen on the
-/// JS thread - here: inside the forwarder body, which only runs
-/// there (the `invoke_wait` marshal job during the pump). The
-/// pointer stays valid while the JS side keeps the `JSCallback`
-/// alive and has not closed it.
-fn call_js_ipc(js_ptr: u64, body: &str) {
-    if js_ptr == 0 {
-        return;
-    }
-    // SAFETY: see the function contract above; the transmute is the
-    // exact pattern of bffi-async's `resolve_by_ptr`/`reject_by_ptr`
-    // (a stored bun:ffi trampoline pointer called back on the JS
-    // thread).
-    let callback: extern "C" fn(*const std::os::raw::c_char) =
-        unsafe { std::mem::transmute(js_ptr as usize) };
-    let body = match std::ffi::CString::new(body) {
-        Ok(body) => body,
-        Err(_) => return,
-    };
-    callback(body.as_ptr());
 }
 
 /// The script that settles the page-side promise: the reply JSON as
@@ -651,28 +576,37 @@ pub fn webview_close(handle: u64) -> Result<(), WryError> {
 }
 
 /// Wires the IPC roundtrip of the webview behind `handle` to a JS
-/// handler: `js_ptr` is the raw `bun:ffi` `JSCallback` pointer of a
-/// callback declared as `{ args: ["cstring"], returns: "void" }`
-/// (the request body arrives as the argument; the handler answers
-/// through [`webview_ipc_reply`] - the same raw-pointer convention
-/// as `bffi_async_attach`). Native side registers a forwarder
-/// callback whose body `invoke_wait` marshals onto the JS thread,
-/// where the pointer call is synchronous.
+/// handler: `ipc` is a JS-BOUND callback handle - the JS side wraps
+/// its handler into a `bun:ffi` `JSCallback` declared as
+/// `{ args: ["cstring"], returns: "void" }` and binds it through
+/// `bffi_callback_bind` with the signature `unit(str)` (wire tags
+/// `[0, 5]`), exactly the `examples/callbacks` bind pattern. The
+/// request body arrives as the `cstring` argument; the handler
+/// answers through [`webview_ipc_reply`]. Native side invokes the
+/// handle with `invoke_wait(..., [Value::Str(body)])` from the loop
+/// thread - the dispatch calls the bound pointer on the JS thread.
 #[bffi]
-pub fn webview_bind_ipc(handle: u64, js_ptr: u64) -> Result<(), WryError> {
+pub fn webview_bind_ipc(handle: u64, ipc: u64) -> Result<(), WryError> {
     let slot = webview_slot(handle)?;
-    if js_ptr == 0 {
-        return Err(WryError("the ipc callback pointer is null".to_owned()));
+    if ipc == 0 {
+        return Err(WryError("the ipc callback handle is null".to_owned()));
     }
-    let forwarder = bffi::register(
-        bffi::CallbackSig::new(bffi::ValueType::Bool, &[]),
-        Arc::new(move |_| forward_ipc(handle)),
-    )
-    .map_err(|error| WryError(format!("forwarder registration failed: {error}")))?;
-    *slot.ipc.lock().unwrap_or_else(PoisonError::into_inner) = Some(IpcBinding {
-        forwarder: forwarder.as_u64(),
-        js_ptr,
-    });
+    // Validate the binding contract: a live JS-bound callback with
+    // the `unit(str)` signature (void return, one cstring).
+    let info = bffi::js_callback(Handle::from_raw(ipc))
+        .map_err(|error| WryError(format!("invalid ipc callback handle: {error}")))?;
+    if info.sig.ret() != bffi::ValueType::Unit || info.sig.params() != [bffi::ValueType::Str] {
+        return Err(WryError(format!(
+            "the ipc callback must have the unit(str) signature, got {}",
+            info.sig
+                .params()
+                .iter()
+                .map(|p| format!("{p:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
+    }
+    *slot.ipc.lock().unwrap_or_else(PoisonError::into_inner) = Some(ipc);
     Ok(())
 }
 
@@ -706,8 +640,7 @@ mod tests {
 
     use super::{
         DEFAULT_HEIGHT, DEFAULT_WIDTH, IpcBox, WEBVIEW_TAG, WebviewConfig, WebviewSlot, escape_js,
-        ipc_put_reply, ipc_put_request, ipc_resolve_script, ipc_take_reply, ipc_take_request,
-        webview_slot,
+        ipc_put_reply, ipc_resolve_script, ipc_take_reply, webview_slot,
     };
     use bffi::{CallbackError, Registry, Value};
 
@@ -722,22 +655,15 @@ mod tests {
     }
 
     #[test]
-    fn ipc_box_roundtrips_request_and_reply() {
+    fn ipc_box_roundtrips_the_reply() {
         const HANDLE: u64 = 0xA11CE;
-        assert_eq!(ipc_take_request(HANDLE), None);
-        ipc_put_request(HANDLE, r#"{"method":"echo"}"#.to_owned());
-        assert_eq!(
-            ipc_take_request(HANDLE).as_deref(),
-            Some(r#"{"method":"echo"}"#)
-        );
-        // Take is one-shot: the box is empty again.
-        assert_eq!(ipc_take_request(HANDLE), None);
         assert_eq!(ipc_take_reply(HANDLE), None);
         ipc_put_reply(HANDLE, r#"{"pong":"ping"}"#.to_owned());
         assert_eq!(
             ipc_take_reply(HANDLE).as_deref(),
             Some(r#"{"pong":"ping"}"#)
         );
+        // Take is one-shot: the box is empty again.
         assert_eq!(ipc_take_reply(HANDLE), None);
     }
 
@@ -745,10 +671,10 @@ mod tests {
     fn ipc_boxes_are_isolated_per_handle() {
         const A: u64 = 0xB000;
         const B: u64 = 0xB001;
-        ipc_put_request(A, "a".to_owned());
-        ipc_put_request(B, "b".to_owned());
-        assert_eq!(ipc_take_request(A).as_deref(), Some("a"));
-        assert_eq!(ipc_take_request(B).as_deref(), Some("b"));
+        ipc_put_reply(A, "a".to_owned());
+        ipc_put_reply(B, "b".to_owned());
+        assert_eq!(ipc_take_reply(A).as_deref(), Some("a"));
+        assert_eq!(ipc_take_reply(B).as_deref(), Some("b"));
     }
 
     #[test]
@@ -794,7 +720,6 @@ mod tests {
     #[test]
     fn ipc_box_default_is_empty() {
         let entry = IpcBox::default();
-        assert_eq!(entry.request, None);
         assert_eq!(entry.reply, None);
     }
 }

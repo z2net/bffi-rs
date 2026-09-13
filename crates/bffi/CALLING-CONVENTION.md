@@ -130,10 +130,10 @@ The generic callback exports (`bffi-callback`, expanded in the user
 crate next to `bffi_runtime_abi!()`) give the JS side access to BOTH
 callback directions without hand-written per-callback shims.
 Signatures and arguments are encoded in the framework-wide wire codec
-(`bffi_types::wire`; `I32`=1, `I64`=2, `F64`=3, `Bool`=4; a signature
-is the return tag byte followed by one parameter tag byte each;
-arguments are concatenated `[tag][payload]` records, an empty list is
-the empty slice).
+(`bffi_types::wire`; `Unit`=0, `I32`=1, `I64`=2, `F64`=3, `Bool`=4,
+`Str`=5, `Bytes`=6; a signature is the return tag byte followed by
+one parameter tag byte each; arguments are concatenated
+`[tag][payload]` records, an empty list is the empty slice).
 
 | Symbol | Signature | Returns |
 | ------------------------ | ------------------------------------------------------------ | ------------------------- |
@@ -154,11 +154,34 @@ release with `bffi_types_free`.
 
 `bffi::callback::invoke_wait(handle, args, timeout)` is the
 cross-thread counterpart of `bffi_callback_invoke` for native
-callers (a GUI worker thread, for example): on the bound JS thread
-(or in an unbound process) it performs the ordinary synchronous
-invoke; from any other thread it queues an event-loop job that runs
-that same invoke on the JS thread and parks the caller on a shared
-`Mutex` + `Condvar` slot until the outcome - the value or the full
+callers (a GUI worker thread, for example). It dispatches by handle
+kind and accepts handles from BOTH callback tables:
+
+- **Native handles** (`bffi::register`, tag `0x0200`): on the bound
+  JS thread (or in an unbound process) it performs the ordinary
+  synchronous invoke; from any other thread it queues an event-loop
+  job that runs that same invoke on the JS thread.
+- **JS-bound handles** (`bffi_callback_bind`, tag `0x0201`): the
+  marshal job converts the `Value` arguments to the declared C
+  types and CALLS the bound `bun:ffi` JSCallback pointer directly,
+  on the JS thread - the one thread where that call is
+  synchronous. The C matrix per wire tag: `I32` -> `i32`, `I64` ->
+  `i64`, `F64` -> `f64`, `Bool` -> `u8` (bun:ffi's `bool`
+  spelling), `Str` -> `cstring` (NUL-terminated UTF-8, the
+  framework boundary-string convention); returns wrap back:
+  `I32`/`I64`/`F64` as-is, `Bool` from the `u8`, `Unit` (the
+  `void` return) as `Value::Unit`. v1 limits: at most two
+  parameters; a `Bytes` parameter or a `Str`/`Bytes` return cannot
+  cross the raw C call and fails fast with
+  `CallbackError::UnsupportedSignature` (status `11`) - never with
+  a timeout. The signature check runs on the CALLING thread first
+  (a mismatch fails fast, nothing queued); the job re-validates the
+  lookup, so a revocation during the wait crosses the slot as
+  `InvalidHandle`, and a null bound pointer surfaces as status `7`
+  (`NullPointer`).
+
+In both tables the job parks the caller on a shared `Mutex` +
+`Condvar` slot until the outcome - the value or the full
 `CallbackError` - crosses back unchanged. The existing
 `bffi_callback_invoke` keeps its JS-thread-only contract unchanged.
 

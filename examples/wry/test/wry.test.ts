@@ -16,9 +16,11 @@
  * cover the no-window logic and always run.
  */
 import { describe, expect, test } from "bun:test";
-import { JSCallback, dlopen } from "bun:ffi";
+import { JSCallback, dlopen, ptr } from "bun:ffi";
 
 import {
+  TAG_STR,
+  TAG_UNIT,
   bffi,
   buildDeclarations,
   findProjectRoot,
@@ -115,8 +117,7 @@ describe("wry through the full pipeline", () => {
       // the request body arrives as the cstring argument, the reply
       // goes back through `webview_ipc_reply`. The "resolved" method
       // proves the page promise WAS resolved (the native
-      // `evaluate_script` leg of the roundtrip). Same raw-pointer
-      // convention as `bffi_async_attach`'s resolver callbacks.
+      // `evaluate_script` leg of the roundtrip).
       const resolvers: Array<(reply: string) => void> = [];
       let settledCount = 0;
       const replyAt = (n: number): Promise<string> =>
@@ -141,6 +142,27 @@ describe("wry through the full pipeline", () => {
         throw new Error("bun:ffi produced a null JSCallback pointer");
       }
 
+      // Bind the handler through the generic callback ABI (the
+      // examples/callbacks pattern): sig = unit(str) - a void
+      // return over one cstring parameter - and hand the HANDLE
+      // (not the raw pointer) to `webview_bind_ipc`.
+      const bind = raw.bffi_callback_bind;
+      if (bind === undefined) {
+        throw new Error("bffi_callback_bind export is missing");
+      }
+      const sig = new Uint8Array([TAG_UNIT, TAG_STR]);
+      const bindOut = new BigUint64Array(1);
+      const bindStatus = bind(
+        sig[0] ?? 0,
+        ptr(sig.subarray(1)),
+        sig.length - 1,
+        BigInt(handler.ptr),
+        bindOut,
+      );
+      expect(bindStatus).toBe(0);
+      const ipcHandle = bindOut[0] ?? 0n;
+      expect(ipcHandle).not.toBe(0n);
+
       handle = api.webview_open({
         html: PAGE_HTML,
         title: "bffi wry",
@@ -150,7 +172,7 @@ describe("wry through the full pipeline", () => {
         url: null,
       });
       expect(handle).toBeTypeOf("bigint");
-      api.webview_bind_ipc(handle, BigInt(handler.ptr));
+      api.webview_bind_ipc(handle, ipcHandle);
 
       /** Awaits `promise` while pumping the loop, with a hard
        * deadline so a broken bridge fails instead of hanging. */

@@ -91,6 +91,26 @@ const moduleJson = {
       "out": "handle"
     },
     {
+      "name": "maybe_report",
+      "export": "bffi_maybe_report",
+      "docs": [
+        "An optional report: `None` (zero value) arrives as `null` - the",
+        "`Option<Report>` async return (`Promise<Report | null>`)."
+      ],
+      "params": [
+        {
+          "name": "value",
+          "ts": "bigint",
+          "abi": "u64"
+        }
+      ],
+      "ret": {
+        "ts": "Promise<Report | null>",
+        "abi": "task"
+      },
+      "out": "handle"
+    },
+    {
       "name": "fail_async",
       "export": "bffi_fail_async",
       "docs": [

@@ -565,7 +565,16 @@ fn ret_abi_str(ret: TsType, abi: &AbiSig) -> &'static str {
             | TsType::PromiseBooleanArray
             | TsType::PromiseStringArray
             | TsType::PromiseUint8ArrayArray
-            | TsType::PromiseRecordArray(_) => "task",
+            | TsType::PromiseRecordArray(_)
+            | TsType::PromiseNullableString
+            | TsType::PromiseNullableUint8Array
+            | TsType::PromiseNullableRecord(_)
+            | TsType::PromiseNullableNumberArray
+            | TsType::PromiseNullableBigIntArray
+            | TsType::PromiseNullableBooleanArray
+            | TsType::PromiseNullableStringArray
+            | TsType::PromiseNullableUint8ArrayArray
+            | TsType::PromiseNullableRecordArray(_) => "task",
             TsType::StreamNumber
             | TsType::StreamBigInt
             | TsType::StreamBoolean

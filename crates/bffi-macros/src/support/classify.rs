@@ -514,7 +514,18 @@ pub fn ts_promise(ret: &RetKind) -> TsKind {
         RetKind::Buffer(BufferTy::String) => TsKind::PromiseString,
         RetKind::Buffer(_) => TsKind::PromiseUint8Array,
         RetKind::Result(inner) => ts_promise(inner),
-        RetKind::Nullable(inner) => ts_promise(&RetKind::Buffer(*inner)),
+        RetKind::Nullable(BufferTy::String) => TsKind::PromiseNullableString,
+        RetKind::Nullable(_) => TsKind::PromiseNullableUint8Array,
+        RetKind::NullableRecord(path) => {
+            let name = path
+                .0
+                .segments
+                .last()
+                .map(|seg| seg.ident.to_string())
+                .unwrap_or_default();
+            TsKind::PromiseNullableRecord(name)
+        }
+        RetKind::NullableSeq(item) => promise_nullable_seq_kind(item),
         RetKind::Record(path) => {
             let name = path
                 .0
@@ -525,7 +536,27 @@ pub fn ts_promise(ret: &RetKind) -> TsKind {
             TsKind::PromiseRecord(name)
         }
         RetKind::Seq(item) => promise_seq_kind(item),
-        RetKind::NullableRecord(_) | RetKind::NullableSeq(_) => TsKind::Void,
+    }
+}
+
+/// TypeScript kind of a promised nullable sequence
+/// (`Promise<number[] | null>` ...).
+fn promise_nullable_seq_kind(item: &SeqItem) -> TsKind {
+    match item {
+        SeqItem::Narrow | SeqItem::Wide => TsKind::PromiseNullableNumberArray,
+        SeqItem::I64 | SeqItem::U64 => TsKind::PromiseNullableBigIntArray,
+        SeqItem::Bool => TsKind::PromiseNullableBooleanArray,
+        SeqItem::Str => TsKind::PromiseNullableStringArray,
+        SeqItem::Bytes => TsKind::PromiseNullableUint8ArrayArray,
+        SeqItem::Record(path) => {
+            let name = path
+                .0
+                .segments
+                .last()
+                .map(|seg| seg.ident.to_string())
+                .unwrap_or_default();
+            TsKind::PromiseNullableRecordArray(name)
+        }
     }
 }
 

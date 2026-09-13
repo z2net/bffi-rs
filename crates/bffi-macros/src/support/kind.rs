@@ -223,6 +223,28 @@ pub enum TsKind {
     /// `Promise<Name[]>` (`#[bffi_async]` `Vec` of a named
     /// record/enum).
     PromiseRecordArray(String),
+    /// `Promise<string | null>` (`#[bffi_async]` `Option<String>`).
+    PromiseNullableString,
+    /// `Promise<Uint8Array | null>` (`#[bffi_async]`
+    /// `Option<Vec<u8>>` / `Option<CopiedBuf>`).
+    PromiseNullableUint8Array,
+    /// `Promise<Name | null>` (`#[bffi_async]` `Option` of a named
+    /// record/enum).
+    PromiseNullableRecord(String),
+    /// `Promise<number[] | null>` (`#[bffi_async]` `Option<Vec>` of
+    /// number-ish items).
+    PromiseNullableNumberArray,
+    /// `Promise<bigint[] | null>` (`Option<Vec<i64>>`/`Option<Vec<u64>>`).
+    PromiseNullableBigIntArray,
+    /// `Promise<boolean[] | null>` (`Option<Vec<bool>>`).
+    PromiseNullableBooleanArray,
+    /// `Promise<string[] | null>` (`Option<Vec<String>>`).
+    PromiseNullableStringArray,
+    /// `Promise<Uint8Array[] | null>` (`Option<Vec<Vec<u8>>>`).
+    PromiseNullableUint8ArrayArray,
+    /// `Promise<Name[] | null>` (`Option<Vec>` of a named
+    /// record/enum).
+    PromiseNullableRecordArray(String),
     /// A pre-quoted `TsType` expression: the B1 named composites
     /// (`#path::BFFI_TS_TYPE` of a record/enum) carry their exact IR
     /// tokens with no path context of their own.
@@ -267,6 +289,8 @@ impl PartialEq for TsKind {
             (Self::NullableRecordArray(a), Self::NullableRecordArray(b)) => a == b,
             (Self::PromiseRecord(a), Self::PromiseRecord(b)) => a == b,
             (Self::PromiseRecordArray(a), Self::PromiseRecordArray(b)) => a == b,
+            (Self::PromiseNullableRecord(a), Self::PromiseNullableRecord(b)) => a == b,
+            (Self::PromiseNullableRecordArray(a), Self::PromiseNullableRecordArray(b)) => a == b,
             (a, b) => std::mem::discriminant(a) == std::mem::discriminant(b),
         }
     }
@@ -309,6 +333,31 @@ impl TsKind {
             TsKind::PromiseUint8ArrayArray => quote! { #dts::TsType::PromiseUint8ArrayArray },
             TsKind::PromiseRecordArray(name) => {
                 quote! { #dts::TsType::PromiseRecordArray(#name) }
+            }
+            TsKind::PromiseNullableString => quote! { #dts::TsType::PromiseNullableString },
+            TsKind::PromiseNullableUint8Array => {
+                quote! { #dts::TsType::PromiseNullableUint8Array }
+            }
+            TsKind::PromiseNullableRecord(name) => {
+                quote! { #dts::TsType::PromiseNullableRecord(#name) }
+            }
+            TsKind::PromiseNullableNumberArray => {
+                quote! { #dts::TsType::PromiseNullableNumberArray }
+            }
+            TsKind::PromiseNullableBigIntArray => {
+                quote! { #dts::TsType::PromiseNullableBigIntArray }
+            }
+            TsKind::PromiseNullableBooleanArray => {
+                quote! { #dts::TsType::PromiseNullableBooleanArray }
+            }
+            TsKind::PromiseNullableStringArray => {
+                quote! { #dts::TsType::PromiseNullableStringArray }
+            }
+            TsKind::PromiseNullableUint8ArrayArray => {
+                quote! { #dts::TsType::PromiseNullableUint8ArrayArray }
+            }
+            TsKind::PromiseNullableRecordArray(name) => {
+                quote! { #dts::TsType::PromiseNullableRecordArray(#name) }
             }
             TsKind::Expr(tokens) => tokens.clone(),
             TsKind::NumberArray => quote! { #dts::TsType::NumberArray },

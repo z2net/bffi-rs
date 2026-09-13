@@ -119,6 +119,26 @@ pub enum TsType {
     /// The TypeScript `Promise<name[]>` type (`Vec` of a named
     /// record/enum).
     PromiseRecordArray(&'static str),
+    /// The TypeScript `Promise<string | null>` type (`Option<String>`
+    /// async returns).
+    PromiseNullableString,
+    /// The TypeScript `Promise<Uint8Array | null>` type.
+    PromiseNullableUint8Array,
+    /// The TypeScript `Promise<name | null>` type (`Option` of a
+    /// named record/enum).
+    PromiseNullableRecord(&'static str),
+    /// The TypeScript `Promise<number[] | null>` type.
+    PromiseNullableNumberArray,
+    /// The TypeScript `Promise<bigint[] | null>` type.
+    PromiseNullableBigIntArray,
+    /// The TypeScript `Promise<boolean[] | null>` type.
+    PromiseNullableBooleanArray,
+    /// The TypeScript `Promise<string[] | null>` type.
+    PromiseNullableStringArray,
+    /// The TypeScript `Promise<Uint8Array[] | null>` type.
+    PromiseNullableUint8ArrayArray,
+    /// The TypeScript `Promise<name[] | null>` type.
+    PromiseNullableRecordArray(&'static str),
     /// The TypeScript `void` type.
     Void,
     /// A named record type, declared in [`ModuleDef::records`] (the
@@ -207,6 +227,17 @@ impl TsType {
             Self::PromiseStringArray => Cow::Borrowed("Promise<string[]>"),
             Self::PromiseUint8ArrayArray => Cow::Borrowed("Promise<Uint8Array[]>"),
             Self::PromiseRecordArray(name) => Cow::Owned(format!("Promise<{name}[]>")),
+            Self::PromiseNullableString => Cow::Borrowed("Promise<string | null>"),
+            Self::PromiseNullableUint8Array => Cow::Borrowed("Promise<Uint8Array | null>"),
+            Self::PromiseNullableRecord(name) => Cow::Owned(format!("Promise<{name} | null>")),
+            Self::PromiseNullableNumberArray => Cow::Borrowed("Promise<number[] | null>"),
+            Self::PromiseNullableBigIntArray => Cow::Borrowed("Promise<bigint[] | null>"),
+            Self::PromiseNullableBooleanArray => Cow::Borrowed("Promise<boolean[] | null>"),
+            Self::PromiseNullableStringArray => Cow::Borrowed("Promise<string[] | null>"),
+            Self::PromiseNullableUint8ArrayArray => Cow::Borrowed("Promise<Uint8Array[] | null>"),
+            Self::PromiseNullableRecordArray(name) => {
+                Cow::Owned(format!("Promise<{name}[] | null>"))
+            }
             Self::Void => Cow::Borrowed("void"),
             Self::Record(name) => Cow::Borrowed(*name),
             Self::Enum(name) => Cow::Borrowed(*name),

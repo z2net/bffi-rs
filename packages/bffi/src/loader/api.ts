@@ -68,9 +68,39 @@ export type TsOf<S extends TsName, M extends ModuleJson = ModuleJson> =
                      ? Promise<boolean[]>
                      : S extends "Promise<string[]>"
                        ? Promise<string[]>
-                       : S extends "Promise<Uint8Array[]>"
-                         ? Promise<Uint8Array[]>
-                         : S extends `Promise<${infer P}>`
+                         : S extends "Promise<Uint8Array[]>"
+                           ? Promise<Uint8Array[]>
+                           : S extends "Promise<string | null>"
+                             ? Promise<string | null>
+                             : S extends "Promise<Uint8Array | null>"
+                               ? Promise<Uint8Array | null>
+                               : S extends "Promise<number[] | null>"
+                                 ? Promise<number[] | null>
+                                 : S extends "Promise<bigint[] | null>"
+                                   ? Promise<bigint[] | null>
+                                   : S extends "Promise<boolean[] | null>"
+                                     ? Promise<boolean[] | null>
+                                     : S extends "Promise<string[] | null>"
+                                       ? Promise<string[] | null>
+                                       : S extends "Promise<Uint8Array[] | null>"
+                                         ? Promise<Uint8Array[] | null>
+                                         : S extends `Promise<${infer P} | null>`
+                                           ? P extends TsName
+                                             ? [NamedRecord<M, P>] extends [never]
+                                               ? [NamedEnum<M, P>] extends [never]
+                                                 ? S
+                                                 : NamedEnum<M, P> extends infer E
+                                                   ? E extends { variants: { name: string }[] }
+                                                     ? Promise<EnumUnion<E> | null>
+                                                     : S
+                                                   : S
+                                               : NamedRecord<M, P> extends infer Rec
+                                                 ? Rec extends { fields: { name: string; ts: TsName }[] }
+                                                   ? Promise<RecordShape<Rec, M> | null>
+                                                   : S
+                                                 : S
+                                             : S
+                                           : S extends `Promise<${infer P}>`
                            ? P extends TsName
                              ? [NamedRecord<M, P>] extends [never]
                                ? [NamedEnum<M, P>] extends [never]

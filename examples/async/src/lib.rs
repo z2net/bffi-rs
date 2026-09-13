@@ -106,6 +106,21 @@ pub async fn ticks_async(count: u32) -> Vec<f64> {
     (0..count).map(f64::from).collect()
 }
 
+/// An optional report: `None` (zero value) arrives as `null` - the
+/// `Option<Report>` async return (`Promise<Report | null>`).
+#[bffi::bffi_async]
+pub async fn maybe_report(value: u64) -> Option<Report> {
+    async_sleep(Duration::from_millis(10)).await;
+    if value == 0 {
+        None
+    } else {
+        Some(Report {
+            value,
+            label: format!("report-{value}"),
+        })
+    }
+}
+
 /// A failing task: `Result` rejects the promise with the domain
 /// message.
 #[bffi::bffi_async]

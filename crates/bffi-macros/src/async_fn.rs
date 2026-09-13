@@ -137,17 +137,8 @@ impl AsyncFnModel {
 
         let ret = match &func.sig.output {
             syn::ReturnType::Default => RetKind::Unit,
-            syn::ReturnType::Type(_, ty) => {
-                let ret = support::classify::classify_return(ty)
-                    .map_err(|unsupported| errors::return_type(unsupported.span, unsupported.ty))?;
-                if matches!(
-                    ret,
-                    RetKind::Nullable(_) | RetKind::NullableRecord(_) | RetKind::NullableSeq(_)
-                ) {
-                    return Err(errors::async_nullable_return(ty.span(), ty));
-                }
-                ret
-            }
+            syn::ReturnType::Type(_, ty) => support::classify::classify_return(ty)
+                .map_err(|unsupported| errors::return_type(unsupported.span, unsupported.ty))?,
         };
 
         let docs = crate::support::util::extract_docs(&func.attrs);
@@ -396,11 +387,43 @@ fn async_tail(paths: &PathCtx, ret: &RetKind, call: TokenStream) -> TokenStream 
                 }
             }
         }
+        // `Option` returns: `Some` encodes like its plain form,
+        // `None` rides the unit record (the JS mapper turns it into
+        // `null` for the `| null` promised spellings).
+        RetKind::Nullable(ty) => {
+            let some_conv = async_value_from(paths, &RetKind::Buffer(*ty));
+            nullable_async_tail(paths, some_conv, call)
+        }
+        RetKind::NullableRecord(path) => {
+            let some_conv = async_value_from(paths, &RetKind::Record(path.clone()));
+            nullable_async_tail(paths, some_conv, call)
+        }
+        RetKind::NullableSeq(item) => {
+            let some_conv = async_value_from(paths, &RetKind::Seq(item.clone()));
+            nullable_async_tail(paths, some_conv, call)
+        }
         other => {
             let conversion = async_value_from(paths, other);
             quote! {
                 let __value = #call.await;
                 ::std::result::Result::Ok(#conversion)
+            }
+        }
+    }
+}
+
+/// The `Option` future body: awaits the call, `Some` converts like
+/// the plain form, `None` becomes `AsyncValue::Unit`.
+fn nullable_async_tail(paths: &PathCtx, some_conv: TokenStream, call: TokenStream) -> TokenStream {
+    let async_root = &paths.r#async;
+    quote! {
+        let __opt = #call.await;
+        match __opt {
+            ::std::option::Option::Some(__value) => {
+                ::std::result::Result::Ok(#some_conv)
+            }
+            ::std::option::Option::None => {
+                ::std::result::Result::Ok(#async_root::AsyncValue::Unit)
             }
         }
     }

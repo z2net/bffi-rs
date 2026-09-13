@@ -82,6 +82,14 @@ describe("async through the full pipeline", () => {
     await expect(withPump(api.ticks_async(3))).resolves.toEqual([0, 1, 2]);
   });
 
+  test("optional results map None to null (Promise<Report | null>)", async () => {
+    await expect(withPump(api.maybe_report(9n))).resolves.toEqual({
+      value: 9n,
+      label: "report-9",
+    });
+    await expect(withPump(api.maybe_report(0n))).resolves.toBeNull();
+  });
+
   test("a failing task rejects with the domain message", async () => {
     await expect(withPump(api.fail_async())).rejects.toThrow("domain failure");
   });

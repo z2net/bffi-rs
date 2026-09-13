@@ -12,6 +12,7 @@ pub const FUNCTIONS: &[FunctionDef] = &[
     crate::bffi_meta_shout_async::FUNCTION,
     crate::bffi_meta_report_async::FUNCTION,
     crate::bffi_meta_ticks_async::FUNCTION,
+    crate::bffi_meta_maybe_report::FUNCTION,
     crate::bffi_meta_fail_async::FUNCTION,
     crate::bffi_meta_panic_async::FUNCTION,
     crate::bffi_meta_timed_async::FUNCTION,

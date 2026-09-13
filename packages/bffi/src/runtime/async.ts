@@ -42,15 +42,24 @@ export function wrapTask<T extends WireValue = WireValue>(
         try {
           const decoded = decodeValue(readBuffer(valueHandle));
           if (retTs !== undefined && json !== undefined) {
-            // The ret ts is the promised spelling (`Promise<Sample>`):
-            // the wire payload is the inner value's encoding.
-            const inner =
-              retTs.startsWith("Promise<") && retTs.endsWith(">")
-                ? retTs.slice("Promise<".length, -1)
-                : retTs;
+            // The ret ts is the promised spelling (`Promise<Sample>` /
+            // `Promise<Sample | null>`): the wire payload is the
+            // inner value's encoding.
+            const inner = retTs.startsWith("Promise<") && retTs.endsWith(">")
+              ? retTs.slice("Promise<".length, -1)
+              : retTs;
+            // `Option::None` rides the unit record (undefined) and
+            // maps to `null` for the `| null` spellings.
+            if (inner.endsWith(" | null") && decoded === undefined) {
+              resolve(null as unknown as T);
+              return;
+            }
             const tables = tablesOf(json);
             if (isCompositeTs(inner, tables)) {
-              resolve(wireToJs(tables, inner, decoded, "task") as T);
+              const bare = inner.endsWith(" | null")
+                ? inner.slice(0, -" | null".length)
+                : inner;
+              resolve(wireToJs(tables, bare, decoded, "task") as T);
               return;
             }
           }

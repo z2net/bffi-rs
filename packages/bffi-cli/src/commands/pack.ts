@@ -76,6 +76,10 @@ export async function pack(argv: string[]): Promise<number> {
     version: main.version,
     description: `${base} native binary (${triple})`,
     license: main.license ?? "MIT",
+    // npm provenance (sigstore) verifies that the published package
+    // declares the SAME repository the publishing workflow ran in -
+    // without this the publish is rejected with E422.
+    repository: { type: "git", url: "https://github.com/z2net/bffi-rs" },
     main: "index.js",
     os: [platform.os],
     cpu: [platform.cpu],

@@ -1,0 +1,22 @@
+{
+  "bffi": 1,
+  "version": "0.1.0",
+  "module": "streams",
+  "debug": false,
+  "crate": {
+    "dir": ".",
+    "targetDir": "../../target",
+    "name": "bffi-example-streams",
+    "binary": "bffi_example_streams"
+  },
+  "features": {
+    "runtime": true,
+    "stream": true
+  },
+  "generate": {
+    "apiGen": true,
+    "outFile": "api.gen.ts"
+  },
+  "files": ["bffi.api.json", "api.gen.ts"],
+  "libraryPath": null
+}

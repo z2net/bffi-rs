@@ -5,7 +5,7 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 the versioning is [SemVer](https://semver.org/) (`0.x` may break at
 any minor).
 
-## [0.1.3] - unreleased
+## [0.1.3] - 2026-09-14
 
 ### Multi-isolate JS threads (Bun 1.4 workers)
 

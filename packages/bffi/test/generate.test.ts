@@ -91,11 +91,28 @@ describe("renderModule", () => {
 
   test("embeds the schema and the runtime import", () => {
     const rendered = renderModule(FIXTURE);
-    expect(rendered).toContain('import { createApi, type ApiOf, type ModuleJson } from "@z2net/bffi";');
+    expect(rendered).toContain('import { dlopen } from "bun:ffi";');
+    expect(rendered).toContain('} from "@z2net/bffi";');
     expect(rendered).toContain("const moduleJson = {");
     expect(rendered).toContain("as const satisfies ModuleJson;");
     expect(rendered).toContain("export function createApiFromJson(libraryPath: string): ApiOf<typeof moduleJson>");
     expect(rendered).toContain("export type Api = ReturnType<typeof createApiFromJson>;");
+  });
+
+  test("specializes wrappers: hoisted slots and symbols, exact arity", () => {
+    const rendered = renderModule(FIXTURE);
+    // The out slot and the symbol are hoisted to factory scope.
+    expect(rendered).toContain("const out_add = new Uint32Array(1);");
+    expect(rendered).toContain('const sym_add = sym("bffi_add");');
+    // Exact positional parameters annotated through TsOf.
+    expect(rendered).toContain('a0: TsOf<"number", typeof moduleJson>');
+    // The arity check is exact.
+    expect(rendered).toContain('if (arguments.length !== 2) {');
+    // Task returns wrap through the runtime.
+    expect(rendered).toContain('wrapTask(lib, (out_compute[0] ?? 0n), "Promise<number>", moduleJson) as unknown as TsOf<"Promise<number>", typeof moduleJson>');
+    // Classes: the constructor writes this.handle (no value return).
+    expect(rendered).toContain("      this.handle = (out_counter_constructor[0] ?? 0n);");
+    expect(rendered.includes("return (out_counter_constructor")).toBeFalse();
   });
 
   test("the --runtime override changes the import specifier", () => {

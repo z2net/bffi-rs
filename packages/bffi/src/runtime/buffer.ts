@@ -35,3 +35,11 @@ export function makeReadBuffer(lib: FfiLib): (handle: bigint) => Uint8Array {
 export function makeFreeBuffer(lib: FfiLib): (handle: bigint) => number {
   return (handle: bigint) => Number(sym(lib, "bffi_types_free")(handle));
 }
+
+/** The shared UTF-8 decoder of the runtime (buffer string returns). */
+const decoder = new TextDecoder();
+
+/** Decodes a returned byte payload as canonical UTF-8. */
+export function decodeUtf8(bytes: Uint8Array): string {
+  return decoder.decode(bytes);
+}

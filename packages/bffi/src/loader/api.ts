@@ -499,6 +499,29 @@ interface NativeInstance {
 }
 
 /**
+ * Builds the early-release wrapper of one class: calls the release
+ * export and treats a duplicate release (`InvalidHandle`, raced with
+ * the GC finalizer) as success - every other non-zero status throws
+ * the drained error.
+ */
+export function makeRelease(
+  lib: FfiLib,
+  exportName: string,
+  takeError: (status?: number) => Error | null,
+): (handle: bigint) => void {
+  const releaseExport = sym(lib, exportName);
+  return (handle: bigint): void => {
+    const status = Number(releaseExport(handle));
+    if (status === ErrorCode.InvalidHandle) {
+      return;
+    }
+    if (status !== ErrorCode.Ok) {
+      throw takeError(status) ?? new Error(`${exportName} failed: ${String(status)}`);
+    }
+  };
+}
+
+/**
  * Builds the class wrapper: the constructor allocates the instance
  * handle, every member prepends it, and a FinalizationRegistry runs
  * the release shim on GC (the documented JS contract); `release()`
@@ -512,18 +535,7 @@ function makeClass(
   takeError: (status?: number) => Error | null,
 ): new (...args: unknown[]) => unknown {
   const ctor = callFunction(cls.constructor);
-  // A GC finalizer may race an explicit `release()`; the duplicate
-  // release is `InvalidHandle` (4) and must stay silent - every other
-  // status is a real error.
-  const release = (handle: bigint): void => {
-    const status = Number(sym(lib, cls.release)(handle));
-    if (status === ErrorCode.InvalidHandle) {
-      return;
-    }
-    if (status !== ErrorCode.Ok) {
-      throw takeError(status) ?? new Error(`${cls.release} failed: ${String(status)}`);
-    }
-  };
+  const release = makeRelease(lib, cls.release, takeError);
   const finalizers = new FinalizationRegistry((handle: bigint) => {
     release(handle);
   });

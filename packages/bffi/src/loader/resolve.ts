@@ -27,6 +27,8 @@ export function platformTriple(
   switch (key) {
     case "win32-x64":
       return "win32-x64-msvc";
+    case "win32-arm64":
+      return "win32-arm64-msvc";
     case "linux-x64":
       return "linux-x64-gnu";
     case "linux-arm64":
@@ -38,7 +40,8 @@ export function platformTriple(
     default:
       throw new Error(
         `unsupported platform for bffi native packages: ${key} ` +
-          `(shipped: win32-x64, linux-x64, linux-arm64, darwin-x64, darwin-arm64)`,
+          `(Bun itself ships 64-bit builds only: win32-x64/arm64, linux-x64/arm64, ` +
+          `darwin-x64/arm64 - 32-bit systems are not supported)`,
       );
   }
 }

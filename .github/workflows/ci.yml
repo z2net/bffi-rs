@@ -80,7 +80,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.2
 
       # `bun run build` shells out to cargo for every example crate -
       # install the pinned toolchain explicitly ONCE (a rustup

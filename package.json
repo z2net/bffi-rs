@@ -1,6 +1,6 @@
 {
   "name": "bffi-rs",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Bun-only native binding framework (Rust)",
   "license": "MIT",
@@ -15,7 +15,7 @@
   "engines": {
     "bun": ">=1.4.0"
   },
-  "packageManager": "bun@1.4.0",
+  "packageManager": "bun@1.4.2",
   "workspaces": [
     "packages/*"
   ],
@@ -37,6 +37,6 @@
     "lefthook": "latest",
     "oxlint": "latest",
     "typescript": "^7",
-    "@types/bun": "1.4.0"
+    "@types/bun": "1.4.2"
   }
 }

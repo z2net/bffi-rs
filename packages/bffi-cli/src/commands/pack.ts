@@ -22,6 +22,7 @@ const PLATFORMS: Record<
   { os: string; cpu: string; libc?: string; ext: string; prefix: string }
 > = {
   "win32-x64-msvc": { os: "win32", cpu: "x64", ext: "dll", prefix: "" },
+  "win32-arm64-msvc": { os: "win32", cpu: "arm64", ext: "dll", prefix: "" },
   "linux-x64-gnu": { os: "linux", cpu: "x64", libc: "glibc", ext: "so", prefix: "lib" },
   "linux-arm64-gnu": { os: "linux", cpu: "arm64", libc: "glibc", ext: "so", prefix: "lib" },
   "linux-x64-musl": { os: "linux", cpu: "x64", libc: "musl", ext: "so", prefix: "lib" },

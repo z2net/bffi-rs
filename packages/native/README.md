@@ -15,6 +15,7 @@ through `optionalDependencies`.
 | --- | --- | --- |
 | `@z2net/bffi-native` | - (this package, pure TS) | - |
 | `@z2net/bffi-native-win32-x64-msvc` | Windows x64 | `bffi_native.dll` |
+| `@z2net/bffi-native-win32-arm64-msvc` | Windows arm64 | `bffi_native.dll` |
 | `@z2net/bffi-native-linux-x64-gnu` | Linux x64 (glibc) | `libbffi_native.so` |
 | `@z2net/bffi-native-linux-x64-musl` | Linux x64 (musl) | `libbffi_native.so` |
 | `@z2net/bffi-native-linux-arm64-gnu` | Linux arm64 (glibc) | `libbffi_native.so` |
@@ -22,11 +23,14 @@ through `optionalDependencies`.
 | `@z2net/bffi-native-darwin-aarch64` | macOS arm64 | `libbffi_native.dylib` |
 | `@z2net/bffi-native-darwin-x64` | macOS x64 | `libbffi_native.dylib` |
 
-This package pins all seven platform packages in
+This package pins all eight platform packages in
 `optionalDependencies` with EXACT versions (no caret - a loose pin
 would let npm pair a JS update with a stale binary). npm/Bun installs
 only the entry matching the running `os`/`cpu`; the others are
 skipped, which is expected and harmless.
+
+32-bit systems (i686, armv7) are NOT supported: Bun itself ships
+64-bit builds only.
 
 ## Where the binary comes from
 
@@ -43,8 +47,9 @@ minimal cdylib expanding the runtime ABI
 
 The build matrix
 ([.github/workflows/release-native.yml](https://github.com/z2net/bffi-rs/blob/main/.github/workflows/release-native.yml),
-manual trigger) compiles the crate on all seven triples:
-`windows-latest` (msvc), `ubuntu-latest` (glibc x64),
+manual trigger) compiles the crate on all eight triples:
+`windows-latest` (msvc x64), `windows-11-arm` (msvc arm64),
+`ubuntu-latest` (glibc x64),
 `ubuntu-24.04-arm` (glibc arm64), the musl pair on the same
 runners (the crates are pure Rust, so musl needs only
 `rustup target add` - no extra system packages) and the macOS

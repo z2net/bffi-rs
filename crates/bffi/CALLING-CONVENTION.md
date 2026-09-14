@@ -137,8 +137,9 @@ one parameter tag byte each; arguments are concatenated
 
 | Symbol | Signature | Returns |
 | ------------------------ | ------------------------------------------------------------ | ------------------------- |
-| `bffi_callback_set_thread` | `() -> ErrorCode` | binds the calling thread as the JS thread (sticky); `WrongThread` when bound elsewhere |
-| `bffi_callback_bind` | `(sig_ret: u8, sig_params_ptr: *const u8, sig_params_len: u64, js_ptr: u64, __ret: *mut u64) -> ErrorCode` | stores the opaque JSCallback pointer; `__ret` receives the fresh handle |
+| `bffi_callback_set_thread` | `() -> ErrorCode` | registers the calling thread as a JS thread (multi-isolate: every Worker registers its own; idempotent) |
+| `bffi_callback_unset_thread` | `() -> ErrorCode` | deregisters the calling thread; idempotent; a Worker calls this before exiting so targeted deliveries fail fast afterwards |
+| `bffi_callback_bind` | `(sig_ret: u8, sig_params_ptr: *const u8, sig_params_len: u64, js_ptr: u64, __ret: *mut u64) -> ErrorCode` | stores the opaque JSCallback pointer WITH the calling thread's id; `__ret` receives the fresh handle |
 | `bffi_callback_invoke` | `(handle: u64, args_ptr: *const u8, args_len: u64, __ret: *mut u64) -> ErrorCode` | invokes the native body; `__ret` receives the transient-buffer handle of the encoded result record |
 | `bffi_callback_revoke` | `(handle: u64) -> u32` | `ErrorCode` value: `0` = Ok, `4` = InvalidHandle (second revoke) |
 
@@ -157,22 +158,27 @@ cross-thread counterpart of `bffi_callback_invoke` for native
 callers (a GUI worker thread, for example). It dispatches by handle
 kind and accepts handles from BOTH callback tables:
 
-- **Native handles** (`bffi::register`, tag `0x0200`): on the bound
-  JS thread (or in an unbound process) it performs the ordinary
-  synchronous invoke; from any other thread it queues an event-loop
-  job that runs that same invoke on the JS thread.
+- **Native handles** (`bffi::register`, tag `0x0200`): on a
+  registered JS thread (or in an unbound process) it performs the
+  ordinary synchronous invoke; from any other thread it queues an
+  event-loop job that runs that same invoke on a JS thread
+  (untargeted: native bodies are isolate-independent Rust code).
 - **JS-bound handles** (`bffi_callback_bind`, tag `0x0201`): the
   marshal job converts the `Value` arguments to the declared C
   types and CALLS the bound `bun:ffi` JSCallback pointer directly,
-  on the JS thread - the one thread where that call is
-  synchronous. The C matrix per wire tag: `I32` -> `i32`, `I64` ->
-  `i64`, `F64` -> `f64`, `Bool` -> `u8` (bun:ffi's `bool`
-  spelling), `Str` -> `cstring` (NUL-terminated UTF-8, the
-  framework boundary-string convention); returns wrap back:
-  `I32`/`I64`/`F64` as-is, `Bool` from the `u8`, `Unit` (the
-  `void` return) as `Value::Unit`. v1 limits: at most two
-  parameters; a `Bytes` parameter or a `Str`/`Bytes` return cannot
-  cross the raw C call and fails fast with
+  on the OWNING JS thread - the isolate that performed the bind
+  (the entry records its thread id), where that call is
+  synchronous. TARGETED delivery: the job is queued on the owner's
+  slot queue and never crosses an isolate boundary; a call attempt
+  from a different registered isolate is rejected with
+  `WrongThread` before touching the trampoline. The C matrix per
+  wire tag: `I32` -> `i32`, `I64` -> `i64`, `F64` -> `f64`,
+  `Bool` -> `u8` (bun:ffi's `bool` spelling), `Str` -> `cstring`
+  (NUL-terminated UTF-8, the framework boundary-string convention);
+  returns wrap back: `I32`/`I64`/`F64` as-is, `Bool` from the `u8`,
+  `Unit` (the `void` return) as `Value::Unit`. v1 limits: at most
+  two parameters; a `Bytes` parameter or a `Str`/`Bytes` return
+  cannot cross the raw C call and fails fast with
   `CallbackError::UnsupportedSignature` (status `11`) - never with
   a timeout. The signature check runs on the CALLING thread first
   (a mismatch fails fast, nothing queued); the job re-validates the
@@ -184,6 +190,22 @@ In both tables the job parks the caller on a shared `Mutex` +
 `Condvar` slot until the outcome - the value or the full
 `CallbackError` - crosses back unchanged. The existing
 `bffi_callback_invoke` keeps its JS-thread-only contract unchanged.
+
+Multi-isolate contract (Bun 1.4 workers are threads of one process):
+
+- every JS isolate registers its own thread
+  (`bffi_callback_set_thread`) - there is no single "first binder
+  wins" binding anymore;
+- `ensure_js_thread` admits ANY registered isolate for
+  isolate-independent native bodies; a JS-BOUND entry is callable
+  only on its owning isolate;
+- the explicit `bffi_callback_unset_thread` retires the calling
+  isolate's slot queue (a Worker calls it before exiting); without
+  it, a TERMINATED worker never runs TLS destructors on Windows and
+  targeted deliveries time out until the next natural registration
+  sweep;
+- targeting an unregistered thread id fails immediately
+  (`NotRunning` -> `LoopStopped`).
 
 Timing contract: an expired `timeout` returns the dedicated status
 `15` (`Timeout`) without touching loop or registry state - a late

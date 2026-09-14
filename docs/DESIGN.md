@@ -60,13 +60,13 @@ These are invariants, not implementation details:
 
 ## 5. Async & event loop model
 
-JavaScript runs on exactly one thread. Three roles cooperate around it:
+JavaScript runs on one thread **per isolate**. Three roles cooperate around it:
 
-- **JS thread** - the only thread that executes JavaScript; it also drains the event loop.
+- **JS thread(s)** - only threads that execute JavaScript; each drains its own event-loop slot queue (and the global queue). Bun 1.4 workers are threads of the same process, so a process hosts one JS thread per isolate - the main script registers its own, every `Worker` registers its own (`set_js_thread`), and the registration dies with the thread (or explicitly via `unset_js_thread`).
 - **Executor workers** - poll Rust futures; they never touch JavaScript.
 - **Timer thread** - serves deadlines (sleep, timeouts); it never touches JavaScript either.
 
-Task resolution and callback invocations that originate off the JS thread are **delivered, not executed**: they are enqueued and run on the JS thread while it drains. A call made from the wrong thread is rejected (marshalled through the queue), never smuggled onto JavaScript.
+Task resolution and callback invocations that originate off a JS thread are **delivered, not executed**: they are enqueued and run on a JS thread while it drains. A call made from the wrong thread is rejected (marshalled through the queue), never smuggled onto JavaScript. Deliveries whose target is a specific isolate (its `JSCallback` trampolines: JS-bound callbacks, stream wakes, async resolvers) are **targeted** to the owning thread's slot queue - a job never crosses an isolate boundary.
 
 The drain is an **explicit contract**: the embedding code pumps (or runs the loop) when it chooses - typically on a documented periodic pattern. The framework never installs hidden timers or pumps implicitly. Cancellation is cooperative - a cancelled task is dropped at its next poll - and timeouts are first-class combinators. Tokio is an opt-in executor choice, not a requirement.
 

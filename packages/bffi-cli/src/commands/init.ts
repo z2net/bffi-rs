@@ -78,7 +78,7 @@ name = "${emitJsonName}"
 path = "src/bin/emit_json.rs"
 
 [dependencies]
-bffi = "0.1.2"
+bffi = "0.1.3"
 `;
   await Bun.write(joinOut(crateRoot, "Cargo.toml"), cargoToml);
 

@@ -34,6 +34,10 @@ describe("bffi pack", () => {
     expect(pkg.name).toBe("@z2net/mylib-win32-x64-msvc");
     expect(pkg.os).toEqual(["win32"]);
     expect(pkg.cpu).toEqual(["x64"]);
+    // The integrity field pins the packed binary to its sha256 digest.
+    const hasher = new Bun.CryptoHasher("sha256");
+    hasher.update(new Uint8Array([1, 2, 3]));
+    expect(pkg.integrity).toBe(`sha256-${hasher.digest("hex")}`);
 
     const shim = await Bun.file(`${pkgDir}/index.js`).text();
     // The binary follows the artifact convention

@@ -31,6 +31,7 @@ export {
 } from "./runtime/index.ts";
 export {
   SCHEMA_VERSION,
+  BFFI_ABI_VERSION,
   assertSchema,
   buildDeclarations,
   type AbiName,

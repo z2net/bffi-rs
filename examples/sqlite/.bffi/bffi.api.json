@@ -1,6 +1,8 @@
 {
   "bffi": 1,
   "module": "sqlite",
+  "abiVersion": 1,
+  "exportsHash": "13237346443035806424",
   "functions": [
     {
       "name": "sqlite_version",
@@ -103,5 +105,8 @@
       }
     }
   ],
-  "classes": []
+  "classes": [],
+  "records": [],
+  "enums": [],
+  "errors": []
 }

@@ -145,6 +145,21 @@ describe("renderModule", () => {
     expect(renderModule(shuffled)).toBe(renderModule(sameOrder));
   });
 
+  test("canonicalizes abiVersion/exportsHash into the module header", () => {
+    const rendered = renderModule(FIXTURE);
+    // The fixture carries no abiVersion: canonicalization adds the
+    // default; exportsHash stays absent.
+    expect(rendered).toContain('"module": "api",\n  "abiVersion": 1,\n  "functions"');
+    expect(rendered).not.toContain("exportsHash");
+    const withMeta = renderModule({ ...FIXTURE, abiVersion: 1, exportsHash: "123" });
+    expect(withMeta).toContain('"abiVersion": 1,\n  "exportsHash": "123",\n  "functions"');
+  });
+
+  test("documents createApiFromJson as the explicit low-level loader", () => {
+    const rendered = renderModule(FIXTURE);
+    expect(rendered).toContain("explicit low-level");
+  });
+
   test("rejects unknown schema versions with a diagnostic", () => {
     expect(() => renderModule({ ...FIXTURE, bffi: 2 })).toThrow(SchemaValidationError);
     try {

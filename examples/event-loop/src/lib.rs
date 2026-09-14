@@ -24,7 +24,7 @@
 // The runtime ABI exports (bffi_error_*, the bffi_buffer pair,
 // bffi_types_free): the JS pipeline drains errors and reads buffers
 // through them.
-bffi::bffi_runtime_abi!();
+bffi::bffi_runtime_abi!(module = crate::module_def::MODULE);
 
 pub mod module_def;
 

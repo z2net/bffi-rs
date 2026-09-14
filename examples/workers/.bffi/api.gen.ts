@@ -18,6 +18,8 @@ import {
 const moduleJson = {
   "bffi": 1,
   "module": "workers",
+  "abiVersion": 1,
+  "exportsHash": "7046853039913689564",
   "functions": [
     {
       "name": "bind_js_thread",
@@ -167,7 +169,10 @@ const moduleJson = {
   "errors": []
 } as const satisfies ModuleJson;
 
-/** Opens the native library at `libraryPath` and returns the typed API. */
+/** The explicit low-level loader: opens the native library at
+ * `libraryPath` and returns the typed API. Passing a raw binary
+ * path is a trust decision - the pipeline resolves platform
+ * packages by default. */
 export function createApiFromJson(libraryPath: string): ApiOf<typeof moduleJson> {
   const lib: FfiLib = dlopen(libraryPath, buildDeclarations(moduleJson)).symbols as FfiLib;
   const takeError = makeTakeError(lib);

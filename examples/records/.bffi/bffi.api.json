@@ -1,6 +1,8 @@
 {
   "bffi": 1,
   "module": "records",
+  "abiVersion": 1,
+  "exportsHash": "9616268554654068833",
   "functions": [
     {
       "name": "make_sample",

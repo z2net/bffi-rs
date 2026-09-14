@@ -1,6 +1,8 @@
 {
   "bffi": 1,
   "module": "workers",
+  "abiVersion": 1,
+  "exportsHash": "7046853039913689564",
   "functions": [
     {
       "name": "bind_js_thread",

@@ -18,6 +18,8 @@ import {
 const moduleJson = {
   "bffi": 1,
   "module": "callbacks",
+  "abiVersion": 1,
+  "exportsHash": "4859311640586416465",
   "functions": [
     {
       "name": "callback_register",
@@ -88,11 +90,11 @@ const moduleJson = {
       "name": "bind_js_thread",
       "export": "bffi_bind_js_thread",
       "docs": [
-        "Binds the CURRENT thread as the process-wide JS thread (first",
-        "binder wins; sticky for the process lifetime). Returns the raw",
-        "`ErrorCode` numeric value: `0` = bound, `12` = another thread",
-        "already owns the binding. The worker of the e2e test calls this",
-        "before entering the loop drain."
+        "Registers the CURRENT thread as a JS thread of this process",
+        "(multi-isolate: every JS isolate registers its own thread;",
+        "idempotent). Returns the raw `ErrorCode` numeric value: `0` =",
+        "registered. The worker of the e2e test calls this before entering",
+        "the loop drain."
       ],
       "params": [],
       "ret": {
@@ -178,7 +180,10 @@ const moduleJson = {
   "errors": []
 } as const satisfies ModuleJson;
 
-/** Opens the native library at `libraryPath` and returns the typed API. */
+/** The explicit low-level loader: opens the native library at
+ * `libraryPath` and returns the typed API. Passing a raw binary
+ * path is a trust decision - the pipeline resolves platform
+ * packages by default. */
 export function createApiFromJson(libraryPath: string): ApiOf<typeof moduleJson> {
   const lib: FfiLib = dlopen(libraryPath, buildDeclarations(moduleJson)).symbols as FfiLib;
   const takeError = makeTakeError(lib);

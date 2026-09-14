@@ -24,6 +24,8 @@ import {
 const moduleJson = {
   "bffi": 1,
   "module": "records",
+  "abiVersion": 1,
+  "exportsHash": "9616268554654068833",
   "functions": [
     {
       "name": "make_sample",
@@ -336,7 +338,10 @@ const moduleJson = {
   "errors": []
 } as const satisfies ModuleJson;
 
-/** Opens the native library at `libraryPath` and returns the typed API. */
+/** The explicit low-level loader: opens the native library at
+ * `libraryPath` and returns the typed API. Passing a raw binary
+ * path is a trust decision - the pipeline resolves platform
+ * packages by default. */
 export function createApiFromJson(libraryPath: string): ApiOf<typeof moduleJson> {
   const lib: FfiLib = dlopen(libraryPath, buildDeclarations(moduleJson)).symbols as FfiLib;
   const takeError = makeTakeError(lib);

@@ -1,6 +1,8 @@
 {
   "bffi": 1,
   "module": "streams",
+  "abiVersion": 1,
+  "exportsHash": "13590191551223488418",
   "functions": [
     {
       "name": "numbers",

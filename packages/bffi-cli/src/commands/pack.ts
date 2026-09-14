@@ -63,6 +63,14 @@ export async function pack(argv: string[]): Promise<number> {
   const pkgName = `${base}-${triple}`;
   const pkgDir = joinOut(process.cwd(), outDir, `${scopeless}-${triple}`);
 
+  // The binary is read once and hashed BEFORE the package.json is
+  // written: the `integrity` field pins the packed artifact to its
+  // sha256 digest (`resolvePlatformBinary` verifies it at load).
+  const bytes = new Uint8Array(await Bun.file(src).arrayBuffer());
+  const hasher = new Bun.CryptoHasher("sha256");
+  hasher.update(bytes);
+  const integrity = `sha256-${hasher.digest("hex")}`;
+
   const pkg = {
     name: pkgName,
     version: main.version,
@@ -72,6 +80,7 @@ export async function pack(argv: string[]): Promise<number> {
     os: [platform.os],
     cpu: [platform.cpu],
     ...(platform.libc === undefined ? {} : { libc: [platform.libc] }),
+    integrity,
   };
   // The package.json write creates the package directory tree.
   await Bun.write(
@@ -79,7 +88,7 @@ export async function pack(argv: string[]): Promise<number> {
     `${JSON.stringify(pkg, null, 2)}\n`,
   );
   // Copy (never move) the binary under the artifact-convention name.
-  await Bun.write(joinOut(pkgDir, file), Bun.file(src));
+  await Bun.write(joinOut(pkgDir, file), bytes);
 
   // The CJS entry shim: the opaque `{ path }` contract. Plain string
   // concat - forward slashes work in every Bun file API on all

@@ -13,9 +13,13 @@
  * so no package code has to execute - resolution is pure lookup.
  *
  * Bun-only: module resolution goes through `Bun.resolveSync`
- * (a runtime built-in); path handling is pure string logic - no
- * `node:` module imports.
+ * (a runtime built-in); path handling is pure string logic. The
+ * integrity verification reads the platform package's manifest with
+ * `node:fs`'s sync reader (implemented natively by Bun - this lookup
+ * is synchronous by contract, so no async wrapping).
  */
+
+import { readFileSync } from "node:fs";
 
 /** The napi-rs style triple of the RUNNING platform. Throws for
  * platforms bffi does not ship. */
@@ -98,9 +102,41 @@ function dirnameOf(path: string): string {
 }
 
 /**
+ * Verifies the `integrity` field (`sha256-<hex>`, written by
+ * `bffi pack`) of the platform package's package.json against the
+ * actual digest of the binary file. A package without the field (or
+ * without a readable manifest) skips the check - legacy packages
+ * stay loadable.
+ */
+function assertIntegrity(pkgName: string, pkgDir: string, binaryPath: string): void {
+  let expected: unknown;
+  try {
+    const manifest = JSON.parse(readFileSync(`${pkgDir}/package.json`, "utf8")) as {
+      integrity?: unknown;
+    };
+    expected = manifest.integrity;
+  } catch {
+    return; // no readable manifest: nothing to verify
+  }
+  if (typeof expected !== "string" || !expected.startsWith("sha256-")) {
+    return;
+  }
+  const hasher = new Bun.CryptoHasher("sha256");
+  hasher.update(readFileSync(binaryPath));
+  const got = `sha256-${hasher.digest("hex")}`;
+  if (got !== expected) {
+    throw new Error(`integrity mismatch for ${pkgName}: expected ${expected}, got ${got}`);
+  }
+}
+
+/**
  * Resolves the absolute path of the native binary inside the
  * platform package `<base>-<triple>` of `base` (e.g.
  * `@z2net/mylib` -> `@z2net/mylib-win32-x64-msvc`).
+ *
+ * When the platform package carries an `integrity` digest (written
+ * by `bffi pack`), the binary file is hashed and verified before the
+ * path is returned.
  *
  * Throws a clear error when the platform package is not installed
  * (optional dependencies can be skipped by package managers).
@@ -131,5 +167,8 @@ export function resolvePlatformBinary(
     );
   }
   const { ext, prefix } = artifactExt(triple);
-  return `${dirnameOf(entry)}/${prefix}${options.binary}.${ext}`;
+  const pkgDir = dirnameOf(entry);
+  const binaryPath = `${pkgDir}/${prefix}${options.binary}.${ext}`;
+  assertIntegrity(packageName, pkgDir, binaryPath);
+  return binaryPath;
 }

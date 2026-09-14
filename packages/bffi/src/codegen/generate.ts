@@ -169,18 +169,26 @@ function canonError(entry: unknown): Json {
   };
 }
 
-/** Rebuilds the module in the canonical field order. */
+/** Rebuilds the module in the canonical field order: the header is
+ * `bffi`, `module`, `abiVersion` (default 1 when absent in the
+ * input), `exportsHash` (only when present), then the tables. */
 function canonModule(raw: unknown): Json {
   const module = validateModule(raw);
-  return {
+  const meta = module as unknown as { abiVersion?: unknown; exportsHash?: unknown };
+  const out: { [key: string]: Json } = {
     bffi: module.bffi,
     module: module.module,
-    functions: module.functions.map(canonFunction),
-    classes: module.classes.map(canonClass),
-    records: module.records.map(canonRecord),
-    enums: module.enums.map(canonEnum),
-    errors: module.errors.map(canonError),
+    abiVersion: meta.abiVersion === undefined ? 1 : (meta.abiVersion as Json),
   };
+  if (meta.exportsHash !== undefined) {
+    out.exportsHash = meta.exportsHash as Json;
+  }
+  out.functions = module.functions.map(canonFunction);
+  out.classes = module.classes.map(canonClass);
+  out.records = module.records.map(canonRecord);
+  out.enums = module.enums.map(canonEnum);
+  out.errors = module.errors.map(canonError);
+  return out;
 }
 
 /** Pretty-prints with two-space indentation, no trailing whitespace. */
@@ -778,7 +786,10 @@ export function renderModule(raw: unknown, runtime: string = DEFAULT_RUNTIME): s
     `import {\n${imports}\n} from ${JSON.stringify(runtime)};\n\n`;
   const body =
     `const moduleJson = ${pretty(module, 0)} as const satisfies ModuleJson;\n\n` +
-    `/** Opens the native library at \`libraryPath\` and returns the typed API. */\n` +
+    `/** The explicit low-level loader: opens the native library at\n` +
+    ` * \`libraryPath\` and returns the typed API. Passing a raw binary\n` +
+    ` * path is a trust decision - the pipeline resolves platform\n` +
+    ` * packages by default. */\n` +
     `export function createApiFromJson(libraryPath: string): ApiOf<typeof moduleJson> {\n` +
     renderFactory(m, needs, tables) +
     `}\n\n` +

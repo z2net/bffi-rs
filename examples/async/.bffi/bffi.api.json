@@ -1,6 +1,8 @@
 {
   "bffi": 1,
   "module": "async",
+  "abiVersion": 1,
+  "exportsHash": "17984196367890279253",
   "functions": [
     {
       "name": "double_async",

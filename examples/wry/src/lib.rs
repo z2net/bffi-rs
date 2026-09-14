@@ -47,7 +47,7 @@
 // The runtime ABI exports (bffi_error_*, the bffi_buffer pair,
 // bffi_types_free): the JS pipeline drains errors and reads buffers
 // through them.
-bffi::bffi_runtime_abi!();
+bffi::bffi_runtime_abi!(module = crate::module_def::MODULE);
 
 // The four JS-facing generic callback exports (bffi_callback_*):
 // set_thread/bind/invoke/revoke. The JS side composes them through

@@ -16,7 +16,7 @@
 // restriction.
 #![cfg_attr(test, allow(clippy::expect_used, clippy::panic, clippy::unwrap_used))]
 
-bffi::bffi_runtime_abi!();
+bffi::bffi_runtime_abi!(module = crate::module_def::MODULE);
 
 pub mod module_def;
 

@@ -21,6 +21,8 @@ import {
 const moduleJson = {
   "bffi": 1,
   "module": "wry",
+  "abiVersion": 1,
+  "exportsHash": "3167894252113368214",
   "functions": [
     {
       "name": "webview_open",
@@ -95,13 +97,15 @@ const moduleJson = {
       "export": "bffi_webview_bind_ipc",
       "docs": [
         "Wires the IPC roundtrip of the webview behind `handle` to a JS",
-        "handler: `js_ptr` is the raw `bun:ffi` `JSCallback` pointer of a",
-        "callback declared as `{ args: [\"cstring\"], returns: \"void\" }`",
-        "(the request body arrives as the argument; the handler answers",
-        "through [`webview_ipc_reply`] - the same raw-pointer convention",
-        "as `bffi_async_attach`). Native side registers a forwarder",
-        "callback whose body `invoke_wait` marshals onto the JS thread,",
-        "where the pointer call is synchronous."
+        "handler: `ipc` is a JS-BOUND callback handle - the JS side wraps",
+        "its handler into a `bun:ffi` `JSCallback` declared as",
+        "`{ args: [\"cstring\"], returns: \"void\" }` and binds it through",
+        "`bffi_callback_bind` with the signature `unit(str)` (wire tags",
+        "`[0, 5]`), exactly the `examples/callbacks` bind pattern. The",
+        "request body arrives as the `cstring` argument; the handler",
+        "answers through [`webview_ipc_reply`]. Native side invokes the",
+        "handle with `invoke_wait(..., [Value::Str(body)])` from the loop",
+        "thread - the dispatch calls the bound pointer on the JS thread."
       ],
       "params": [
         {
@@ -110,7 +114,7 @@ const moduleJson = {
           "abi": "u64"
         },
         {
-          "name": "js_ptr",
+          "name": "ipc",
           "ts": "bigint",
           "abi": "u64"
         }
@@ -234,7 +238,10 @@ const moduleJson = {
   "errors": []
 } as const satisfies ModuleJson;
 
-/** Opens the native library at `libraryPath` and returns the typed API. */
+/** The explicit low-level loader: opens the native library at
+ * `libraryPath` and returns the typed API. Passing a raw binary
+ * path is a trust decision - the pipeline resolves platform
+ * packages by default. */
 export function createApiFromJson(libraryPath: string): ApiOf<typeof moduleJson> {
   const lib: FfiLib = dlopen(libraryPath, buildDeclarations(moduleJson)).symbols as FfiLib;
   const takeError = makeTakeError(lib);

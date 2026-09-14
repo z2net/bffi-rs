@@ -1,6 +1,8 @@
 {
   "bffi": 1,
   "module": "errors",
+  "abiVersion": 1,
+  "exportsHash": "11945330998765277442",
   "functions": [
     {
       "name": "find_user",

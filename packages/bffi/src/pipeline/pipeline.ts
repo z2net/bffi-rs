@@ -35,6 +35,13 @@ export interface BffiOptions {
   skipBuild?: boolean;
   /** Override the config's debug flag. */
   debug?: boolean;
+  /** Explicit path of the built cdylib to dlopen (overrides the
+   * config's `libraryPath` and platform resolution). Trust-gated:
+   * requires `trust: "explicit"`. */
+  libraryPath?: string;
+  /** Acknowledgement that an explicit `libraryPath` is a trust
+   * decision. The ONLY accepted value is `"explicit"`. */
+  trust?: "explicit";
 }
 
 /** Locates the project root: an explicit config file path wins,
@@ -88,6 +95,15 @@ async function readLoaderJson(
  * ```
  */
 export async function bffi<T = unknown>(options: BffiOptions = {}): Promise<T> {
+  // The trust gate runs before ANY pipeline work: dlopen-ing a raw
+  // path is an explicit trust decision, platform-package resolution
+  // is the default.
+  if (options.libraryPath !== undefined && options.trust !== "explicit") {
+    throw new Error(
+      'libraryPath is an explicit trust decision - pass trust: "explicit" to load ' +
+        "a specific binary path (default: platform-package resolution)",
+    );
+  }
   const root = await locateRoot(options);
   debugLog("project root:", root);
 
@@ -99,8 +115,7 @@ export async function bffi<T = unknown>(options: BffiOptions = {}): Promise<T> {
   await bffiGenerate({ root, config });
 
   const libraryPath =
-    config.libraryPath ??
-    localArtifactPath(config, root);
+    options.libraryPath ?? config.libraryPath ?? localArtifactPath(config, root);
 
   debugLog("dlopen:", libraryPath);
   // validateModule (in readLoaderJson) has checked the shape; the

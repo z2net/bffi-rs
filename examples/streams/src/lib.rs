@@ -24,7 +24,7 @@
 // The runtime ABI exports (bffi_error_*, the bffi_buffer pair,
 // bffi_types_free) plus the two JS-facing stream exports
 // (bffi_stream_next/bffi_stream_drop).
-bffi::bffi_runtime_abi!();
+bffi::bffi_runtime_abi!(module = crate::module_def::MODULE);
 bffi::bffi_stream_abi!();
 
 pub mod module_def;

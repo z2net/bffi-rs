@@ -1,6 +1,8 @@
 {
   "bffi": 1,
   "module": "event-loop",
+  "abiVersion": 1,
+  "exportsHash": "17542332129403665438",
   "functions": [
     {
       "name": "enqueue_job",
@@ -133,5 +135,8 @@
       }
     }
   ],
-  "classes": []
+  "classes": [],
+  "records": [],
+  "enums": [],
+  "errors": []
 }

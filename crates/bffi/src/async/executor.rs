@@ -262,11 +262,18 @@ pub(crate) fn task_started() {
 
 /// Enqueues the resolve/reject delivery when the task has an attached
 /// resolver pair and its outcome was not delivered yet.
+///
+/// TARGETED delivery: the resolvers belong to the isolate that
+/// attached them, so the job is queued on that thread's slot queue
+/// (a departed worker leaves the delivery undeliverable - the
+/// documented "do not stop a worker with live tasks" contract).
+/// Pairs attached while the process was unbound keep the legacy
+/// untargeted delivery.
 pub(crate) fn try_deliver(record: &TaskRecord) {
     // Order matters: the delivery slot is taken ONLY when there is a
     // terminal outcome - an attach-time attempt on a running task
     // must not consume it.
-    let Some((resolve, reject)) = record.resolver_pair() else {
+    let Some(resolvers) = record.resolver_pair() else {
         return;
     };
     let Some(outcome) = record.outcome_snapshot() else {
@@ -275,12 +282,18 @@ pub(crate) fn try_deliver(record: &TaskRecord) {
     if !record.take_delivery_slot() {
         return;
     }
-    let queued = bffi_event_loop::enqueue(Box::new(move || {
-        deliver_on_js_thread(resolve, reject, outcome);
-    }));
+    let job = Box::new(move || {
+        deliver_on_js_thread(resolvers.resolve, resolvers.reject, outcome);
+    });
+    let queued = if resolvers.thread == 0 {
+        bffi_event_loop::enqueue(job)
+    } else {
+        bffi_event_loop::enqueue_to(resolvers.thread, job)
+    };
     if queued.is_err() {
-        // The event loop was stopped: the delivery is undeliverable
-        // (documented contract - do not stop the loop with live tasks).
+        // The event loop was stopped, or the owning isolate is gone:
+        // the delivery is undeliverable (documented contract - do not
+        // stop the loop or a worker with live tasks).
     }
 }
 

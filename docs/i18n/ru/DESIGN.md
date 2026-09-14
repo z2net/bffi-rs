@@ -88,12 +88,17 @@ JavaScript исполняется ровно на одном потоке. Во�
 
 ## 8. Примеры как исполняемые спецификации
 
-Каждый пример - работающий модуль и сквозной тест одного среза дизайна:
+Примеры-модули живут в отдельном репозитории,
+[bffi-examples](https://github.com/z2net/bffi-examples); каждый из них - самостоятельный крейт и одновременно end-to-end тест одного среза дизайна:
 
-- [examples/sqlite](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite) - полный пайплайн на реальной нагрузке.
-- [examples/async](https://github.com/z2net/bffi-rs/blob/main/examples/async) - фьючерсы как Promises, отмена, таймауты, явный pump.
-- [examples/event-loop](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop) - очередь, опустошение, маршалинг.
-- [examples/callbacks](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks) - оба направления, гейт JS-потока, доставка через маршалинг.
+- [sqlite](https://github.com/z2net/bffi-examples/tree/main/sqlite) - полный пайплайн на реальной нагрузке.
+- [async](https://github.com/z2net/bffi-examples/tree/main/async) - фьючерсы как Promises, отмена, таймауты, явный pump.
+- [event-loop](https://github.com/z2net/bffi-examples/tree/main/event-loop) - очередь, опустошение, маршалинг.
+- [callbacks](https://github.com/z2net/bffi-examples/tree/main/callbacks) - оба направления, гейт JS-потока, доставка через маршалинг.
+- [records](https://github.com/z2net/bffi-examples/tree/main/records) - матрица композитов: рекорды, энумы, последовательности, поля и возвраты `Option`.
+- [streams](https://github.com/z2net/bffi-examples/tree/main/streams) - pull- и push-продюсеры, обратное давление, элементы `Result`, доставка по wake.
+- [errors](https://github.com/z2net/bffi-examples/tree/main/errors) - `#[derive(BffiError)]`: пользовательские коды, `e.name` / `e.payload`.
+- [wry](https://github.com/z2net/bffi-examples/tree/main/wry) - окно веб-вью под управлением Bun (референс по привязке GUI; см. [docs/BINDING-GUI.md](https://github.com/z2net/bffi-rs/blob/main/docs/BINDING-GUI.md)).
 
 ## 9. Журнал решений
 

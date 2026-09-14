@@ -16,7 +16,9 @@ import {
   TAG_I64,
   TAG_STR,
   TAG_UNIT,
+  BFFI_ABI_VERSION,
   type ModuleJson,
+  assertSchema,
   buildDeclarations,
   createApiFromLib,
   decodeValue,
@@ -266,10 +268,13 @@ function mockLib() {
   };
 }
 
+/** The concrete mock meets the FfiLib boundary through one explicit
+ * cast (bun:ffi symbol tables are untyped at this seam). */
+const asLib = (lib: object): import("../src/runtime/error.ts").FfiLib =>
+  lib as unknown as import("../src/runtime/error.ts").FfiLib;
+
 describe("createApiFromLib", () => {
-  // The concrete mock meets the FfiLib boundary through one explicit
-  // cast (bun:ffi symbol tables are untyped at this seam).
-  const lib = mockLib() as unknown as import("../src/runtime/error.ts").FfiLib;
+  const lib = asLib(mockLib());
   const api = createApiFromLib(FIXTURE, lib);
 
   test("decodes primitive outs into JS values", () => {
@@ -297,5 +302,86 @@ describe("createApiFromLib", () => {
     c.release();
     // A released instance must not release twice through GC.
     expect(() => new api.counter(0).release()).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ABI handshake (loader manifest <-> binary runtime ABI)
+// ---------------------------------------------------------------------------
+
+describe("loader schema handshake fields", () => {
+  test("BFFI_ABI_VERSION is the runtime ABI version", () => {
+    expect(BFFI_ABI_VERSION).toBe(1);
+  });
+
+  test("accepts legacy manifests and well-typed abiVersion/exportsHash", () => {
+    expect(() => assertSchema(FIXTURE)).not.toThrow();
+    expect(() =>
+      assertSchema({ ...FIXTURE, abiVersion: 1, exportsHash: "18339265623074793201" }),
+    ).not.toThrow();
+  });
+
+  test("rejects mistyped abiVersion/exportsHash", () => {
+    expect(() =>
+      assertSchema({ ...FIXTURE, abiVersion: "1" as unknown as ModuleJson["abiVersion"] }),
+    ).toThrow(/abiVersion/);
+    expect(() =>
+      assertSchema({ ...FIXTURE, exportsHash: 12 as unknown as ModuleJson["exportsHash"] }),
+    ).toThrow(/exportsHash/);
+  });
+
+  test("buildDeclarations always declares the handshake symbols", () => {
+    const declarations = buildDeclarations(FIXTURE);
+    expect(declarations.bffi_runtime_abi_version).toEqual({ args: [], returns: "u32" });
+    expect(declarations.bffi_module_exports_hash).toEqual({ args: [], returns: "u64" });
+  });
+});
+
+describe("createApiFromLib ABI handshake", () => {
+  const HASH = "18339265623074793201";
+
+  test("legacy manifests without the new fields load", () => {
+    expect(() => createApiFromLib(FIXTURE, asLib(mockLib()))).not.toThrow();
+  });
+
+  test("a manifest abiVersion mismatch throws before any wrapper is built", () => {
+    expect(() => createApiFromLib({ ...FIXTURE, abiVersion: 2 }, asLib(mockLib()))).toThrow(
+      "ABI version mismatch: manifest 2 != runtime 1 - rebuild the module " +
+        "(bun bffi build) and regenerate api.gen.ts",
+    );
+  });
+
+  test("a binary abi version mismatch throws", () => {
+    const lib = { ...mockLib(), bffi_runtime_abi_version: () => 7 };
+    expect(() => createApiFromLib(FIXTURE, asLib(lib))).toThrow(
+      "ABI version mismatch: binary 7 != runtime 1 - rebuild the module (bun bffi build)",
+    );
+  });
+
+  test("an exports hash mismatch throws (stale manifest vs binary)", () => {
+    const lib = { ...mockLib(), bffi_module_exports_hash: () => 999n };
+    expect(() =>
+      createApiFromLib({ ...FIXTURE, exportsHash: HASH }, asLib(lib)),
+    ).toThrow(
+      "exports hash mismatch: the loader manifest does not describe this binary " +
+        "(stale .bffi/bffi.api.json vs the built cdylib)",
+    );
+  });
+
+  test("exportsHash with a missing binary symbol throws", () => {
+    expect(() =>
+      createApiFromLib({ ...FIXTURE, exportsHash: HASH }, asLib(mockLib())),
+    ).toThrow("binary predates the ABI handshake exports - rebuild with the current bffi version");
+  });
+
+  test("a matching exports hash passes the handshake", () => {
+    const lib = {
+      ...mockLib(),
+      bffi_runtime_abi_version: () => 1,
+      bffi_module_exports_hash: () => BigInt(HASH),
+    };
+    expect(() =>
+      createApiFromLib({ ...FIXTURE, abiVersion: 1, exportsHash: HASH }, asLib(lib)),
+    ).not.toThrow();
   });
 });

@@ -23,7 +23,8 @@ pub const DESIGN_NOTE: &str =
 /// `compile_error!` - the compile-time counterpart of the runtime
 /// `BffiError` (code + message + source) scheme.
 pub struct MacroDiagnostic {
-    /// Stable code, `E001` .. `E008`.
+    /// Stable code (`E001` .. `E015` so far; each proc-macro crate
+    /// owns its series).
     code: &'static str,
     /// First-line message (without the `bffi[code]: ` prefix).
     message: String,

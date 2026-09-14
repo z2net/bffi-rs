@@ -41,9 +41,9 @@ bun install
 ```bash
 bun run lint          # oxlint
 bun run typecheck     # TypeScript check
-bun run build         # builds all four example crates (release cdylibs)
-bun run test:e2e      # runs the examples as e2e suites (bun test examples)
-bun run ci            # full CI parity: lint, typecheck, fmt, clippy, tests
+bun run build         # builds the reference cdylib (release)
+bun run test:js       # runs the package unit tests (bun test packages)
+bun run ci            # full CI parity: lint, typecheck, fmt, clippy, tests, JS tests
 cargo fmt
 cargo clippy
 cargo check

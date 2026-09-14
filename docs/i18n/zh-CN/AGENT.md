@@ -98,9 +98,11 @@ bffi-rs/
 │   ├── DESIGN.md                # architecture & decisions
 │   ├── CONTRIBUTING.md
 │   └── CODE_OF_CONDUCT.md
-├── examples/                      # sqlite, async, event-loop, callbacks (each an e2e suite)
 ├── packages/                      # JS-side: bffi (@z2net/bffi), bffi-cli, native
 └── scripts/
+
+示例位于独立仓库:https://github.com/z2net/bffi-examples
+(每个示例都是独立的 crate,同时也是一个针对已发布包的 e2e 测试套件)。
 ```
 
 新的 crate 必须遵循 `bffi-*` 命名方案,并被添加到 workspace 中。
@@ -125,9 +127,9 @@ bun install
 ```bash
 bun run lint          # oxlint
 bun run typecheck     # tsc
-bun run build         # builds all four example crates (release cdylibs)
-bun run test:e2e      # runs the examples as e2e suites (bun test examples)
-bun run ci            # full CI parity: lint, typecheck, fmt, clippy, tests
+bun run build         # 构建参考 cdylib(release)
+bun run test:js       # 运行包的单元测试(bun test packages)
+bun run ci            # full CI parity: lint, typecheck, fmt, clippy, tests, JS tests
 cargo check
 cargo test
 cargo fmt

@@ -23,13 +23,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: windows-latest,   triple: win32-x64-msvc,   artifact: bffi_native.dll }
-          - { os: ubuntu-latest,    triple: linux-x64-gnu,    artifact: libbffi_native.so }
-          - { os: ubuntu-latest,    triple: linux-x64-musl,   artifact: libbffi_native.so,  target: x86_64-unknown-linux-musl, musl: "true" }
-          - { os: ubuntu-24.04-arm, triple: linux-arm64-gnu,  artifact: libbffi_native.so }
-          - { os: ubuntu-24.04-arm, triple: linux-arm64-musl, artifact: libbffi_native.so,  target: aarch64-unknown-linux-musl, musl: "true" }
-          - { os: macos-latest,     triple: darwin-aarch64,   artifact: libbffi_native.dylib }
-          - { os: macos-latest,     triple: darwin-x64,       artifact: libbffi_native.dylib, target: x86_64-apple-darwin }
+          - { os: windows-latest,       triple: win32-x64-msvc,   artifact: bffi_native.dll }
+          - { os: windows-11-arm,       triple: win32-arm64-msvc, artifact: bffi_native.dll }
+          - { os: ubuntu-latest,        triple: linux-x64-gnu,    artifact: libbffi_native.so }
+          - { os: ubuntu-latest,        triple: linux-x64-musl,   artifact: libbffi_native.so,  target: x86_64-unknown-linux-musl, musl: "true" }
+          - { os: ubuntu-24.04-arm,     triple: linux-arm64-gnu,  artifact: libbffi_native.so }
+          - { os: ubuntu-24.04-arm,     triple: linux-arm64-musl, artifact: libbffi_native.so,  target: aarch64-unknown-linux-musl, musl: "true" }
+          - { os: macos-latest,         triple: darwin-aarch64,   artifact: libbffi_native.dylib }
+          - { os: macos-latest,         triple: darwin-x64,       artifact: libbffi_native.dylib, target: x86_64-apple-darwin }
     name: build (${{ matrix.triple }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30

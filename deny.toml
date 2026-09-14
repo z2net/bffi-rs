@@ -1,0 +1,34 @@
+# Supply-chain policy for `cargo deny check` (CI job: supply-chain).
+# Written against the cargo-deny v2 config schema:
+# https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+# Schema v2: RUSTSEC vulnerabilities are always hard errors (there is no
+# `vulnerability` level anymore); unmaintained/unsound/yanked advisories
+# surface as warnings by default - the scope keys take
+# "all" | "workspace" | "transitive" | "none", not lint levels, so they
+# are intentionally left at their defaults.
+version = 2
+yanked = "warn"
+
+[licenses]
+version = 2
+# Anything not listed here is denied by default (unlicensed too).
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "ISC",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

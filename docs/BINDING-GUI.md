@@ -8,7 +8,7 @@ libraries** (wry, winit, tao, SDL, ...) whose handlers run on
 OS threads and need synchronous round trips into JavaScript.
 
 The working reference implementation is
-[`examples/wry`](https://github.com/z2net/bffi-rs/blob/main/examples/wry)
+[`wry`](https://github.com/z2net/bffi-examples/tree/main/wry)
 (a full webview window driven from Bun). Read it alongside this
 guide.
 
@@ -102,7 +102,7 @@ Nested `Option<Option<T>>` is rejected at compile time (E010).
 ## The IPC round trip
 
 The full UI -> native -> JS -> native -> UI circle (see
-`examples/wry/src/lib.rs`):
+[`wry/src/lib.rs`](https://github.com/z2net/bffi-examples/blob/main/wry/src/lib.rs)):
 
 1. JavaScript binds its handler
    (`bffi_callback_bind`, signature `unit(str)`) and passes the

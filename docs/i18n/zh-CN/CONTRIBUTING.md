@@ -41,9 +41,9 @@ bun install
 ```bash
 bun run lint          # oxlint
 bun run typecheck     # TypeScript 检查
-bun run build         # 构建全部四个示例 crate(release cdylib)
-bun run test:e2e      # 以 e2e 测试套件的方式运行示例(bun test examples)
-bun run ci            # 完整 CI 等价:lint、typecheck、fmt、clippy、测试
+bun run build         # 构建参考 cdylib(release)
+bun run test:js       # 运行包的单元测试(bun test packages)
+bun run ci            # 完整 CI 等价:lint、typecheck、fmt、clippy、测试、JS 测试
 cargo fmt
 cargo clippy
 cargo check

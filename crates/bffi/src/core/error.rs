@@ -66,6 +66,12 @@ pub enum ErrorCode {
     /// A bounded cross-thread wait (`bffi::callback::invoke_wait`)
     /// expired before the JS thread delivered the outcome.
     Timeout = 15,
+    /// A re-entrant bounded wait: `bffi::callback::invoke_wait` was
+    /// called from a thread already waiting inside one (the JS thread
+    /// parked in a native call). The loop cannot drain while the
+    /// caller is parked, so the call fails immediately instead of
+    /// burning the timeout.
+    ReentrantCall = 16,
 }
 
 impl ErrorCode {
@@ -98,6 +104,7 @@ impl ErrorCode {
             13 => Some(Self::DomainError),
             14 => Some(Self::Pending),
             15 => Some(Self::Timeout),
+            16 => Some(Self::ReentrantCall),
             _ => None,
         }
     }
@@ -122,6 +129,7 @@ impl fmt::Display for ErrorCode {
             Self::DomainError => "domain error reported by the native function",
             Self::Pending => "no items ready yet - the producer is still alive",
             Self::Timeout => "the bounded wait for a callback result timed out",
+            Self::ReentrantCall => "re-entrant invoke_wait: the calling thread is already waiting",
         };
         f.write_str(text)
     }
@@ -373,6 +381,7 @@ mod tests {
             ErrorCode::WrongThread,
             ErrorCode::DomainError,
             ErrorCode::Timeout,
+            ErrorCode::ReentrantCall,
         ] {
             assert_eq!(ErrorCode::from_u32(code.as_u32()), Some(code));
         }

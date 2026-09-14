@@ -21,6 +21,16 @@
 //! - `"bffi": 1` - the schema version; the codegen rejects unknown
 //!   versions.
 //! - `"module"` - the [`ModuleDef::name`].
+//! - `"abiVersion"` - the runtime ABI revision
+//!   ([`abi`](super::abi)::[`BFFI_ABI_VERSION`](super::abi::BFFI_ABI_VERSION))
+//!   this cdylib was built against; the JS loader's handshake compares
+//!   it against `bffi_runtime_abi_version()` from the loaded library
+//!   and refuses a mismatched binary.
+//! - `"exportsHash"` - the FNV-1a 64-bit hash of the exported surface
+//!   ([`module_exports_hash`]) as a decimal string; the loader
+//!   compares it against `bffi_module_exports_hash()` to guarantee
+//!   the JSON and the binary describe the same exports (the
+//!   JSON↔binary integrity check).
 //! - `"functions"` / `"classes"` / `"records"` / `"enums"` - the
 //!   descriptors, in declaration order. The `records`/`enums` tables
 //!   are the B1 composite types: a record entry is
@@ -67,6 +77,148 @@ pub const SCHEMA_VERSION: u32 = 1;
 // updating the writer must not compile.
 const _: () = assert!(SCHEMA_VERSION == 1);
 
+/// The FNV-1a 64-bit offset basis ([`module_exports_hash`] starts
+/// here; an empty module hashes to exactly this value).
+const FNV1A_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+/// The FNV-1a 64-bit prime.
+const FNV1A_PRIME: u64 = 0x0000_0100_0000_01b3;
+/// The separator byte fed between every hashed element (it cannot
+/// appear inside a UTF-8 name, so element boundaries stay unambiguous).
+const HASH_SEPARATOR: u8 = 0xFF;
+
+/// The running FNV-1a 64-bit state ([`module_exports_hash`]'s engine).
+struct Fnv1a(u64);
+
+impl Fnv1a {
+    /// The state at the offset basis.
+    fn new() -> Self {
+        Self(FNV1A_OFFSET_BASIS)
+    }
+
+    /// Feeds every byte: xor-low, multiply by the prime.
+    fn feed_bytes(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.0 ^= u64::from(*byte);
+            self.0 = self.0.wrapping_mul(FNV1A_PRIME);
+        }
+    }
+
+    /// Feeds one string's UTF-8 bytes.
+    fn feed_str(&mut self, value: &str) {
+        self.feed_bytes(value.as_bytes());
+    }
+
+    /// Feeds the element separator.
+    fn feed_separator(&mut self) {
+        self.feed_bytes(&[HASH_SEPARATOR]);
+    }
+
+    /// Feeds one element (its bytes plus the separator).
+    fn feed_element(&mut self, value: &str) {
+        self.feed_str(value);
+        self.feed_separator();
+    }
+
+    /// Feeds one numeric element (little-endian bytes plus the
+    /// separator).
+    fn feed_element_u32(&mut self, value: u32) {
+        self.feed_bytes(&value.to_le_bytes());
+        self.feed_separator();
+    }
+}
+
+/// Hashes `def`'s exported surface with FNV-1a 64 (offset basis
+/// `0xcbf29ce484222325`, prime `0x100000001b3`): every name, export
+/// symbol, ABI string and TS string of every descriptor is fed as raw
+/// UTF-8 bytes, one `0xFF` separator byte after each element. The
+/// walk order is the descriptor's canonical declaration order - fns,
+/// then classes (name, release export, constructor, fields, methods),
+/// then records, enums and errors - so the same [`ModuleDef`] content
+/// always produces the same `u64` and any exported-surface change
+/// (rename, signature, added/removed item) changes the value.
+///
+/// This is the Rust half of the JSON↔binary integrity check: the
+/// loader JSON carries the value (`"exportsHash"`) and the cdylib
+/// recomputes it at runtime through `bffi_module_exports_hash()`
+/// (the `module = ...` form of [`bffi_runtime_abi!`](crate::bffi_runtime_abi)).
+///
+/// Deliberately NOT fed: docs lines (cosmetic), param names (the ABI
+/// only sees the param types) and the module name (the exported
+/// surface is the same surface whatever the module is called).
+#[must_use]
+pub fn module_exports_hash(def: &ModuleDef) -> u64 {
+    let mut hash = Fnv1a::new();
+    for function in def.fns {
+        feed_fn_like(
+            &mut hash,
+            function.js_name,
+            function.export_name,
+            function.ret,
+            &function.abi,
+        );
+    }
+    for class in def.classes {
+        hash.feed_element(class.js_name);
+        hash.feed_element(class.release_export);
+        feed_fn_like(
+            &mut hash,
+            class.constructor.js_name,
+            class.constructor.export_name,
+            class.constructor.ret,
+            &class.constructor.abi,
+        );
+        for field in class.fields {
+            hash.feed_element(field.js_name);
+            hash.feed_element(&field.ty.as_str());
+            hash.feed_element(field.out.as_str());
+        }
+        for method in class.methods {
+            feed_fn_like(
+                &mut hash,
+                method.js_name,
+                method.export_name,
+                method.ret,
+                &method.abi,
+            );
+        }
+    }
+    for record in def.records {
+        hash.feed_element(record.js_name);
+        for field in record.fields {
+            hash.feed_element(field.name);
+            hash.feed_element(&field.ty.as_str());
+        }
+    }
+    for enumeration in def.enums {
+        hash.feed_element(enumeration.js_name);
+        for variant in enumeration.variants {
+            hash.feed_element(variant.name);
+        }
+    }
+    for error in def.errors {
+        hash.feed_element(error.js_name);
+        for variant in error.variants {
+            hash.feed_element(variant.name);
+            hash.feed_element_u32(variant.code);
+        }
+    }
+    hash.0
+}
+
+/// Feeds one fn-shaped descriptor (a [`FunctionDef`]/[`MethodDef`]
+/// body): name, export, every param's ABI string, then the return's
+/// TS type and transport name - each element separated. The param
+/// NAMES are deliberately not fed: the ABI only sees the param types.
+fn feed_fn_like(hash: &mut Fnv1a, name: &str, export: &str, ret: TsType, abi: &AbiSig) {
+    hash.feed_element(name);
+    hash.feed_element(export);
+    for param_abi in abi.params {
+        hash.feed_element(param_abi.as_str());
+    }
+    hash.feed_element(&ret.as_str());
+    hash.feed_element(ret_abi_str(ret, abi));
+}
+
 /// Renders `module` into the canonical loader JSON.
 ///
 /// See the [format contract](self) for the exact shape. The output
@@ -78,6 +230,13 @@ pub fn to_json(module: &ModuleDef) -> String {
     out.push_str("  \"bffi\": 1,\n");
     out.push_str("  \"module\": ");
     push_escaped(&mut out, module.name);
+    // The handshake pair (right after `module`, before the tables):
+    // the ABI revision and the exported-surface hash the JS loader
+    // verifies against the loaded cdylib.
+    out.push_str(",\n  \"abiVersion\": ");
+    out.push_str(&super::abi::BFFI_ABI_VERSION.to_string());
+    out.push_str(",\n  \"exportsHash\": ");
+    push_escaped(&mut out, &module_exports_hash(module).to_string());
     out.push_str(",\n  \"functions\": [");
     for (index, function) in module.fns.iter().enumerate() {
         if index == 0 {
@@ -134,10 +293,12 @@ pub fn to_json(module: &ModuleDef) -> String {
 
 /// Renders `module` and writes the JSON bytes to `path`.
 ///
-/// The bytes on disk are exactly [`to_json`]'s output. Missing parent
-/// directories are created first ([`std::fs::create_dir_all`]); io
-/// errors surface unchanged. Aggregation is the caller's job, exactly
-/// like [`dts::write_to_file`].
+/// The bytes on disk are exactly [`to_json`]'s output, including the
+/// runtime ABI handshake pair (`abiVersion`/`exportsHash`) computed
+/// from the same `ModuleDef`. Missing parent directories are created
+/// first ([`std::fs::create_dir_all`]); io errors surface unchanged.
+/// Aggregation is the caller's job, exactly like
+/// [`dts::write_to_file`].
 pub fn write_to_file(module: &ModuleDef, path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -595,13 +756,155 @@ fn ret_abi_str(ret: TsType, abi: &AbiSig) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{SCHEMA_VERSION, to_json};
-    use crate::bffi_dts::ModuleDef;
+    use super::{SCHEMA_VERSION, module_exports_hash, to_json, write_to_file};
+    use crate::bffi_dts::{
+        AbiOut, AbiPrim, AbiSig, AbiType, ClassDef, EnumDef, EnumVariantDef, ErrorDef,
+        ErrorVariantDef, FieldDef, FunctionDef, MethodDef, ModuleDef, ParamDef, RecordDef,
+        RecordFieldDef, TsType,
+    };
 
     #[test]
     fn schema_version_is_one() {
         assert_eq!(SCHEMA_VERSION, 1);
     }
+
+    /// A fn-like descriptor exercising params/abi/ret in the hash.
+    const TEST_FN: FunctionDef = FunctionDef {
+        js_name: "add",
+        export_name: "bffi_add",
+        docs: &[],
+        params: &[
+            ParamDef {
+                name: "a",
+                ty: TsType::Number,
+            },
+            ParamDef {
+                name: "b",
+                ty: TsType::Number,
+            },
+        ],
+        ret: TsType::Number,
+        abi: AbiSig {
+            params: &[AbiType::F64, AbiType::F64],
+            out: Some(AbiOut::Prim(AbiPrim::F64)),
+        },
+    };
+
+    /// The hash probe: one of everything, in one fixed order.
+    const TEST_MODULE: ModuleDef = ModuleDef {
+        name: "probe",
+        fns: &[
+            TEST_FN,
+            FunctionDef {
+                js_name: "greet",
+                export_name: "bffi_greet",
+                docs: &[],
+                params: &[ParamDef {
+                    name: "who",
+                    ty: TsType::String,
+                }],
+                ret: TsType::String,
+                abi: AbiSig {
+                    params: &[AbiType::Cstring],
+                    out: Some(AbiOut::Handle),
+                },
+            },
+        ],
+        classes: &[ClassDef {
+            js_name: "Counter",
+            release_export: "bffi_Counter_release",
+            docs: &[],
+            constructor: MethodDef {
+                js_name: "constructor",
+                export_name: "bffi_Counter_new",
+                docs: &[],
+                params: &[ParamDef {
+                    name: "start",
+                    ty: TsType::Number,
+                }],
+                ret: TsType::BigInt,
+                abi: AbiSig {
+                    params: &[AbiType::F64],
+                    out: Some(AbiOut::Handle),
+                },
+            },
+            fields: &[FieldDef {
+                js_name: "count",
+                export_name: "bffi_Counter_count_get",
+                docs: &[],
+                ty: TsType::Number,
+                out: AbiOut::Prim(AbiPrim::F64),
+            }],
+            methods: &[MethodDef {
+                js_name: "increment",
+                export_name: "bffi_Counter_increment",
+                docs: &[],
+                params: &[],
+                ret: TsType::Void,
+                abi: AbiSig {
+                    params: &[],
+                    out: None,
+                },
+            }],
+        }],
+        records: &[RecordDef {
+            js_name: "Point",
+            docs: &[],
+            fields: &[
+                RecordFieldDef {
+                    name: "x",
+                    docs: &[],
+                    ty: TsType::Number,
+                },
+                RecordFieldDef {
+                    name: "y",
+                    docs: &[],
+                    ty: TsType::Number,
+                },
+            ],
+        }],
+        enums: &[EnumDef {
+            js_name: "Mode",
+            docs: &[],
+            variants: &[
+                EnumVariantDef {
+                    name: "On",
+                    docs: &[],
+                },
+                EnumVariantDef {
+                    name: "Off",
+                    docs: &[],
+                },
+            ],
+        }],
+        errors: &[ErrorDef {
+            js_name: "ProbeError",
+            docs: &[],
+            variants: &[ErrorVariantDef {
+                name: "BadInput",
+                docs: &[],
+                code: 0x1001,
+                fields: &[RecordFieldDef {
+                    name: "input",
+                    docs: &[],
+                    ty: TsType::String,
+                }],
+            }],
+        }],
+    };
+
+    /// The same surface as [`TEST_MODULE`] with one fn renamed: any
+    /// exported-surface change must move the hash.
+    const TEST_MODULE_RENAMED: ModuleDef = ModuleDef {
+        fns: &[
+            FunctionDef {
+                js_name: "add_renamed",
+                ..TEST_FN
+            },
+            TEST_MODULE.fns[1],
+        ],
+        ..TEST_MODULE
+    };
 
     #[test]
     fn empty_module_has_the_fixed_skeleton_and_trailing_newline() {
@@ -613,9 +916,124 @@ mod tests {
             enums: &[],
             errors: &[],
         };
+        // An empty module hashes nothing: the hash is exactly the
+        // FNV-1a 64 offset basis (0xcbf29ce484222325).
         assert_eq!(
             to_json(&module),
-            "{\n  \"bffi\": 1,\n  \"module\": \"probe\",\n  \"functions\": [],\n  \"classes\": [],\n  \"records\": [],\n  \"enums\": [],\n  \"errors\": []\n}\n"
+            "{\n  \"bffi\": 1,\n  \"module\": \"probe\",\n  \"abiVersion\": 1,\n  \"exportsHash\": \"14695981039346656037\",\n  \"functions\": [],\n  \"classes\": [],\n  \"records\": [],\n  \"enums\": [],\n  \"errors\": []\n}\n"
+        );
+    }
+
+    #[test]
+    fn exports_hash_is_deterministic_for_the_same_def() {
+        assert_eq!(
+            module_exports_hash(&TEST_MODULE),
+            module_exports_hash(&TEST_MODULE)
+        );
+    }
+
+    #[test]
+    fn exports_hash_moves_when_a_name_changes() {
+        assert_ne!(
+            module_exports_hash(&TEST_MODULE),
+            module_exports_hash(&TEST_MODULE_RENAMED)
+        );
+    }
+
+    #[test]
+    fn exports_hash_moves_on_any_signature_or_table_change() {
+        let hash = module_exports_hash(&TEST_MODULE);
+
+        // A renamed record field moves the hash.
+        const RENAMED_FIELD: ModuleDef = ModuleDef {
+            records: &[RecordDef {
+                fields: &[
+                    RecordFieldDef {
+                        name: "x2",
+                        docs: &[],
+                        ty: TsType::Number,
+                    },
+                    TEST_MODULE.records[0].fields[1],
+                ],
+                ..TEST_MODULE.records[0]
+            }],
+            ..TEST_MODULE
+        };
+        assert_ne!(hash, module_exports_hash(&RENAMED_FIELD));
+
+        // A changed error code moves the hash.
+        const RECODED: ModuleDef = ModuleDef {
+            errors: &[ErrorDef {
+                variants: &[ErrorVariantDef {
+                    code: 0x1002,
+                    ..TEST_MODULE.errors[0].variants[0]
+                }],
+                ..TEST_MODULE.errors[0]
+            }],
+            ..TEST_MODULE
+        };
+        assert_ne!(hash, module_exports_hash(&RECODED));
+
+        // A changed param ABI moves the hash.
+        const REABIED: ModuleDef = ModuleDef {
+            fns: &[
+                FunctionDef {
+                    abi: AbiSig {
+                        params: &[AbiType::U32, AbiType::U32],
+                        out: Some(AbiOut::Prim(AbiPrim::F64)),
+                    },
+                    ..TEST_FN
+                },
+                TEST_MODULE.fns[1],
+            ],
+            ..TEST_MODULE
+        };
+        assert_ne!(hash, module_exports_hash(&REABIED));
+    }
+
+    #[test]
+    fn to_json_places_the_handshake_pair_after_module() {
+        let json = to_json(&TEST_MODULE);
+        let module_at = json.find("\"module\": ").expect("module key");
+        let abi_at = json.find("\"abiVersion\": 1").expect("abiVersion key");
+        let hash_key = format!("\"exportsHash\": \"{}\"", module_exports_hash(&TEST_MODULE));
+        let hash_at = json.find(&hash_key).expect("exportsHash key");
+        let fns_at = json.find("\"functions\":").expect("functions key");
+        assert!(module_at < abi_at && abi_at < hash_at && hash_at < fns_at);
+    }
+
+    #[test]
+    fn write_to_file_emits_the_handshake_pair() {
+        let path = std::env::temp_dir().join(format!(
+            "bffi-loader-json-{}-{}.json",
+            std::process::id(),
+            module_exports_hash(&TEST_MODULE)
+        ));
+        write_to_file(&TEST_MODULE, &path).expect("write succeeds");
+        let contents = std::fs::read_to_string(&path).expect("read back succeeds");
+        let _ = std::fs::remove_file(&path);
+        assert!(contents.contains("\n  \"abiVersion\": 1,\n"));
+        assert!(contents.contains(&format!(
+            "\n  \"exportsHash\": \"{}\",\n",
+            module_exports_hash(&TEST_MODULE)
+        )));
+    }
+
+    // The macro forms expand inside this crate exactly like into a
+    // user cdylib. The `module = ...` form additionally generates the
+    // `bffi_module_exports_hash` export; it also generates the base
+    // exports once, so it is the ONLY expansion in this binary.
+    crate::bffi_runtime_abi!(module = TEST_MODULE);
+
+    #[test]
+    fn macro_hash_export_matches_the_pure_function() {
+        assert_eq!(
+            bffi_runtime_abi_version(),
+            crate::bffi_build::abi::BFFI_ABI_VERSION
+        );
+        assert_eq!(
+            bffi_module_exports_hash(),
+            module_exports_hash(&TEST_MODULE)
         );
     }
 

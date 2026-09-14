@@ -7,8 +7,14 @@
  * (runtime / loader / pipeline / codegen); see package.json
  * `exports` for the subpath entries.
  */
-export { ErrorCode, makeTakeError, type FfiLib, type FfiSymbol } from "./runtime/index.ts";
-export { makeReadBuffer, makeFreeBuffer } from "./runtime/index.ts";
+export {
+  ErrorCode,
+  makeTakeError,
+  sym,
+  type FfiLib,
+  type FfiSymbol,
+} from "./runtime/index.ts";
+export { makeReadBuffer, makeFreeBuffer, decodeUtf8 } from "./runtime/index.ts";
 export {
   TAG_UNIT,
   TAG_I32,
@@ -17,6 +23,10 @@ export {
   TAG_BOOL,
   TAG_STR,
   TAG_BYTES,
+  MAX_WIRE_DEPTH,
+  MAX_WIRE_PAYLOAD,
+  setMaxWirePayload,
+  decodeAt,
   decodeValue,
   encodeArgs,
   encodeValue,
@@ -24,6 +34,7 @@ export {
 } from "./runtime/index.ts";
 export {
   SCHEMA_VERSION,
+  BFFI_ABI_VERSION,
   assertSchema,
   buildDeclarations,
   type AbiName,
@@ -37,13 +48,32 @@ export {
   type RetJson,
   type TsName,
 } from "./loader/index.ts";
-export { pumpUntil, wrapTask } from "./runtime/index.ts";
-export { createApi, createApiFromLib, type ApiOf, type ClassOf, type FnOf, type ParamsOf, type TsOf } from "./loader/index.ts";
+export { pumpUntil, wrapTask, wrapStream, streamItemTs, streamToWeb } from "./runtime/index.ts";
+export {
+  disposeLib,
+  installMemoryPressureGC,
+  makeLibDisposer,
+} from "./runtime/index.ts";
+export {
+  createApi,
+  createApiFromLib,
+  makeRelease,
+  isCompositeTs,
+  jsToWire,
+  tablesOf,
+  wireToJs,
+  type ApiOf,
+  type ClassOf,
+  type FnOf,
+  type ParamsOf,
+  type TsOf,
+} from "./loader/index.ts";
 export {
   bindJsCallback,
   invokeCallback,
   revokeCallback,
   setJsThread,
+  unsetJsThread,
   type CallbackSig,
   type CbType,
   type CbValue,

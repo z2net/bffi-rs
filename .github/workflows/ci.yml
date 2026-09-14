@@ -30,15 +30,6 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # the wry example is a workspace member: on Linux it links
-      # webkit2gtk/gtk through pkg-config - the dev packages must be
-      # present before any cargo step (Windows/macOS need nothing)
-      - name: Install GTK/webkit dev packages (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
-
       - name: cargo fmt
         run: cargo fmt --check
 
@@ -80,21 +71,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
-
-      # `bun run build` shells out to cargo for every example crate -
-      # install the pinned toolchain explicitly ONCE (a rustup
-      # auto-install mid-job races its own components and can fail
-      # with a "partially installed toolchain" conflict), and bring
-      # the GTK/webkit dev packages for the wry example on Linux.
-      - uses: dtolnay/rust-toolchain@1.98.0
-
-      - name: Install GTK/webkit dev packages (wry example)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
-
-      - uses: Swatinem/rust-cache@v2
+          bun-version: 1.4.2
 
       - name: bun install
         run: bun install --frozen-lockfile
@@ -108,10 +85,29 @@ jobs:
       - name: bun unit tests (packages)
         run: bun test packages
 
-      # prewarm the cargo cache (the example pipelines reuse it: an
-      # unchanged crate makes the in-pipeline build nearly free)
-      - name: cargo build (release, examples)
-        run: bun run build
+  # supply-chain policy: license/ban/source checks are strict, the
+  # RUSTSEC advisory scan is informational until 1.0 (known advisories
+  # in dependencies must not block CI). One OS, no compilation -
+  # cargo-deny/cargo-audit only resolve the dependency graph.
+  supply-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: bun test (example e2e, full pipeline)
-        run: bun test examples
+      # match the rust/js jobs: the pinned toolchain, installed once
+      - uses: dtolnay/rust-toolchain@1.98.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@cargo-deny
+
+      - name: cargo deny check (advisories, bans, licenses, sources)
+        run: cargo deny check
+
+      # advisories are informational until 1.0
+      - uses: taiki-e/install-action@cargo-audit
+
+      - name: cargo audit
+        continue-on-error: true
+        run: cargo audit

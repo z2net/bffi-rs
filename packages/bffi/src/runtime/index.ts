@@ -10,4 +10,5 @@ export * from "./wire.ts";
 export * from "./callbacks.ts";
 export * from "./async.ts";
 export * from "./stream.ts";
+export * from "./dispose.ts";
 export * from "./version.ts";

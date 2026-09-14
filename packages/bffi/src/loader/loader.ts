@@ -11,6 +11,14 @@
 /** Schema version this loader accepts. */
 export const SCHEMA_VERSION = 1;
 
+/**
+ * The runtime ABI version every current module binary reports through
+ * `bffi_runtime_abi_version()`. The loader handshake compares it
+ * (and the manifest's `abiVersion`) against this constant before any
+ * user wrapper is built.
+ */
+export const BFFI_ABI_VERSION = 1;
+
 /** The bun:ffi declaration spelling: the FFIType enum or one of its
  * runtime string names (`"u32"`, `"cstring"`, ...). */
 export type FfiType = import("bun:ffi").FFITypeOrString;
@@ -215,6 +223,14 @@ export interface EnumJson {
 export interface ModuleJson {
   bffi: number;
   module: string;
+  /** The ABI version the manifest was emitted for. Optional for the
+   * handshake: absent (legacy manifests) reads as 1. */
+  abiVersion?: number;
+  /** FNV-1a64 over the module's exports, as a decimal `u64` string
+   * (written by current emitters; absent in legacy manifests). When
+   * present the handshake compares it against the binary's
+   * `bffi_module_exports_hash()`. */
+  exportsHash?: string;
   functions: FunctionJson[];
   classes: ClassJson[];
   /** The B1 record types (always present in freshly emitted JSON;
@@ -250,11 +266,24 @@ export interface ErrorJson {
   variants: ErrorVariantJson[];
 }
 
-/** Validates the schema header: unknown versions are rejected. */
+/** Validates the schema header: unknown versions are rejected and
+ * the optional handshake fields (`abiVersion`, `exportsHash`) are
+ * type-checked when present - they are NEVER required, so legacy
+ * manifests stay loadable. */
 export function assertSchema(json: ModuleJson): void {
   if (json.bffi !== SCHEMA_VERSION) {
     throw new Error(
       `unsupported bffi loader schema: ${String(json.bffi)} (expected ${SCHEMA_VERSION})`,
+    );
+  }
+  if (json.abiVersion !== undefined && typeof json.abiVersion !== "number") {
+    throw new Error(
+      `invalid loader manifest: abiVersion must be a number, got ${typeof json.abiVersion}`,
+    );
+  }
+  if (json.exportsHash !== undefined && typeof json.exportsHash !== "string") {
+    throw new Error(
+      `invalid loader manifest: exportsHash must be a string, got ${typeof json.exportsHash}`,
     );
   }
 }
@@ -327,6 +356,10 @@ const RUNTIME_DECLARATIONS: Record<string, { args: FfiType[]; returns: FfiType }
   bffi_buffer: { args: ["u64"], returns: "ptr" },
   bffi_buffer_length: { args: ["u64"], returns: "u64" },
   bffi_types_free: { args: ["u64"], returns: "u32" },
+  // The ABI handshake pair (part of the runtime ABI group): the
+  // version constant and the FNV-1a64 exports hash.
+  bffi_runtime_abi_version: { args: [], returns: "u32" },
+  bffi_module_exports_hash: { args: [], returns: "u64" },
 };
 
 const ASYNC_DECLARATIONS: Record<string, { args: FfiType[]; returns: FfiType }> = {
@@ -339,6 +372,7 @@ const ASYNC_DECLARATIONS: Record<string, { args: FfiType[]; returns: FfiType }> 
 
 const CALLBACK_DECLARATIONS: Record<string, { args: FfiType[]; returns: FfiType }> = {
   bffi_callback_set_thread: { args: [], returns: "u32" },
+  bffi_callback_unset_thread: { args: [], returns: "u32" },
   bffi_callback_bind: {
     args: ["u8", "ptr", "u64", "u64", "pointer"],
     returns: "u32",

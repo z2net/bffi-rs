@@ -112,7 +112,7 @@ pub use crate::bffi_build::BuildError;
 #[cfg(feature = "callback")]
 pub use crate::bffi_callback::{
     CallbackError, CallbackSig, JsCallbackInfo, Value, ValueType, bind_js_callback,
-    ensure_js_thread, invoke, js_callback, register, revoke, set_js_thread,
+    ensure_js_thread, invoke, js_callback, register, revoke, set_js_thread, unset_js_thread,
 };
 // Marshal-and-wait rides the event loop, so it exists only when that
 // slice is compiled in (event-loop implies callback).
@@ -168,7 +168,11 @@ pub use bffi_macros::{
 /// outliving the FFI call. Never store a view in Rust state, and
 /// assume JS may mutate the aliased memory at any time. The genuinely
 /// unsafe `(ptr, len) -> &[u8]` step at the ABI lives in
-/// `bffi-build`/the generated shims, not here.
+/// `bffi-build`/the generated shims, not here. Because a view borrows
+/// only for the synchronous call, async signatures reject the view
+/// types at compile time: `#[bffi_async]` fails with `E015` on
+/// `ZeroCopyStr` / `ZeroCopyBuf` parameters (qualified paths
+/// included) - copy (`Vec<u8>`/`String`) or use an owned type there.
 ///
 /// ```
 /// let text = bffi::str_view(b"hello").expect("valid utf-8");

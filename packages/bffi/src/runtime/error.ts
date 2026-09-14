@@ -24,6 +24,7 @@ export const ErrorCode = {
   DomainError: 13,
   Pending: 14,
   Timeout: 15,
+  ReentrantCall: 16,
 } as const;
 
 /** `bffi_error_name` values: `1` = Error, `2` = TypeError, `3` = RangeError. */

@@ -12,6 +12,7 @@
 //! | `E002` | unsupported parameter type                              |
 //! | `E003` | unsupported return type                                 |
 //! | `E004` | unsupported attribute options (only `crate = "..."`)    |
+//! | `E015` | zero-copy view in an async signature                    |
 
 use crate::support::diagnostics::{DESIGN_NOTE, MacroDiagnostic};
 use proc_macro2::Span;
@@ -118,9 +119,36 @@ pub(crate) fn async_param_type<T: ToTokens>(span: Span, ty_tokens: &T, name: &st
     .to_compile_error(span)
 }
 
+/// `E015` - a zero-copy view (`ZeroCopyStr` / `ZeroCopyBuf`, qualified
+/// paths included) in an ASYNC signature. A view borrows the caller's
+/// buffer only for the synchronous FFI call, but a future always
+/// outlives that call, so the view must not cross into the spawned
+/// task. The sync `#[bffi]` macro keeps serving views (that is their
+/// whole purpose); only the async signature is rejected. Anchored at
+/// the offending parameter type.
+pub(crate) fn async_zero_copy_param<T: ToTokens>(
+    span: Span,
+    ty_tokens: &T,
+    name: &str,
+) -> syn::Error {
+    MacroDiagnostic::new(
+        "E015",
+        format!(
+            "zero-copy view in async signature: type `{}` for parameter `{}`",
+            ty_tokens.to_token_stream(),
+            name,
+        ),
+    )
+    .with_help(
+        "zero-copy views borrow the caller's buffer only for the synchronous call - copy (Vec<u8>/String) or use an owned type in async signatures",
+    )
+    .with_note(DESIGN_NOTE)
+    .to_compile_error(span)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MacroDiagnostic, param_type, return_type};
+    use super::{MacroDiagnostic, async_zero_copy_param, param_type, return_type};
     use proc_macro2::Span;
     use quote::quote;
 
@@ -159,5 +187,28 @@ mod tests {
             .to_compile_error(Span::call_site())
             .to_string();
         assert!(rendered.starts_with("bffi[E001]: probe"));
+    }
+
+    #[test]
+    fn async_zero_copy_diagnostic_renders_code_name_and_help() {
+        let err = async_zero_copy_param(
+            Span::call_site(),
+            &quote! { bffi::unsafe_zero_copy::ZeroCopyStr<'_> },
+            "text",
+        );
+        let text = err.to_string();
+        assert!(
+            text.contains(
+                "bffi[E015]: zero-copy view in async signature: \
+                 type `bffi :: unsafe_zero_copy :: ZeroCopyStr < '_ >` for parameter `text`"
+            ),
+            "got: {text}"
+        );
+        assert!(text.contains(
+            "  = help: zero-copy views borrow the caller's buffer only for the synchronous call - copy (Vec<u8>/String) or use an owned type in async signatures"
+        ));
+        assert!(text.contains(
+            "  = note: boundary rules: DESIGN.md (https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md)"
+        ));
     }
 }

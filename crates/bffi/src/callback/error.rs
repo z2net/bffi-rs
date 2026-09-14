@@ -4,7 +4,7 @@
 //! One variant per failure mode of the callback registry; the
 //! conversion targets existing `ErrorCode`s plus `WrongThread` (P2:
 //! dedicated code for calls that could not be marshalled to the JS
-//! thread).
+//! thread) and `ReentrantCall` (the `invoke_wait` re-entrancy gate).
 //!
 //! Display texts are part of the contract: they travel across the C ABI
 //! as `BffiError.message` and must stay deterministic (see the `Display`
@@ -48,6 +48,12 @@ pub enum CallbackError {
     /// has been stopped (sticky, never restarts), so the wait fails
     /// immediately instead of timing out.
     LoopStopped,
+    /// A NESTED `invoke_wait` was attempted from a thread already
+    /// waiting inside one: the parked thread cannot also drain the
+    /// event loop its job depends on, so the wait fails fast (status
+    /// `16`) instead of burning the timeout (the §9.1 deadlock
+    /// contract).
+    ReentrantWait,
     /// A JS-bound call found the bound pointer null: the slot is live,
     /// but there is no JS trampoline behind it (`0` is a legal opaque
     /// value at bind time).
@@ -153,6 +159,12 @@ impl fmt::Display for CallbackError {
                     "callback invoke_wait could not be queued: the event loop is stopped"
                 )
             }
+            Self::ReentrantWait => {
+                write!(
+                    f,
+                    "re-entrant invoke_wait: the calling JS thread is inside a native call; the loop cannot drain - restructure so native work runs off the JS thread"
+                )
+            }
             Self::NullPointer => {
                 write!(f, "the bound JS callback pointer is null")
             }
@@ -177,9 +189,11 @@ impl std::error::Error for CallbackError {}
 /// wrong-thread calls to the dedicated `WrongThread` code (P2; the
 /// message still distinguishes the cause), a full table to `TableFull`,
 /// an already-declared tag to `InvalidTag`; an expired `invoke_wait`
-/// timeout to the dedicated `Timeout` code, and a marshal job that
+/// timeout to the dedicated `Timeout` code, a marshal job that
 /// could not be queued (stopped loop) to `Error` - the same mapping
-/// the event-loop layer uses for its `Stopped`; a null JS-bound
+/// the event-loop layer uses for its `Stopped` - and a nested
+/// `invoke_wait` (the calling thread already waiting inside one) to
+/// the dedicated `ReentrantCall` code; a null JS-bound
 /// pointer to `NullPointer`, and the JS-bound C-call rejections
 /// (interior NUL, uncalleble signature) to `InvalidArgument` - the
 /// domain error is preserved as the source.
@@ -193,6 +207,7 @@ impl From<CallbackError> for BffiError {
             CallbackError::TagInUse(_) => ErrorCode::InvalidTag,
             CallbackError::Timeout => ErrorCode::Timeout,
             CallbackError::LoopStopped => ErrorCode::Error,
+            CallbackError::ReentrantWait => ErrorCode::ReentrantCall,
             CallbackError::NullPointer => ErrorCode::NullPointer,
             CallbackError::InvalidCString => ErrorCode::InvalidArgument,
             CallbackError::UnsupportedSignature { .. } => ErrorCode::InvalidArgument,
@@ -272,6 +287,10 @@ mod tests {
             CallbackError::LoopStopped.to_string(),
             "callback invoke_wait could not be queued: the event loop is stopped"
         );
+        assert_eq!(
+            CallbackError::ReentrantWait.to_string(),
+            "re-entrant invoke_wait: the calling JS thread is inside a native call; the loop cannot drain - restructure so native work runs off the JS thread"
+        );
     }
 
     #[test]
@@ -313,6 +332,7 @@ mod tests {
             (CallbackError::TagInUse(tag), ErrorCode::InvalidTag),
             (CallbackError::Timeout, ErrorCode::Timeout),
             (CallbackError::LoopStopped, ErrorCode::Error),
+            (CallbackError::ReentrantWait, ErrorCode::ReentrantCall),
             (CallbackError::NullPointer, ErrorCode::NullPointer),
             (CallbackError::InvalidCString, ErrorCode::InvalidArgument),
             (

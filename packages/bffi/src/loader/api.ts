@@ -5,13 +5,14 @@
  * object literal) ships exact signatures without hand-written types.
  */
 import { dlopen, ptr } from "bun:ffi";
-import { ErrorCode, type FfiLib, makeTakeError, sym } from "../runtime/error.ts";
+import { ErrorCode, symOptional, type FfiLib, makeTakeError, sym } from "../runtime/error.ts";
 import { makeReadBuffer } from "../runtime/buffer.ts";
-import { assertSchema, buildDeclarations, type BuiltinFeatures, type FunctionJson, type ModuleJson, type TsName } from "./loader.ts";
+import { assertSchema, BFFI_ABI_VERSION, buildDeclarations, type BuiltinFeatures, type FunctionJson, type ModuleJson, type TsName } from "./loader.ts";
 import { wrapTask } from "../runtime/async.ts";
 import { streamItemTs, wrapStream } from "../runtime/stream.ts";
 import { isCompositeTs, jsToWire, tablesOf, wireToJs } from "./composite.ts";
 import { decodeAt, encodeValue } from "../runtime/wire.ts";
+import { makeLibDisposer } from "../runtime/dispose.ts";
 
 const decoder = new TextDecoder();
 
@@ -246,6 +247,10 @@ export type ClassOf<C extends ModuleJson["classes"][number], M extends ModuleJso
  * declarations derived from the schema, then builds the typed API.
  * Types come from the `const` literal in the generated module - pass
  * the schema through `as const` in codegen.
+ *
+ * This is the explicit low-level API: dlopen on a raw binary path is
+ * a trust decision. The pipeline (`bffi()`) resolves platform
+ * packages by default and gates raw paths behind `trust: "explicit"`.
  */
 export function createApi<J extends ModuleJson>(
   json: J,
@@ -258,11 +263,78 @@ export function createApi<J extends ModuleJson>(
 }
 
 /**
+ * The loader handshake: the manifest's `abiVersion` (absent reads as
+ * 1 for legacy manifests) and the binary's `bffi_runtime_abi_version()`
+ * must both match [`BFFI_ABI_VERSION`], and a manifest `exportsHash`,
+ * when present, must match the binary's `bffi_module_exports_hash()`.
+ * Runs BEFORE any user wrapper is built - a stale manifest/binary
+ * pair fails loudly instead of silently calling the wrong ABI.
+ */
+function runHandshake(json: ModuleJson, lib: FfiLib): void {
+  const manifestVersion = json.abiVersion ?? 1;
+  if (manifestVersion !== BFFI_ABI_VERSION) {
+    throw new Error(
+      `ABI version mismatch: manifest ${String(manifestVersion)} != runtime ${String(BFFI_ABI_VERSION)} - ` +
+        "rebuild the module (bun bffi build) and regenerate api.gen.ts",
+    );
+  }
+  const binaryVersion = lib.bffi_runtime_abi_version;
+  if (typeof binaryVersion === "function") {
+    const reported = Number(binaryVersion());
+    if (reported !== BFFI_ABI_VERSION) {
+      throw new Error(
+        `ABI version mismatch: binary ${String(reported)} != runtime ${String(BFFI_ABI_VERSION)} - ` +
+          "rebuild the module (bun bffi build)",
+      );
+    }
+  }
+  const exportsHash = json.exportsHash;
+  if (exportsHash === undefined) {
+    return; // legacy manifest: no hash check
+  }
+  const binaryHash = lib.bffi_module_exports_hash;
+  if (typeof binaryHash !== "function") {
+    throw new Error(
+      "binary predates the ABI handshake exports - rebuild with the current bffi version",
+    );
+  }
+  if (BigInt(exportsHash) !== binaryHash()) {
+    throw new Error(
+      "exports hash mismatch: the loader manifest does not describe this binary " +
+        "(stale .bffi/bffi.api.json vs the built cdylib)",
+    );
+  }
+}
+
+/**
+ * Registers the CALLING thread as a JS thread when the module ships
+ * the callback surface (multi-isolate: every JS isolate that loads a
+ * module binds itself - the manual `setJsThread()` ritual is gone;
+ * idempotent, so an explicit later call is still fine). Modules
+ * without the callback exports skip silently.
+ */
+function autoBindJsThread(lib: FfiLib): void {
+  const setThread = symOptional(lib, "bffi_callback_set_thread");
+  if (setThread === undefined) {
+    return;
+  }
+  const status = Number(setThread());
+  if (status !== ErrorCode.Ok) {
+    throw new Error(`bffi_callback_set_thread failed: ${String(status)}`);
+  }
+}
+
+/**
  * The pure factory over an already-loaded symbol table: the
  * testable half of [`createApi`] (mock libraries in unit tests).
+ *
+ * This is the explicit low-level API (no dlopen, no trust gate); the
+ * ABI handshake still runs against the manifest and the symbol table.
  */
 export function createApiFromLib<J extends ModuleJson>(json: J, lib: FfiLib): ApiOf<J> {
   assertSchema(json);
+  runHandshake(json, lib);
+  autoBindJsThread(lib);
   const takeError = makeTakeError(lib);
   const readBuffer = makeReadBuffer(lib);
 
@@ -310,7 +382,9 @@ export function createApiFromLib<J extends ModuleJson>(json: J, lib: FfiLib): Ap
   for (const cls of json.classes) {
     api[cls.name] = makeClass(cls, callFunction, callMethod, lib, takeError);
   }
-  return api as ApiOf<J>;
+  // The Api carries the JS-side dispose surface: `using api = ...`
+  // retires every JSCallback trampoline created against this library.
+  return Object.assign(api, makeLibDisposer(lib)) as unknown as ApiOf<J>;
 }
 
 /**
@@ -499,6 +573,29 @@ interface NativeInstance {
 }
 
 /**
+ * Builds the early-release wrapper of one class: calls the release
+ * export and treats a duplicate release (`InvalidHandle`, raced with
+ * the GC finalizer) as success - every other non-zero status throws
+ * the drained error.
+ */
+export function makeRelease(
+  lib: FfiLib,
+  exportName: string,
+  takeError: (status?: number) => Error | null,
+): (handle: bigint) => void {
+  const releaseExport = sym(lib, exportName);
+  return (handle: bigint): void => {
+    const status = Number(releaseExport(handle));
+    if (status === ErrorCode.InvalidHandle) {
+      return;
+    }
+    if (status !== ErrorCode.Ok) {
+      throw takeError(status) ?? new Error(`${exportName} failed: ${String(status)}`);
+    }
+  };
+}
+
+/**
  * Builds the class wrapper: the constructor allocates the instance
  * handle, every member prepends it, and a FinalizationRegistry runs
  * the release shim on GC (the documented JS contract); `release()`
@@ -512,18 +609,7 @@ function makeClass(
   takeError: (status?: number) => Error | null,
 ): new (...args: unknown[]) => unknown {
   const ctor = callFunction(cls.constructor);
-  // A GC finalizer may race an explicit `release()`; the duplicate
-  // release is `InvalidHandle` (4) and must stay silent - every other
-  // status is a real error.
-  const release = (handle: bigint): void => {
-    const status = Number(sym(lib, cls.release)(handle));
-    if (status === ErrorCode.InvalidHandle) {
-      return;
-    }
-    if (status !== ErrorCode.Ok) {
-      throw takeError(status) ?? new Error(`${cls.release} failed: ${String(status)}`);
-    }
-  };
+  const release = makeRelease(lib, cls.release, takeError);
   const finalizers = new FinalizationRegistry((handle: bigint) => {
     release(handle);
   });
@@ -537,6 +623,9 @@ function makeClass(
     release(): void {
       finalizers.unregister(this);
       release(this.handle);
+    }
+    [Symbol.dispose](): void {
+      this.release();
     }
   };
 

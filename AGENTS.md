@@ -98,9 +98,12 @@ bffi-rs/
 │   ├── DESIGN.md                # architecture & decisions
 │   ├── CONTRIBUTING.md
 │   └── CODE_OF_CONDUCT.md
-├── examples/                      # sqlite, records, streams, errors, async, event-loop, callbacks, wry (each an e2e suite)
 ├── packages/                      # JS-side: bffi (@z2net/bffi), bffi-cli, native
 └── scripts/
+
+Examples live in a separate repository:
+https://github.com/z2net/bffi-examples (each example is a standalone
+crate and an e2e suite against the published packages).
 ```
 
 New crates must follow the naming scheme `bffi-*` and be added to the workspace.
@@ -125,9 +128,9 @@ bun install
 ```bash
 bun run lint          # oxlint
 bun run typecheck     # tsc
-bun run build         # builds all four example crates (release cdylibs)
-bun run test:e2e      # runs the examples as e2e suites (bun test examples)
-bun run ci            # full CI parity: lint, typecheck, fmt, clippy, tests
+bun run build         # builds the reference cdylib (release)
+bun run test:js       # runs the package unit tests (bun test packages)
+bun run ci            # full CI parity: lint, typecheck, fmt, clippy, tests, JS tests
 cargo check
 cargo test
 cargo fmt

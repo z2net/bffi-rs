@@ -26,7 +26,7 @@ See [docs/DESIGN.md](https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md) 
 - [packages/bffi](https://github.com/z2net/bffi-rs/blob/main/packages/bffi) - `@z2net/bffi`: the typed loader + build pipeline (see its README)
 - [packages/bffi-cli](https://github.com/z2net/bffi-rs/blob/main/packages/bffi-cli) - `@z2net/bffi-cli`: the `bffi` CLI (init, build, check, doctor, codegen, pack, fetch)
 - [packages/native](https://github.com/z2net/bffi-rs/blob/main/packages/native) - `@z2net/bffi-native`: the reference native module (platform npm package family)
-- [examples/](https://github.com/z2net/bffi-rs/blob/main/README.md#examples) - eight example modules, each doubling as an e2e suite (sqlite, records, streams, errors, async, event-loop, callbacks, wry)
+- [bffi-examples](https://github.com/z2net/bffi-examples) - example modules, each doubling as an e2e suite (sqlite, records, streams, errors, async, event-loop, callbacks, workers, wry)
 - [SECURITY.md](https://github.com/z2net/bffi-rs/blob/main/SECURITY.md) - security policy
 - [CONTACT.md](https://github.com/z2net/bffi-rs/blob/main/CONTACT.md) - contacts
 
@@ -50,10 +50,10 @@ See [docs/DESIGN.md](https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md) 
 
 ```sh
 bun install          # installs dependencies + git hooks (lefthook)
-bun run build        # builds all four example crates (release cdylibs)
-bun run test:e2e     # runs the examples as e2e suites (bun test examples)
+bun run build        # builds the reference cdylib (release)
+bun run test:js      # runs the package unit tests (bun test packages)
 bun run check        # oxlint + tsc + cargo check
-bun run ci           # full CI parity: lint, typecheck, fmt, clippy, tests
+bun run ci           # full CI parity: lint, typecheck, fmt, clippy, tests, JS tests
 ```
 
 The internal modules (core, types, error, object, dts, build,
@@ -69,8 +69,16 @@ and the [crates.io page](https://crates.io/crates/bffi).
 The `#[bffi]` descriptors are the single source of truth: the crate's
 `emit-json` binary writes `.bffi/bffi.api.json` (schema v1) from the
 aggregated `ModuleDef`, and the `@z2net/bffi` pipeline does the rest -
-validate, generate `.bffi/api.gen.ts`, resolve and `dlopen` the
-library. Deterministic bytes, safe to commit and diff.
+validate the manifest against the binary (ABI version + exports hash
+handshake runs BEFORE your first call), generate `.bffi/api.gen.ts`,
+resolve and `dlopen` the library. Deterministic bytes, safe to commit
+and diff.
+
+The generated factory emits one SPECIALIZED wrapper per function,
+method and field - the native symbol and the out-slot are hoisted,
+argument encoding and result decoding are inlined, and every
+signature is annotated against the embedded schema so `tsc` checks
+the generated file with the exact types you consume.
 
 ```ts
 import { bffi } from "@z2net/bffi";
@@ -81,6 +89,12 @@ api.add(1, 2);                       // number, typed; errors throw JS Errors
 const counter = new api.counter(10); // classes: FinalizationRegistry + release()
 await api.compute(21);               // `#[bffi_async]` -> Promise
 const sample = await api.report(7n); // records: Promise<Report> / Sample / Sample[] | null
+
+// The dispose protocol (Bun executes `using` natively):
+{
+  using stream = api.numbers(10);    // streams release on dispose
+  // ...
+} // classes, callbacks and the Api itself dispose the same way
 ```
 
 Composites cross the boundary as wire-encoded buffers, copy by
@@ -95,7 +109,7 @@ Domain errors derive `BffiError` with stable user codes in the
 reserved range `0x1000..=0xFFFF`; the code replaces the framework
 status in the ABI return and surfaces as `e.code` on the JS side,
 with `e.name` (the variant), `e.payload` (the variant fields) and
-`e.nativeStack` (a `RUST_BACKTRACE`-gated backtrace) alongside.
+`e.nativeStack` (a `RUST_BACKTRACE`-gated backtrace - keep it off in production) alongside. See [SECURITY.md](SECURITY.md) for the trust model: the `.bffi/` manifest is trusted input, `libraryPath` is an explicit trust decision, and bffi provides panic CONTAINMENT (not process isolation).
 
 ```rust
 #[derive(BffiError, Debug)]
@@ -123,24 +137,35 @@ try {
 The pipeline, its config (`.bffi/bffi.json`) and every subtlety are
 documented in
 [`packages/bffi`](https://github.com/z2net/bffi-rs/blob/main/packages/bffi);
-a full worked example lives in
-[`examples/sqlite`](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite).
+full worked examples live in
+[bffi-examples](https://github.com/z2net/bffi-examples).
 
 ## Examples
 
-Every example is a working native module and an e2e suite
-(`bun test examples` runs them all):
+The example modules live in their own repository,
+[bffi-examples](https://github.com/z2net/bffi-examples) - each one is
+a standalone crate there and doubles as an e2e suite against the
+published packages (the repo's CI runs the suites): sqlite (the full
+pipeline over rusqlite, the entry example), records, streams, errors,
+async, event-loop, callbacks, workers and wry.
 
-| Example | Demonstrates |
-| ------- | ------------ |
-| [`examples/sqlite`](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite) | the full pipeline over rusqlite - the entry example |
-| [`examples/records`](https://github.com/z2net/bffi-rs/blob/main/examples/records) | B1/B4 composites: records, enums, `Vec<T>`, `Vec<Vec<u8>>`, `Option<Sample>` |
-| [`examples/streams`](https://github.com/z2net/bffi-rs/blob/main/examples/streams) | B2 streams: pull and push producers, backpressure, `Result` items, wake-driven delivery |
-| [`examples/errors`](https://github.com/z2net/bffi-rs/blob/main/examples/errors) | B3 typed errors: `#[derive(BffiError)]`, user codes, `e.name`/`e.payload` |
-| [`examples/async`](https://github.com/z2net/bffi-rs/blob/main/examples/async) | `#[bffi_async]`: Promises, cancellation, timeouts, composite and `Option` results |
-| [`examples/event-loop`](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop) | the event loop: enqueue/marshal/pump/run/stop |
-| [`examples/callbacks`](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks) | both callback directions, the thread gate, marshal delivery |
-| [`examples/wry`](https://github.com/z2net/bffi-rs/blob/main/examples/wry) | a webview window driven from Bun: wry on a native loop thread, IPC round trips through `invoke_wait` (real-window e2e: `BFFI_WRY_E2E=1`) |
+## Benchmarks
+
+JS boundary throughput of the reference library `bffi-native`,
+`add(1, 2)`, 1M calls per loader after a 50k warmup (`cargo build
+--release -p bffi-native`, then `bun scripts/bench/bench.ts`),
+measured on a GitHub Actions ubuntu-latest runner:
+
+| Loader | Calls/s | vs specialized |
+| ------ | ------- | -------------- |
+| specialized (`api.gen.ts` via `createApiFromJson`) | RUNNER_PLACEHOLDER | 1.00x |
+| generic (`createApi` over the same module JSON) | RUNNER_PLACEHOLDER | RUNNER_PLACEHOLDER |
+
+The specialized codegen is the default since 0.1.3. Rust-side
+criterion benches for the wire codec and the handle registry live in
+`crates/bffi/benches/` (`cargo bench -p bffi`). The numbers come from
+the `bench` workflow (manual dispatch on GitHub Actions runners) -
+never from a maintainer's machine.
 
 ## Conventions
 

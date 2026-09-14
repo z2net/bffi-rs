@@ -60,13 +60,13 @@ These are invariants, not implementation details:
 
 ## 5. Async & event loop model
 
-JavaScript runs on exactly one thread. Three roles cooperate around it:
+JavaScript runs on one thread **per isolate**. Three roles cooperate around it:
 
-- **JS thread** - the only thread that executes JavaScript; it also drains the event loop.
+- **JS thread(s)** - only threads that execute JavaScript; each drains its own event-loop slot queue (and the global queue). Bun 1.4 workers are threads of the same process, so a process hosts one JS thread per isolate - the main script registers its own, every `Worker` registers its own (`set_js_thread`), and the registration dies with the thread (or explicitly via `unset_js_thread`).
 - **Executor workers** - poll Rust futures; they never touch JavaScript.
 - **Timer thread** - serves deadlines (sleep, timeouts); it never touches JavaScript either.
 
-Task resolution and callback invocations that originate off the JS thread are **delivered, not executed**: they are enqueued and run on the JS thread while it drains. A call made from the wrong thread is rejected (marshalled through the queue), never smuggled onto JavaScript.
+Task resolution and callback invocations that originate off a JS thread are **delivered, not executed**: they are enqueued and run on a JS thread while it drains. A call made from the wrong thread is rejected (marshalled through the queue), never smuggled onto JavaScript. Deliveries whose target is a specific isolate (its `JSCallback` trampolines: JS-bound callbacks, stream wakes, async resolvers) are **targeted** to the owning thread's slot queue - a job never crosses an isolate boundary.
 
 The drain is an **explicit contract**: the embedding code pumps (or runs the loop) when it chooses - typically on a documented periodic pattern. The framework never installs hidden timers or pumps implicitly. Cancellation is cooperative - a cancelled task is dropped at its next poll - and timeouts are first-class combinators. Tokio is an opt-in executor choice, not a requirement.
 
@@ -88,16 +88,19 @@ Supported targets are seven 64-bit triples: `win32-x64-msvc`, `linux-x64-gnu`, `
 
 ## 8. Examples as executable specifications
 
-Each example is a working module and an end-to-end test of one slice of the design:
+The example modules live in their own repository,
+[bffi-examples](https://github.com/z2net/bffi-examples); each one is a
+standalone crate there and doubles as an end-to-end test of one slice
+of the design:
 
-- [examples/sqlite](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite) - the full pipeline on a real workload.
-- [examples/async](https://github.com/z2net/bffi-rs/blob/main/examples/async) - futures as Promises, cancellation, timeouts, the explicit pump, composite and `Option` results.
-- [examples/event-loop](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop) - queue, drains, marshal.
-- [examples/callbacks](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks) - both directions, the JS-thread gate, marshal delivery.
-- [examples/records](https://github.com/z2net/bffi-rs/blob/main/examples/records) - the composite matrices: records, enums, sequences, `Option` fields and returns.
-- [examples/streams](https://github.com/z2net/bffi-rs/blob/main/examples/streams) - pull and push producers, backpressure, `Result` items, wake-driven delivery.
-- [examples/errors](https://github.com/z2net/bffi-rs/blob/main/examples/errors) - `#[derive(BffiError)]`: user codes, `e.name` / `e.payload`.
-- [examples/wry](https://github.com/z2net/bffi-rs/blob/main/examples/wry) - a webview window driven from Bun (the GUI-binding reference; see [docs/BINDING-GUI.md](https://github.com/z2net/bffi-rs/blob/main/docs/BINDING-GUI.md)).
+- [sqlite](https://github.com/z2net/bffi-examples/tree/main/sqlite) - the full pipeline on a real workload.
+- [async](https://github.com/z2net/bffi-examples/tree/main/async) - futures as Promises, cancellation, timeouts, the explicit pump, composite and `Option` results.
+- [event-loop](https://github.com/z2net/bffi-examples/tree/main/event-loop) - queue, drains, marshal.
+- [callbacks](https://github.com/z2net/bffi-examples/tree/main/callbacks) - both directions, the JS-thread gate, marshal delivery.
+- [records](https://github.com/z2net/bffi-examples/tree/main/records) - the composite matrices: records, enums, sequences, `Option` fields and returns.
+- [streams](https://github.com/z2net/bffi-examples/tree/main/streams) - pull and push producers, backpressure, `Result` items, wake-driven delivery.
+- [errors](https://github.com/z2net/bffi-examples/tree/main/errors) - `#[derive(BffiError)]`: user codes, `e.name` / `e.payload`.
+- [wry](https://github.com/z2net/bffi-examples/tree/main/wry) - a webview window driven from Bun (the GUI-binding reference; see [docs/BINDING-GUI.md](https://github.com/z2net/bffi-rs/blob/main/docs/BINDING-GUI.md)).
 
 ## 9. Decisions log
 

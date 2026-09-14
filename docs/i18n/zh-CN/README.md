@@ -25,7 +25,7 @@ Bun 的绑定框架 - [Bun](https://bun.sh) 的 napi-rs 等价物,构建于 `bun
 - [packages/bffi](https://github.com/z2net/bffi-rs/blob/main/packages/bffi) - `@z2net/bffi`:类型化加载器 + 构建流水线(见其 README)
 - [packages/bffi-cli](https://github.com/z2net/bffi-rs/blob/main/packages/bffi-cli) - `@z2net/bffi-cli`:`bffi` CLI(init、build、check、doctor、codegen、pack、fetch)
 - [packages/native](https://github.com/z2net/bffi-rs/blob/main/packages/native) - `@z2net/bffi-native`:参考原生模块(平台 npm 包家族)
-- [examples/sqlite](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite) - 入门示例(在 rusqlite 之上跑通完整流水线);`examples/async`、`examples/event-loop`、`examples/callbacks` 与之并列,每一个同时也是一个 e2e 测试套件
+- [bffi-examples](https://github.com/z2net/bffi-examples) - 示例模块,每一个同时也是一个 e2e 测试套件(sqlite、records、streams、errors、async、event-loop、callbacks、workers、wry)
 - [SECURITY.md](https://github.com/z2net/bffi-rs/blob/main/SECURITY.md) - 安全策略
 - [CONTACT.md](https://github.com/z2net/bffi-rs/blob/main/CONTACT.md) - 联系方式
 
@@ -49,10 +49,10 @@ Bun 的绑定框架 - [Bun](https://bun.sh) 的 napi-rs 等价物,构建于 `bun
 
 ```sh
 bun install          # 安装依赖 + git 钩子(lefthook)
-bun run build        # 构建全部四个示例 crate(release cdylib)
-bun run test:e2e     # 以 e2e 测试套件的方式运行示例(bun test examples)
+bun run build        # 构建参考 cdylib(release)
+bun run test:js      # 运行包的单元测试(bun test packages)
 bun run check        # oxlint + tsc + cargo check
-bun run ci           # 完整 CI 对齐:lint、typecheck、fmt、clippy、测试
+bun run ci           # 完整 CI 对齐:lint、typecheck、fmt、clippy、测试、JS 测试
 ```
 
 编写原生模块时,依赖 [`bffi`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi)
@@ -78,11 +78,11 @@ await api.compute(21);               // `#[bffi_async]` -> Promise
 
 流水线、它的配置(`.bffi/bffi.json`)以及每一处细节都记录在
 [`packages/bffi`](https://github.com/z2net/bffi-rs/blob/main/packages/bffi);
-完整的实战示例见
-[`examples/sqlite`](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite)。
-异步、事件循环与回调各有专属示例
-(`examples/async`、`examples/event-loop`、`examples/callbacks`),
-且每个示例同时也是一个 e2e 测试套件(`bun test examples`)。
+完整的实战示例位于独立仓库
+[bffi-examples](https://github.com/z2net/bffi-examples) - 每个示例
+在那里都是独立的 crate,同时也是一个针对已发布包的 e2e 测试套件
+(入门示例是 [sqlite](https://github.com/z2net/bffi-examples/tree/main/sqlite),
+在 rusqlite 之上跑通完整流水线)。
 
 ## 约定
 

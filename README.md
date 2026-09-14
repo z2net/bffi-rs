@@ -26,7 +26,7 @@ See [docs/DESIGN.md](https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md) 
 - [packages/bffi](https://github.com/z2net/bffi-rs/blob/main/packages/bffi) - `@z2net/bffi`: the typed loader + build pipeline (see its README)
 - [packages/bffi-cli](https://github.com/z2net/bffi-rs/blob/main/packages/bffi-cli) - `@z2net/bffi-cli`: the `bffi` CLI (init, build, check, doctor, codegen, pack, fetch)
 - [packages/native](https://github.com/z2net/bffi-rs/blob/main/packages/native) - `@z2net/bffi-native`: the reference native module (platform npm package family)
-- [examples/](https://github.com/z2net/bffi-rs/blob/main/README.md#examples) - eight example modules, each doubling as an e2e suite (sqlite, records, streams, errors, async, event-loop, callbacks, wry)
+- [bffi-examples](https://github.com/z2net/bffi-examples) - example modules, each doubling as an e2e suite (sqlite, records, streams, errors, async, event-loop, callbacks, workers, wry)
 - [SECURITY.md](https://github.com/z2net/bffi-rs/blob/main/SECURITY.md) - security policy
 - [CONTACT.md](https://github.com/z2net/bffi-rs/blob/main/CONTACT.md) - contacts
 
@@ -50,10 +50,10 @@ See [docs/DESIGN.md](https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md) 
 
 ```sh
 bun install          # installs dependencies + git hooks (lefthook)
-bun run build        # builds all four example crates (release cdylibs)
-bun run test:e2e     # runs the examples as e2e suites (bun test examples)
+bun run build        # builds the reference cdylib (release)
+bun run test:js      # runs the package unit tests (bun test packages)
 bun run check        # oxlint + tsc + cargo check
-bun run ci           # full CI parity: lint, typecheck, fmt, clippy, tests
+bun run ci           # full CI parity: lint, typecheck, fmt, clippy, tests, JS tests
 ```
 
 The internal modules (core, types, error, object, dts, build,
@@ -137,31 +137,24 @@ try {
 The pipeline, its config (`.bffi/bffi.json`) and every subtlety are
 documented in
 [`packages/bffi`](https://github.com/z2net/bffi-rs/blob/main/packages/bffi);
-a full worked example lives in
-[`examples/sqlite`](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite).
+full worked examples live in
+[bffi-examples](https://github.com/z2net/bffi-examples).
 
 ## Examples
 
-Every example is a working native module and an e2e suite
-(`bun test examples` runs them all):
-
-| Example | Demonstrates |
-| ------- | ------------ |
-| [`examples/sqlite`](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite) | the full pipeline over rusqlite - the entry example |
-| [`examples/records`](https://github.com/z2net/bffi-rs/blob/main/examples/records) | composites: records, enums, `Vec<T>`, `Vec<Vec<u8>>`, `Option<Sample>` |
-| [`examples/streams`](https://github.com/z2net/bffi-rs/blob/main/examples/streams) | streams: pull and push producers, backpressure, `Result` items, wake-driven delivery |
-| [`examples/errors`](https://github.com/z2net/bffi-rs/blob/main/examples/errors) | typed errors: `#[derive(BffiError)]`, user codes, `e.name`/`e.payload` |
-| [`examples/async`](https://github.com/z2net/bffi-rs/blob/main/examples/async) | `#[bffi_async]`: Promises, cancellation, timeouts, composite and `Option` results |
-| [`examples/event-loop`](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop) | the event loop: enqueue/marshal/pump/run/stop |
-| [`examples/callbacks`](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks) | both callback directions, the thread gate, marshal delivery |
-| [`examples/wry`](https://github.com/z2net/bffi-rs/blob/main/examples/wry) | a webview window driven from Bun: wry on a native loop thread, IPC round trips through `invoke_wait` (real-window e2e: `BFFI_WRY_E2E=1`) |
+The example modules live in their own repository,
+[bffi-examples](https://github.com/z2net/bffi-examples) - each one is
+a standalone crate there and doubles as an e2e suite against the
+published packages (the repo's CI runs the suites): sqlite (the full
+pipeline over rusqlite, the entry example), records, streams, errors,
+async, event-loop, callbacks, workers and wry.
 
 ## Benchmarks
 
-JS boundary throughput of the workers example, `sum_to(1000n)`, 1M
-calls per loader after a 50k warmup (`cargo build --release
--p bffi-example-workers`, then `bun scripts/bench/bench.ts`), measured
-on a GitHub Actions ubuntu-latest runner:
+JS boundary throughput of the reference library `bffi-native`,
+`add(1, 2)`, 1M calls per loader after a 50k warmup (`cargo build
+--release -p bffi-native`, then `bun scripts/bench/bench.ts`),
+measured on a GitHub Actions ubuntu-latest runner:
 
 | Loader | Calls/s | vs specialized |
 | ------ | ------- | -------------- |

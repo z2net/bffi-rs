@@ -26,7 +26,7 @@ bun add @z2net/bffi
 ```
 
 The quickest possible look - the [sqlite
-example](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite):
+example](https://github.com/z2net/bffi-examples/tree/main/sqlite):
 
 ```ts
 import { bffi } from "@z2net/bffi";
@@ -102,7 +102,7 @@ const api: Api = await bffi({ config: ".bffi/bffi.json" });
    `features` block, and build the typed API object.
 
 Live walkthrough:
-[examples/sqlite](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite).
+[sqlite](https://github.com/z2net/bffi-examples/tree/main/sqlite).
 
 ## 3. The config (`.bffi/bffi.json`), field by field
 
@@ -125,13 +125,13 @@ Live walkthrough:
 | `libraryPath` | string \| null | explicit dlopen path - skips resolution entirely (tests, prebuilt platform packages) |
 
 A real config:
-[examples/sqlite/.bffi/bffi.json](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite/.bffi/bffi.json).
+[sqlite/.bffi/bffi.json](https://github.com/z2net/bffi-examples/tree/main/sqlite/.bffi/bffi.json).
 
 ## 4. How ONE call crosses the boundary
 
 Take `#[bffi] pub fn open(path: &str) -> Result<u64, SqliteError>`
 (the sqlite example,
-[lib.rs](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite/src/lib.rs)).
+[lib.rs](https://github.com/z2net/bffi-examples/tree/main/sqlite/src/lib.rs)).
 The macro generates the shim `bffi_open(path_ptr: *const c_char,
 __ret: *mut u64) -> u32`; the loader generates the JS wrapper. A call
 then flows:
@@ -255,7 +255,7 @@ await pumpUntil(api.compute(5), () => api.loopPump());
 `pumpUntil` calls `pump()` after every macrotask until the promise
 settles. A live, complete demonstration (values, strings, domain
 errors, panics, timeouts, cancellation, the raw-handle path):
-[examples/async](https://github.com/z2net/bffi-rs/blob/main/examples/async).
+[async](https://github.com/z2net/bffi-examples/tree/main/async).
 
 Cancellation is COOPERATIVE: `bffi_async_cancel` drops the future at
 its next poll boundary (blocking code inside is not interrupted) and
@@ -297,7 +297,7 @@ Subtleties worth knowing:
 - Booleans cross callbacks as `u8` (`1`/`0`) - same as the ABI.
 
 Both directions live in
-[examples/callbacks](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks).
+[callbacks](https://github.com/z2net/bffi-examples/tree/main/callbacks).
 
 ## 9. The event loop
 
@@ -307,7 +307,7 @@ drain - otherwise `WrongThread`), `pump` (non-blocking drain),
 package does not drive the loop for you: async deliveries arrive
 while YOU pump (see §7). The mechanics, including the exactly-once
 guarantee and the sticky stop:
-[examples/event-loop](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop).
+[event-loop](https://github.com/z2net/bffi-examples/tree/main/event-loop).
 
 ## 10. Platform packages (napi-rs style)
 
@@ -406,20 +406,20 @@ building, resolution and the API factory over a mock symbol table.
 
 ## 14. See it live
 
-- [examples/sqlite](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite)
+- [sqlite](https://github.com/z2net/bffi-examples/tree/main/sqlite)
   - the pipeline end-to-end on a real workload;
-- [examples/async](https://github.com/z2net/bffi-rs/blob/main/examples/async)
+- [async](https://github.com/z2net/bffi-examples/tree/main/async)
   - Promises, timeouts, cancellation, the pump;
-- [examples/event-loop](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop)
+- [event-loop](https://github.com/z2net/bffi-examples/tree/main/event-loop)
   - the queue/drains/marshal mechanics;
-- [examples/callbacks](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks)
+- [callbacks](https://github.com/z2net/bffi-examples/tree/main/callbacks)
   - both callback directions, the thread gate, marshal delivery;
-- [examples/records](https://github.com/z2net/bffi-rs/blob/main/examples/records)
+- [records](https://github.com/z2net/bffi-examples/tree/main/records)
   - records, enums, sequences, `Option` fields and returns;
-- [examples/streams](https://github.com/z2net/bffi-rs/blob/main/examples/streams)
+- [streams](https://github.com/z2net/bffi-examples/tree/main/streams)
   - pull and push producers, backpressure, wake-driven delivery;
-- [examples/errors](https://github.com/z2net/bffi-rs/blob/main/examples/errors)
+- [errors](https://github.com/z2net/bffi-examples/tree/main/errors)
   - typed errors with user codes (`e.code` / `e.name` / `e.payload`);
-- [examples/wry](https://github.com/z2net/bffi-rs/blob/main/examples/wry)
+- [wry](https://github.com/z2net/bffi-examples/tree/main/wry)
   - a webview window driven from Bun - the GUI-binding reference
     ([docs/BINDING-GUI.md](https://github.com/z2net/bffi-rs/blob/main/docs/BINDING-GUI.md)).

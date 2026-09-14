@@ -1,6 +1,8 @@
 {
   "bffi": 1,
   "module": "native",
+  "abiVersion": 1,
+  "exportsHash": "5615720039364060773",
   "functions": [
     {
       "name": "add",
@@ -60,5 +62,8 @@
       "out": "handle"
     }
   ],
-  "classes": []
+  "classes": [],
+  "records": [],
+  "enums": [],
+  "errors": []
 }

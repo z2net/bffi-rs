@@ -1,10 +1,10 @@
 /**
- * The JS boundary benchmark: N calls of `sum_to(1000n)` through the
- * workers example cdylib, comparing the SPECIALIZED generated loader
- * (`examples/workers/.bffi/api.gen.ts` -> `createApiFromJson`: hoisted
- * symbols, preallocated out slots, inline argument handling) against
- * the GENERIC loader (`createApi` from `@z2net/bffi` over the same
- * `moduleJson`).
+ * The JS boundary benchmark: N calls of `add(1, 2)` through the
+ * reference cdylib (`bffi-native`), comparing the SPECIALIZED
+ * generated loader (`crates/bffi-native/.bffi/api.gen.ts` ->
+ * `createApiFromJson`: hoisted symbols, preallocated out slots,
+ * inline argument handling) against the GENERIC loader (`createApi`
+ * from `@z2net/bffi` over the same `moduleJson`).
  *
  * Run from the repo root (see scripts/bench/README.md):
  *
@@ -13,24 +13,24 @@
  * No dependencies: plain console table.
  */
 
-import os from "node:os";
 import path from "node:path";
 
 import { createApi } from "@z2net/bffi";
+import process from "node:process";
 import {
   createApiFromJson,
   moduleJson,
-} from "../../examples/workers/.bffi/api.gen.ts";
+} from "../../crates/bffi-native/.bffi/api.gen.ts";
 
 /** The cargo cdylib name for this platform. */
 function defaultLibraryName(): string {
-  switch (os.platform()) {
+  switch (process.platform) {
     case "win32":
-      return "bffi_example_workers.dll";
+      return "bffi_native.dll";
     case "darwin":
-      return "libbffi_example_workers.dylib";
+      return "libbffi_native.dylib";
     default:
-      return "libbffi_example_workers.so";
+      return "libbffi_native.so";
   }
 }
 
@@ -40,7 +40,8 @@ const libraryPath =
   path.join(repoRoot, "target", "release", defaultLibraryName());
 const calls = Number(process.argv[3] ?? 1_000_000);
 const warmupCalls = 50_000;
-const arg = 1000n;
+const a = 1;
+const b = 2;
 
 if (!Number.isFinite(calls) || calls <= 0) {
   console.error(`invalid call count: ${String(process.argv[3])}`);
@@ -51,41 +52,41 @@ const specialized = createApiFromJson(libraryPath);
 const generic = createApi(moduleJson, libraryPath);
 
 // Correctness gate before any timing.
-const expected = (arg * (arg + 1n)) / 2n;
-const loaders: Array<[string, (n: bigint) => bigint]> = [
-  ["specialized", specialized.sum_to],
-  ["generic", generic.sum_to],
+const expected = a + b;
+const loaders: Array<[string, (x: number, y: number) => number]> = [
+  ["specialized", specialized.add],
+  ["generic", generic.add],
 ];
-for (const [label, sumTo] of loaders) {
-  const got = sumTo(arg);
+for (const [label, add] of loaders) {
+  const got = add(a, b);
   if (got !== expected) {
     console.error(
-      `${label}: sum_to(${String(arg)}) returned ${String(got)}, expected ${String(expected)}`,
+      `${label}: add(${String(a)}, ${String(b)}) returned ${String(got)}, expected ${String(expected)}`,
     );
     process.exit(1);
   }
 }
 
 /** Warmup + one timed pass; returns total ms and M calls/s. */
-function bench(sumTo: (n: bigint) => bigint): { ms: number; rate: number } {
+function bench(add: (x: number, y: number) => number): { ms: number; rate: number } {
   for (let i = 0; i < warmupCalls; i++) {
-    sumTo(arg);
+    add(a, b);
   }
   const start = performance.now();
   for (let i = 0; i < calls; i++) {
-    sumTo(arg);
+    add(a, b);
   }
   const ms = performance.now() - start;
   return { ms, rate: calls / ms / 1000 };
 }
 
-const results = loaders.map(([label, sumTo]) => ({
+const results = loaders.map(([label, add]) => ({
   label,
-  ...bench(sumTo),
+  ...bench(add),
 }));
 const baseline = results[0]?.rate ?? 1;
 
-console.info(`bffi JS boundary benchmark - sum_to(${String(arg)})`);
+console.info(`bffi JS boundary benchmark - add(${String(a)}, ${String(b)})`);
 console.info(`library : ${libraryPath}`);
 console.info(
   `calls   : ${String(calls)} per loader (warmup ${String(warmupCalls)})`,
@@ -105,8 +106,6 @@ for (const result of results) {
   );
 }
 console.info("");
-
-const cpu = os.cpus()[0]?.model.trim() ?? "unknown cpu";
-console.info(
-  `measured on ${cpu}, ${os.type()} ${os.release()} ${os.arch()}, bun ${String(Bun.version)}`,
-);
+// No environment details are printed on purpose: published benchmark
+// numbers must not leak or imply a particular maintainer machine -
+// the README cites the CI runner the workflow ran on.

@@ -23,8 +23,8 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.98.0
 
-      - name: Build the workers example (release)
-        run: cargo build --release -p bffi-example-workers
+      - name: Build the reference library (release)
+        run: cargo build --release -p bffi-native
 
       - name: Run the boundary benchmark
         run: bun scripts/bench/bench.ts

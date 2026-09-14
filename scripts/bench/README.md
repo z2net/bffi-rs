@@ -1,11 +1,11 @@
 # JS boundary benchmark
 
-Compares the two loaders of the workers example cdylib on
-`sum_to(1000n)`:
+Compares the two loaders of the reference cdylib (`bffi-native`) on
+`add(1, 2)`:
 
-- **specialized** - the generated module `examples/workers/.bffi/api.gen.ts`
-  (`createApiFromJson`: hoisted symbols, preallocated out slots,
-  inline argument handling);
+- **specialized** - the generated module
+  `crates/bffi-native/.bffi/api.gen.ts` (`createApiFromJson`: hoisted
+  symbols, preallocated out slots, inline argument handling);
 - **generic** - `createApi` from `@z2net/bffi` over the same
   `moduleJson`.
 
@@ -16,12 +16,11 @@ loader.
 ## Run
 
 ```sh
-cargo build --release -p bffi-example-workers   # the cdylib under test
+cargo build --release -p bffi-native            # the cdylib under test
 bun scripts/bench/bench.ts                      # default: target/release/<platform name>
 bun scripts/bench/bench.ts path/to/cdylib       # explicit cdylib path
 bun scripts/bench/bench.ts path/to/cdylib 2000000  # explicit call count (default 1M)
 ```
 
-The default path is `target/release/bffi_example_workers.dll` on
-Windows, `libbffi_example_workers.dylib` on macOS and
-`libbffi_example_workers.so` on Linux.
+The default path is `target/release/bffi_native.dll` on Windows,
+`libbffi_native.dylib` on macOS and `libbffi_native.so` on Linux.

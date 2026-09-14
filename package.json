@@ -28,10 +28,10 @@
     "fmt:check": "cargo fmt --check",
     "clippy": "cargo clippy --workspace --all-targets -- -D warnings",
     "test": "cargo test --workspace",
-    "build": "cargo build --release -p bffi-example-sqlite -p bffi-example-async -p bffi-example-event-loop -p bffi-example-callbacks -p bffi-example-workers -p bffi-example-records -p bffi-example-streams -p bffi-example-errors -p bffi-example-wry",
-    "test:e2e": "bun test examples",
+    "build": "cargo build --release -p bffi-native",
+    "test:js": "bun test packages",
     "check": "bun run lint && bun run typecheck && cargo check --workspace",
-    "ci": "bun run lint && bun run typecheck && bun run fmt:check && bun run clippy && bun run test"
+    "ci": "bun run lint && bun run typecheck && bun run fmt:check && bun run clippy && bun run test && bun run test:js"
   },
   "devDependencies": {
     "lefthook": "latest",

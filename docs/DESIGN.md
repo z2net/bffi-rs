@@ -88,16 +88,19 @@ Supported targets are seven 64-bit triples: `win32-x64-msvc`, `linux-x64-gnu`, `
 
 ## 8. Examples as executable specifications
 
-Each example is a working module and an end-to-end test of one slice of the design:
+The example modules live in their own repository,
+[bffi-examples](https://github.com/z2net/bffi-examples); each one is a
+standalone crate there and doubles as an end-to-end test of one slice
+of the design:
 
-- [examples/sqlite](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite) - the full pipeline on a real workload.
-- [examples/async](https://github.com/z2net/bffi-rs/blob/main/examples/async) - futures as Promises, cancellation, timeouts, the explicit pump, composite and `Option` results.
-- [examples/event-loop](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop) - queue, drains, marshal.
-- [examples/callbacks](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks) - both directions, the JS-thread gate, marshal delivery.
-- [examples/records](https://github.com/z2net/bffi-rs/blob/main/examples/records) - the composite matrices: records, enums, sequences, `Option` fields and returns.
-- [examples/streams](https://github.com/z2net/bffi-rs/blob/main/examples/streams) - pull and push producers, backpressure, `Result` items, wake-driven delivery.
-- [examples/errors](https://github.com/z2net/bffi-rs/blob/main/examples/errors) - `#[derive(BffiError)]`: user codes, `e.name` / `e.payload`.
-- [examples/wry](https://github.com/z2net/bffi-rs/blob/main/examples/wry) - a webview window driven from Bun (the GUI-binding reference; see [docs/BINDING-GUI.md](https://github.com/z2net/bffi-rs/blob/main/docs/BINDING-GUI.md)).
+- [sqlite](https://github.com/z2net/bffi-examples/tree/main/sqlite) - the full pipeline on a real workload.
+- [async](https://github.com/z2net/bffi-examples/tree/main/async) - futures as Promises, cancellation, timeouts, the explicit pump, composite and `Option` results.
+- [event-loop](https://github.com/z2net/bffi-examples/tree/main/event-loop) - queue, drains, marshal.
+- [callbacks](https://github.com/z2net/bffi-examples/tree/main/callbacks) - both directions, the JS-thread gate, marshal delivery.
+- [records](https://github.com/z2net/bffi-examples/tree/main/records) - the composite matrices: records, enums, sequences, `Option` fields and returns.
+- [streams](https://github.com/z2net/bffi-examples/tree/main/streams) - pull and push producers, backpressure, `Result` items, wake-driven delivery.
+- [errors](https://github.com/z2net/bffi-examples/tree/main/errors) - `#[derive(BffiError)]`: user codes, `e.name` / `e.payload`.
+- [wry](https://github.com/z2net/bffi-examples/tree/main/wry) - a webview window driven from Bun (the GUI-binding reference; see [docs/BINDING-GUI.md](https://github.com/z2net/bffi-rs/blob/main/docs/BINDING-GUI.md)).
 
 ## 9. Decisions log
 

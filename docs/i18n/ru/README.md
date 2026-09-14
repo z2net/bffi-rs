@@ -25,7 +25,7 @@
 - [packages/bffi](https://github.com/z2net/bffi-rs/blob/main/packages/bffi) - `@z2net/bffi`: типизированный лоадер + пайплайн сборки (подробности в его README)
 - [packages/bffi-cli](https://github.com/z2net/bffi-rs/blob/main/packages/bffi-cli) - `@z2net/bffi-cli`: CLI `bffi` (init, build, check, doctor, codegen, pack, fetch)
 - [packages/native](https://github.com/z2net/bffi-rs/blob/main/packages/native) - `@z2net/bffi-native`: эталонный нативный модуль (семейство платформенных npm-пакетов)
-- [examples/sqlite](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite) - входной пример (полный пайплайн поверх rusqlite); рядом лежат `examples/async`, `examples/event-loop`, `examples/callbacks`, каждый из них - ещё и набор e2e-тестов
+- [bffi-examples](https://github.com/z2net/bffi-examples) - примеры-модули, каждый из них ещё и набор e2e-тестов (sqlite, records, streams, errors, async, event-loop, callbacks, workers, wry)
 - [SECURITY.md](https://github.com/z2net/bffi-rs/blob/main/SECURITY.md) - политика безопасности
 - [CONTACT.md](https://github.com/z2net/bffi-rs/blob/main/CONTACT.md) - контакты
 
@@ -49,10 +49,10 @@
 
 ```sh
 bun install          # зависимости + git-хуки (lefthook)
-bun run build        # собирает все четыре примера-крейта (release cdylib)
-bun run test:e2e     # прогоняет примеры как наборы e2e-тестов (bun test examples)
+bun run build        # собирает эталонную cdylib (release)
+bun run test:js      # прогоняет юнит-тесты пакетов (bun test packages)
 bun run check        # oxlint + tsc + cargo check
-bun run ci           # полный CI-паритет: lint, typecheck, fmt, clippy, тесты
+bun run ci           # полный CI-паритет: lint, typecheck, fmt, clippy, тесты, JS-тесты
 ```
 
 Для своего нативного модуля зависите на [`bffi`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi) (фасад: одна зависимость на весь стек) и - при использовании атрибутных макросов - на отдельных крейтах `bffi-core`/`bffi-types`/`bffi-dts`, которые упоминают их раскрытия.
@@ -71,7 +71,7 @@ const counter = new api.counter(10); // классы: FinalizationRegistry + rel
 await api.compute(21);               // `#[bffi_async]` -> Promise
 ```
 
-Пайплайн, его конфигурация (`.bffi/bffi.json`) и все тонкости описаны в [`packages/bffi`](https://github.com/z2net/bffi-rs/blob/main/packages/bffi); полный разобранный пример живёт в [`examples/sqlite`](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite). У async, event-loop и колбэков есть отдельные примеры (`examples/async`, `examples/event-loop`, `examples/callbacks`), и каждый пример - ещё и набор e2e-тестов (`bun test examples`).
+Пайплайн, его конфигурация (`.bffi/bffi.json`) и все тонкости описаны в [`packages/bffi`](https://github.com/z2net/bffi-rs/blob/main/packages/bffi); разобранные примеры живут в отдельном репозитории [bffi-examples](https://github.com/z2net/bffi-examples) - каждый пример это самостоятельный крейт и набор e2e-тестов против опубликованных пакетов (входной пример - [sqlite](https://github.com/z2net/bffi-examples/tree/main/sqlite), полный пайплайн поверх rusqlite).
 
 ## Конвенции
 

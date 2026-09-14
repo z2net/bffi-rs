@@ -1,23 +1,26 @@
 {
   "bffi": 1,
-  "version": "0.1.0",
-  "module": "async",
+  "version": "0.1.3",
+  "module": "native",
   "debug": false,
   "crate": {
     "dir": ".",
     "targetDir": "../../target",
-    "name": "bffi-example-async",
-    "binary": "bffi_example_async"
+    "name": "bffi-native",
+    "binary": "bffi_native"
   },
   "features": {
     "runtime": true,
-    "async": true,
+    "async": false,
     "callbacks": false
   },
   "generate": {
     "apiGen": true,
     "outFile": "api.gen.ts"
   },
-  "files": ["bffi.api.json", "api.gen.ts"],
+  "files": [
+    "bffi.api.json",
+    "api.gen.ts"
+  ],
   "libraryPath": null
 }

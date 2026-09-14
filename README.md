@@ -69,8 +69,16 @@ and the [crates.io page](https://crates.io/crates/bffi).
 The `#[bffi]` descriptors are the single source of truth: the crate's
 `emit-json` binary writes `.bffi/bffi.api.json` (schema v1) from the
 aggregated `ModuleDef`, and the `@z2net/bffi` pipeline does the rest -
-validate, generate `.bffi/api.gen.ts`, resolve and `dlopen` the
-library. Deterministic bytes, safe to commit and diff.
+validate the manifest against the binary (ABI version + exports hash
+handshake runs BEFORE your first call), generate `.bffi/api.gen.ts`,
+resolve and `dlopen` the library. Deterministic bytes, safe to commit
+and diff.
+
+The generated factory emits one SPECIALIZED wrapper per function,
+method and field - the native symbol and the out-slot are hoisted,
+argument encoding and result decoding are inlined, and every
+signature is annotated against the embedded schema so `tsc` checks
+the generated file with the exact types you consume.
 
 ```ts
 import { bffi } from "@z2net/bffi";
@@ -81,6 +89,12 @@ api.add(1, 2);                       // number, typed; errors throw JS Errors
 const counter = new api.counter(10); // classes: FinalizationRegistry + release()
 await api.compute(21);               // `#[bffi_async]` -> Promise
 const sample = await api.report(7n); // records: Promise<Report> / Sample / Sample[] | null
+
+// The dispose protocol (Bun executes `using` natively):
+{
+  using stream = api.numbers(10);    // streams release on dispose
+  // ...
+} // classes, callbacks and the Api itself dispose the same way
 ```
 
 Composites cross the boundary as wire-encoded buffers, copy by
@@ -134,9 +148,9 @@ Every example is a working native module and an e2e suite
 | Example | Demonstrates |
 | ------- | ------------ |
 | [`examples/sqlite`](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite) | the full pipeline over rusqlite - the entry example |
-| [`examples/records`](https://github.com/z2net/bffi-rs/blob/main/examples/records) | B1/B4 composites: records, enums, `Vec<T>`, `Vec<Vec<u8>>`, `Option<Sample>` |
-| [`examples/streams`](https://github.com/z2net/bffi-rs/blob/main/examples/streams) | B2 streams: pull and push producers, backpressure, `Result` items, wake-driven delivery |
-| [`examples/errors`](https://github.com/z2net/bffi-rs/blob/main/examples/errors) | B3 typed errors: `#[derive(BffiError)]`, user codes, `e.name`/`e.payload` |
+| [`examples/records`](https://github.com/z2net/bffi-rs/blob/main/examples/records) | composites: records, enums, `Vec<T>`, `Vec<Vec<u8>>`, `Option<Sample>` |
+| [`examples/streams`](https://github.com/z2net/bffi-rs/blob/main/examples/streams) | streams: pull and push producers, backpressure, `Result` items, wake-driven delivery |
+| [`examples/errors`](https://github.com/z2net/bffi-rs/blob/main/examples/errors) | typed errors: `#[derive(BffiError)]`, user codes, `e.name`/`e.payload` |
 | [`examples/async`](https://github.com/z2net/bffi-rs/blob/main/examples/async) | `#[bffi_async]`: Promises, cancellation, timeouts, composite and `Option` results |
 | [`examples/event-loop`](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop) | the event loop: enqueue/marshal/pump/run/stop |
 | [`examples/callbacks`](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks) | both callback directions, the thread gate, marshal delivery |
@@ -146,18 +160,19 @@ Every example is a working native module and an e2e suite
 
 JS boundary throughput of the workers example, `sum_to(1000n)`, 1M
 calls per loader after a 50k warmup (`cargo build --release
--p bffi-example-workers`, then `bun scripts/bench/bench.ts`):
+-p bffi-example-workers`, then `bun scripts/bench/bench.ts`), measured
+on a GitHub Actions ubuntu-latest runner:
 
 | Loader | Calls/s | vs specialized |
 | ------ | ------- | -------------- |
-| specialized (`api.gen.ts` via `createApiFromJson`) | ~31M | 1.00x |
-| generic (`createApi` over the same module JSON) | ~7M | 0.23x |
+| specialized (`api.gen.ts` via `createApiFromJson`) | RUNNER_PLACEHOLDER | 1.00x |
+| generic (`createApi` over the same module JSON) | RUNNER_PLACEHOLDER | RUNNER_PLACEHOLDER |
 
 The specialized codegen is the default since 0.1.3. Rust-side
 criterion benches for the wire codec and the handle registry live in
-`crates/bffi/benches/` (`cargo bench -p bffi`).
-
-measured on AMD Ryzen 5 5600X 6-Core Processor, Windows_NT 10.0.26200 x64, bun 1.4.0
+`crates/bffi/benches/` (`cargo bench -p bffi`). The numbers come from
+the `bench` workflow (manual dispatch on GitHub Actions runners) -
+never from a maintainer's machine.
 
 ## Conventions
 

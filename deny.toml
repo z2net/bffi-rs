@@ -4,10 +4,11 @@
 
 [advisories]
 # Schema v2: RUSTSEC vulnerabilities are always hard errors (there is no
-# `vulnerability` level anymore); unmaintained/yanked only warn.
+# `vulnerability` level anymore); unmaintained/unsound/yanked advisories
+# surface as warnings by default - the scope keys take
+# "all" | "workspace" | "transitive" | "none", not lint levels, so they
+# are intentionally left at their defaults.
 version = 2
-unmaintained = "warn"
-unsound = "warn"
 yanked = "warn"
 
 [licenses]

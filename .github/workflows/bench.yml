@@ -1,0 +1,35 @@
+# Boundary-benchmark runner: the numbers published in the README
+# come from THIS workflow (a clean GitHub Actions runner), never from
+# a maintainer's machine. Manual dispatch.
+name: bench
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.98.0
+
+      - name: Build the workers example (release)
+        run: cargo build --release -p bffi-example-workers
+
+      - name: Run the boundary benchmark
+        run: bun scripts/bench/bench.ts
+
+      - name: Runner environment
+        run: |
+          echo "cpu: $(grep 'model name' /proc/cpuinfo | head -1 | cut -d: -f2 | xargs)"
+          echo "os: $(lsb_release -ds 2>/dev/null || cat /etc/os-release | head -1)"

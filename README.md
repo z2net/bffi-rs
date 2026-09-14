@@ -158,8 +158,8 @@ measured on a GitHub Actions ubuntu-latest runner:
 
 | Loader | Calls/s | vs specialized |
 | ------ | ------- | -------------- |
-| specialized (`api.gen.ts` via `createApiFromJson`) | RUNNER_PLACEHOLDER | 1.00x |
-| generic (`createApi` over the same module JSON) | RUNNER_PLACEHOLDER | RUNNER_PLACEHOLDER |
+| specialized (`api.gen.ts` via `createApiFromJson`) | ~172M | 1.00x |
+| generic (`createApi` over the same module JSON) | ~11M | 0.07x |
 
 The specialized codegen is the default since 0.1.3. Rust-side
 criterion benches for the wire codec and the handle registry live in

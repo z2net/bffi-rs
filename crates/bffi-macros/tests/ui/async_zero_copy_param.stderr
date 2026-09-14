@@ -1,0 +1,15 @@
+error: bffi[E015]: zero-copy view in async signature: type `ZeroCopyStr < '_ >` for parameter `text`
+         = help: zero-copy views borrow the caller's buffer only for the synchronous call - copy (Vec<u8>/String) or use an owned type in async signatures
+         = note: boundary rules: DESIGN.md (https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md)
+  --> tests/ui/async_zero_copy_param.rs:12:21
+   |
+12 | async fn bare(text: ZeroCopyStr<'_>) {}
+   |                     ^^^^^^^^^^^
+
+error: bffi[E015]: zero-copy view in async signature: type `views :: ZeroCopyBuf < '_ >` for parameter `data`
+         = help: zero-copy views borrow the caller's buffer only for the synchronous call - copy (Vec<u8>/String) or use an owned type in async signatures
+         = note: boundary rules: DESIGN.md (https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md)
+  --> tests/ui/async_zero_copy_param.rs:15:26
+   |
+15 | async fn qualified(data: views::ZeroCopyBuf<'_>) {}
+   |                          ^^^^^

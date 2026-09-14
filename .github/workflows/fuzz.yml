@@ -1,0 +1,69 @@
+name: fuzz
+
+# Weekly libFuzzer smoke runs over the safety-critical byte-level
+# surfaces of the bffi facade (wire codec, UTF-8 validator, handle
+# tables).
+#
+# Deliberately SEPARATE from ci.yml and not wired into it: cargo-fuzz
+# needs a nightly toolchain, while the repository workspace is pinned
+# to 1.98.0 via rust-toolchain.toml. The fuzz/ directory is a
+# self-contained workspace whose own rust-toolchain.toml pins nightly,
+# so the repository pin is never touched: rustup resolves the closest
+# toolchain file, making every cargo command below (run inside fuzz/)
+# use nightly regardless of the rustup default.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Mondays 03:00 UTC.
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  libfuzzer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Nightly is required by cargo-fuzz (-Zsanitizer). Installed with
+      # plain rustup commands - the repository's rust-toolchain.toml
+      # (1.98.0, for the main workspace) is NOT modified and NOT used
+      # here; the fuzz/ workspace carries its own nightly pin.
+      - name: Install nightly toolchain
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup default nightly
+
+      # Prebuilt cargo-fuzz binary: faster and more deterministic than
+      # compiling it with cargo install on every run.
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+
+      # Bounded smoke runs: a continuity check, not an overnight
+      # campaign. A crash (panic, sanitizer report, OOM, timeout) fails
+      # the job and uploads the crashing input below.
+      - name: fuzz wire_decode (wire codec decoders)
+        working-directory: fuzz
+        run: cargo fuzz run wire_decode -- -max_total_time=120
+
+      - name: fuzz utf8_validate (SIMD UTF-8 vs std)
+        working-directory: fuzz
+        run: cargo fuzz run utf8_validate -- -max_total_time=120
+
+      - name: fuzz handle_ops (handle table / ObjectWrap op program)
+        working-directory: fuzz
+        run: cargo fuzz run handle_ops -- -max_total_time=120
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: |
+            fuzz/artifacts/
+            fuzz/corpus/
+          if-no-files-found: ignore

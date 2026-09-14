@@ -5,7 +5,11 @@
 //!
 //! - **strict** ([`JsNumber::try_into_i32`] and friends) - the default:
 //!   NaN, infinities and out-of-range values are errors; fractional values
-//!   truncate toward zero *only* when the truncated result is in range;
+//!   truncate toward zero *only* when the truncated result is in range.
+//!   The 64-bit targets ([`JsNumber::try_into_i64`] /
+//!   [`JsNumber::try_into_u64`]) are stricter still: the value must be a
+//!   whole number with a magnitude of at most 2^53, the exact-integer
+//!   limit of `f64`; anything else would silently lose precision;
 //! - **saturating** ([`JsNumber::to_i32_saturating`] and friends) - the
 //!   value clamps to the target range, NaN becomes `0` (the Rust `as`-cast
 //!   contract);
@@ -158,36 +162,48 @@ impl JsNumber {
 
     /// Strict conversion to `i64`.
     ///
-    /// Fractional values truncate toward zero; bounds are checked against
-    /// ±2^63 exactly (2^63 itself is out of range because `i64` tops out
-    /// one below it). Values with a magnitude above 2^53 keep integer
-    /// semantics only at power-of-two granularity; treat anything beyond
-    /// the 2^53 exact-integer limit of `f64` as lossy and prefer
-    /// reconstructing such numbers on the JS side from `BigInt`.
+    /// The value must be an exact integer: non-integral values are
+    /// rejected (dropping the fraction is a lossy cast), and so are
+    /// finite values with a magnitude above the 2^53 exact-integer
+    /// limit of `f64` (past it, whole numbers silently round - e.g.
+    /// `2^60` decays to a nearby representable value). Reconstruct
+    /// such numbers on the JS side from `BigInt` instead.
     ///
     /// # Errors
     ///
     /// [`ConversionError::NotFinite`] for NaN/infinities,
-    /// [`ConversionError::OutOfRange`] outside ±2^63.
+    /// [`ConversionError::OutOfRange`] for non-integral values and for
+    /// |value| above 2^53.
     pub fn try_into_i64(self) -> Result<i64, ConversionError> {
+        const EXACT_LIMIT: f64 = 9_007_199_254_740_992.0; // 2^53
         let truncated = self.truncated()?;
-        // 2^63 is exactly representable; `i64::MAX as f64` rounds up to
-        // it, so the upper bound must be a strict inequality.
-        if !(-9_223_372_036_854_775_808.0..9_223_372_036_854_775_808.0).contains(&truncated) {
+        if self.0 != truncated {
+            return Err(ConversionError::OutOfRange);
+        }
+        // 2^53 is the last exactly representable integer magnitude;
+        // beyond it `as i64` would silently round.
+        if !(-EXACT_LIMIT..=EXACT_LIMIT).contains(&truncated) {
             return Err(ConversionError::OutOfRange);
         }
         Ok(truncated as i64)
     }
 
-    /// Strict conversion to `u64`: the value must be non-negative.
+    /// Strict conversion to `u64`: the value must be a non-negative
+    /// exact integer. See [`JsNumber::try_into_i64`] for why
+    /// non-integral values and magnitudes above 2^53 are rejected.
     ///
     /// # Errors
     ///
     /// [`ConversionError::NotFinite`] for NaN/infinities,
-    /// [`ConversionError::OutOfRange`] outside `[0, 2^64)`.
+    /// [`ConversionError::OutOfRange`] for negative, non-integral, or
+    /// > 2^53 values.
     pub fn try_into_u64(self) -> Result<u64, ConversionError> {
+        const EXACT_LIMIT: f64 = 9_007_199_254_740_992.0; // 2^53
         let truncated = self.truncated()?;
-        if !(0.0..18_446_744_073_709_551_616.0).contains(&truncated) {
+        if self.0 != truncated {
+            return Err(ConversionError::OutOfRange);
+        }
+        if !(0.0..=EXACT_LIMIT).contains(&truncated) {
             return Err(ConversionError::OutOfRange);
         }
         Ok(truncated as u64)

@@ -4,18 +4,10 @@ members = [
     "crates/bffi",
     "crates/bffi-macros",
     "crates/bffi-native",
-    "examples/sqlite",
-    "examples/async",
-    "examples/event-loop",
-    "examples/callbacks",
-    "examples/records",
-    "examples/streams",
-    "examples/errors",
-    "examples/wry",
 ]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/z2net/bffi-rs"
@@ -31,10 +23,10 @@ quote = "1"
 proc-macro2 = "1"
 trybuild = "1"
 
-# Dogfood: workspace members (examples, bffi-native) declare the
-# published registry versions so the manifests double as installation
-# examples; patch them onto the local crates so tests and e2e runs
-# exercise the working tree, not the last release.
+# Dogfood: workspace members (bffi-native) declare the published
+# registry versions so the manifest doubles as an installation
+# example; patch them onto the local crates so tests exercise the
+# working tree, not the last release.
 [patch.crates-io]
 bffi = { path = "crates/bffi" }
 bffi-macros = { path = "crates/bffi-macros" }

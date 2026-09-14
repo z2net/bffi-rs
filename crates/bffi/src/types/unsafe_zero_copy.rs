@@ -37,19 +37,18 @@ pub struct ZeroCopyBuf<'a>(&'a [u8]);
 
 /// Borrows `bytes` as a UTF-8 string view without copying.
 ///
+/// The view still borrows `bytes` - only the UTF-8 validation is now
+/// *enforced* (checked [`str::from_utf8`]) instead of assumed: the
+/// view is rejected up front when the bytes are not valid UTF-8.
+///
 /// # Errors
 ///
 /// [`ErrorCode::InvalidUtf8`] (as [`BffiError`]) when the bytes are not
 /// valid UTF-8 - the check is mandatory in the zero-copy path too.
 pub fn str_view(bytes: &[u8]) -> Result<ZeroCopyStr<'_>, BffiError> {
-    if !super::utf8::validate(bytes) {
-        return Err(BffiError::new(
-            ErrorCode::InvalidUtf8,
-            "byte sequence is not valid UTF-8",
-        ));
-    }
-    // SAFETY: `utf8::validate` just verified that `bytes` is valid UTF-8.
-    Ok(ZeroCopyStr(unsafe { std::str::from_utf8_unchecked(bytes) }))
+    std::str::from_utf8(bytes)
+        .map(ZeroCopyStr)
+        .map_err(|_| BffiError::new(ErrorCode::InvalidUtf8, "byte sequence is not valid UTF-8"))
 }
 
 /// Borrows `bytes` as a byte view without copying (infallible).
@@ -87,5 +86,37 @@ impl Deref for ZeroCopyBuf<'_> {
 
     fn deref(&self) -> &Self::Target {
         self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ZeroCopyStr, buf_view, str_view};
+    use crate::bffi_core::ErrorCode;
+
+    #[test]
+    fn str_view_rejects_invalid_utf8() {
+        let invalid: &[&[u8]] = &[
+            &[0xFF],                   // invalid lead byte
+            &[0x80],                   // lone continuation
+            &[0xC3],                   // truncated two-byte sequence
+            &[0xED, 0xA0, 0x80],       // surrogate
+            &[0xF4, 0x90, 0x80, 0x80], // beyond U+10FFFF
+        ];
+        for bytes in invalid {
+            let error = str_view(bytes).expect_err("invalid utf-8 must be rejected");
+            assert_eq!(error.code, ErrorCode::InvalidUtf8, "for {bytes:?}");
+        }
+    }
+
+    #[test]
+    fn str_view_borrows_valid_utf8_without_copy() {
+        let source = "🚀 views borrow".as_bytes().to_vec();
+        let view = str_view(&source).expect("valid utf-8");
+        assert_eq!(view.as_str(), "🚀 views borrow");
+        assert_eq!(view.as_str().len(), source.len());
+        let typed: ZeroCopyStr<'_> = view;
+        assert_eq!(&*typed, "🚀 views borrow");
+        assert_eq!(buf_view(&[1, 2]).as_slice(), [1, 2]);
     }
 }

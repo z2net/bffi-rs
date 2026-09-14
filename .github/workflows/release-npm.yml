@@ -2,7 +2,7 @@
 # is published (a release implies the v* tag), in the dependency-safe
 # order:
 #
-#   1. the seven @z2net/bffi-native-<triple> platform packages
+#   1. the eight @z2net/bffi-native-<triple> platform packages
 #      (cdylib built per-OS, assembled with `bffi pack`);
 #   2. the @z2net/bffi-native main package (its optionalDependencies
 #      point at the platform packages above);
@@ -27,6 +27,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   build-platform:
@@ -34,7 +35,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: windows-latest,   triple: win32-x64-msvc,   artifact: bffi_native.dll,   pkg: bffi-native-win32-x64-msvc }
+          - { os: windows-latest,       triple: win32-x64-msvc,   artifact: bffi_native.dll,   pkg: bffi-native-win32-x64-msvc }
+          - { os: windows-11-arm,       triple: win32-arm64-msvc, artifact: bffi_native.dll,   pkg: bffi-native-win32-arm64-msvc }
           - { os: ubuntu-latest,    triple: linux-x64-gnu,    artifact: libbffi_native.so, pkg: bffi-native-linux-x64-gnu }
           - { os: ubuntu-latest,    triple: linux-x64-musl,   artifact: libbffi_native.so, pkg: bffi-native-linux-x64-musl,   target: x86_64-unknown-linux-musl, musl: "true" }
           - { os: ubuntu-24.04-arm, triple: linux-arm64-gnu,  artifact: libbffi_native.so, pkg: bffi-native-linux-arm64-gnu }
@@ -116,7 +118,7 @@ jobs:
           if npm view "$PKG_NAME@$PKG_VERSION" version >/dev/null 2>&1; then
             echo "$PKG_NAME@$PKG_VERSION is already published - skipping."
           else
-            npm publish --access public
+            npm publish --access public --provenance
           fi
 
   publish-native-main:
@@ -146,7 +148,7 @@ jobs:
           if npm view "$PKG_NAME@$PKG_VERSION" version >/dev/null 2>&1; then
             echo "$PKG_NAME@$PKG_VERSION is already published - skipping."
           else
-            npm publish --access public
+            npm publish --access public --provenance
           fi
 
   publish-bffi:
@@ -176,7 +178,7 @@ jobs:
           if npm view "$PKG_NAME@$PKG_VERSION" version >/dev/null 2>&1; then
             echo "$PKG_NAME@$PKG_VERSION is already published - skipping."
           else
-            npm publish --access public
+            npm publish --access public --provenance
           fi
 
   publish-bffi-cli:
@@ -206,5 +208,5 @@ jobs:
           if npm view "$PKG_NAME@$PKG_VERSION" version >/dev/null 2>&1; then
             echo "$PKG_NAME@$PKG_VERSION is already published - skipping."
           else
-            npm publish --access public
+            npm publish --access public --provenance
           fi

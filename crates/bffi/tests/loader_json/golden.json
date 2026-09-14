@@ -1,6 +1,8 @@
 {
   "bffi": 1,
   "module": "matrix",
+  "abiVersion": 1,
+  "exportsHash": "9619148105415115123",
   "functions": [
     {
       "name": "add",

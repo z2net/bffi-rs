@@ -6,7 +6,7 @@
  *
  * Run with `bun test packages/bffi`.
  */
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 
 import {
   platformTriple,
@@ -33,7 +33,6 @@ describe("platformTriple", () => {
 
   test("rejects platforms bffi does not ship", () => {
     expect(() => platformTriple("freebsd", "x64")).toThrow(/unsupported platform/);
-    expect(() => platformTriple("win32", "arm64")).toThrow(/unsupported platform/);
   });
 });
 
@@ -113,5 +112,67 @@ describe("resolvePlatformBinary", () => {
     expect(() =>
       untyped("@z2net/mylib", { triple: "win32-x64-msvc" }),
     ).toThrow(/options\.binary is required/);
+  });
+});
+
+describe("resolvePlatformBinary integrity", () => {
+  // A fake platform package: package.json + a binary file on disk.
+  const ROOT = `${import.meta.dir}/tmp-integrity`;
+  const PKG_DIR = `${ROOT}/mylib-win32-x64-msvc`;
+  const BINARY = `${PKG_DIR}/bffi_mylib.dll`;
+  const BYTES = new Uint8Array([9, 8, 7]);
+  const DIGEST = (() => {
+    const hasher = new Bun.CryptoHasher("sha256");
+    hasher.update(BYTES);
+    return hasher.digest("hex");
+  })();
+
+  const resolve = (): string =>
+    resolvePlatformBinary("@z2net/mylib", {
+      triple: "win32-x64-msvc",
+      binary: "bffi_mylib",
+      from: ROOT,
+      resolveSync: () => `${PKG_DIR}/index.js`,
+    });
+
+  test("a matching integrity digest resolves", async () => {
+    await Bun.write(BINARY, BYTES);
+    await Bun.write(
+      `${PKG_DIR}/package.json`,
+      JSON.stringify({ name: "@z2net/mylib-win32-x64-msvc", integrity: `sha256-${DIGEST}` }),
+    );
+    // The implementation joins with "/", so normalize the fixture
+    // path the same way for a separator-agnostic assertion.
+    expect(resolve()).toBe(BINARY.replaceAll("\\", "/"));
+  });
+
+  test("a mismatching integrity digest throws", async () => {
+    await Bun.write(BINARY, BYTES);
+    await Bun.write(
+      `${PKG_DIR}/package.json`,
+      JSON.stringify({ integrity: `sha256-${"0".repeat(64)}` }),
+    );
+    expect(() => resolve()).toThrow(
+      `integrity mismatch for @z2net/mylib-win32-x64-msvc: expected sha256-${"0".repeat(64)}, got sha256-${DIGEST}`,
+    );
+  });
+
+  test("a tampered binary throws against a good manifest", async () => {
+    await Bun.write(BINARY, new Uint8Array([1]));
+    await Bun.write(
+      `${PKG_DIR}/package.json`,
+      JSON.stringify({ integrity: `sha256-${DIGEST}` }),
+    );
+    expect(() => resolve()).toThrow(/integrity mismatch for @z2net\/mylib-win32-x64-msvc/);
+  });
+
+  test("a package.json without integrity skips the check (legacy)", async () => {
+    await Bun.write(`${PKG_DIR}/package.json`, JSON.stringify({ name: "@z2net/mylib-win32-x64-msvc" }));
+    expect(() => resolve()).not.toThrow();
+  });
+
+  afterAll(async () => {
+    const { $ } = await import("bun");
+    await $`rm -rf ${ROOT}`;
   });
 });

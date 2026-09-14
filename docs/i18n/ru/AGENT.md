@@ -98,9 +98,12 @@ bffi-rs/
 │   ├── DESIGN.md                  # архитектура и решения
 │   ├── CONTRIBUTING.md
 │   └── CODE_OF_CONDUCT.md
-├── examples/                      # sqlite, async, event-loop, callbacks (каждый - набор e2e-тестов)
 ├── packages/                      # JS-сторона: bffi (@z2net/bffi), bffi-cli, native
 └── scripts/
+
+Примеры живут в отдельном репозитории:
+https://github.com/z2net/bffi-examples (каждый пример - самостоятельный
+крейт и набор e2e-тестов против опубликованных пакетов).
 ```
 
 Новые крейты должны следовать схеме именования `bffi-*` и добавляться в workspace.
@@ -125,9 +128,9 @@ bun install
 ```bash
 bun run lint          # oxlint
 bun run typecheck     # tsc
-bun run build         # собирает все четыре примера-крейта (release cdylib)
-bun run test:e2e      # прогоняет примеры как наборы e2e-тестов (bun test examples)
-bun run ci            # полный CI-паритет: lint, typecheck, fmt, clippy, тесты
+bun run build         # собирает эталонную cdylib (release)
+bun run test:js       # прогоняет юнит-тесты пакетов (bun test packages)
+bun run ci            # полный CI-паритет: lint, typecheck, fmt, clippy, тесты, JS-тесты
 cargo check
 cargo test
 cargo fmt

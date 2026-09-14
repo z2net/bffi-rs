@@ -88,12 +88,18 @@ JavaScript 只运行在一个线程上。三个角色围绕它协作:
 
 ## 8. 作为可执行规范的示例
 
-每个示例既是一个可运行的模块,也是对设计中一个切片的端到端测试:
+示例模块位于独立仓库
+[bffi-examples](https://github.com/z2net/bffi-examples);每个示例
+在那里都是独立的 crate,同时也是对设计中一个切片的端到端测试:
 
-- [examples/sqlite](https://github.com/z2net/bffi-rs/blob/main/examples/sqlite) - 在真实负载上跑通完整流水线。
-- [examples/async](https://github.com/z2net/bffi-rs/blob/main/examples/async) - future 变 Promise、取消、超时、显式泵送。
-- [examples/event-loop](https://github.com/z2net/bffi-rs/blob/main/examples/event-loop) - 队列、排空、marshal。
-- [examples/callbacks](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks) - 双向回调、JS 线程闸门、经编组投递。
+- [sqlite](https://github.com/z2net/bffi-examples/tree/main/sqlite) - 在真实负载上跑通完整流水线。
+- [async](https://github.com/z2net/bffi-examples/tree/main/async) - future 变 Promise、取消、超时、显式泵送。
+- [event-loop](https://github.com/z2net/bffi-examples/tree/main/event-loop) - 队列、排空、marshal。
+- [callbacks](https://github.com/z2net/bffi-examples/tree/main/callbacks) - 双向回调、JS 线程闸门、经编组投递。
+- [records](https://github.com/z2net/bffi-examples/tree/main/records) - 复合类型矩阵:record、enum、序列、`Option` 字段与返回值。
+- [streams](https://github.com/z2net/bffi-examples/tree/main/streams) - pull 与 push 生产者、背压、`Result` 项、wake 驱动投递。
+- [errors](https://github.com/z2net/bffi-examples/tree/main/errors) - `#[derive(BffiError)]`:用户码、`e.name` / `e.payload`。
+- [wry](https://github.com/z2net/bffi-examples/tree/main/wry) - 由 Bun 驱动的 webview 窗口(GUI 绑定参考;见 [docs/BINDING-GUI.md](https://github.com/z2net/bffi-rs/blob/main/docs/BINDING-GUI.md))。
 
 ## 9. 决策日志
 

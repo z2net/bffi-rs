@@ -1,9 +1,13 @@
-//! Integration tests for the process-global JS-thread binding.
+//! Integration tests for the process-global JS-thread table.
 //!
-//! The binding is PROCESS-GLOBAL state: the first `set_js_thread`
-//! call binds its own thread, repeats from the bound thread are
-//! idempotent, and every other thread is rejected with
-//! `CallbackError::WrongThread`.
+//! The registration is PROCESS-GLOBAL state: every JS isolate binds
+//! its own thread with `set_js_thread` (the multi-isolate policy),
+//! repeats from a bound thread are idempotent, and a thread that is
+//! NOT registered is rejected with `CallbackError::WrongThread` -
+//! including when it merely probes with `ensure_js_thread`. A binding
+//! attempt from a foreign thread is no longer a rejection: it
+//! REGISTERS that thread (that is how a second Worker joins), and the
+//! registration dies with the thread.
 //!
 //! Isolation strategy: libtest runs every `#[test]` on its own thread,
 //! so a test body cannot bind "the main test thread" - two tests would
@@ -11,17 +15,17 @@
 //! (observed empirically before this harness was adopted). This binary
 //! therefore funnels every call that must observe or establish the
 //! binding through ONE dedicated helper thread - the test stand-in for
-//! the JS thread, bound on first use - while foreign-thread rejection
-//! is asserted from plain spawned threads. Tests stay
+//! the JS thread, bound on first use - while foreign-thread assertions
+//! run on plain spawned threads. Tests stay
 //! order-independent and parallel-safe: whichever test runs first
-//! establishes the single, idempotent binding through the helper, and
-//! every foreign-thread spawn happens only after a completed helper
+//! establishes the binding through the helper, and every foreign-thread
+//! spawn happens only after a completed helper
 //! call, so the binding always exists by then.
 //!
 //! The "unbound -> Ok" half of the contract is NOT covered here (the
 //! binding may already exist by the time these tests run); it is
-//! asserted by the `unbound_ensure_is_ok` unit test in
-//! `src/thread.rs`, whose lib test binary has no other binder.
+//! asserted by the unit tests in `src/callback/thread.rs`, whose
+//! spawned registrars deregister themselves when they end.
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -80,10 +84,26 @@ fn foreign_thread_is_rejected() {
     let invoked = thread::spawn(ensure_js_thread).join().unwrap();
     assert_eq!(invoked.err(), Some(CallbackError::WrongThread));
 
-    // ...and so must a binding ATTEMPT from a foreign thread.
-    let rebound = thread::spawn(set_js_thread).join().unwrap();
-    assert_eq!(rebound.err(), Some(CallbackError::WrongThread));
+    // ...while a binding ATTEMPT from a foreign thread is ACCEPTED:
+    // it registers that thread (the multi-isolate policy - this is
+    // how a second Worker joins). The registration lives exactly as
+    // long as the registering thread.
+    let (release_sender, release_receiver) = channel::<()>();
+    let registrar = thread::spawn(move || {
+        let bound = set_js_thread();
+        let _ = release_receiver.recv();
+        bound
+    });
+    // Let the registrar bind, then release it and collect its result.
+    thread::sleep(std::time::Duration::from_millis(20));
+    drop(release_sender);
+    let rebound = registrar.join().unwrap();
+    assert_eq!(rebound.ok(), Some(()));
 
-    // The binding is unchanged: the bound thread still admits itself.
+    // The first binding is unchanged: the bound thread still admits
+    // itself, and the registrar is gone (deregistered by its TLS
+    // guard).
     on_js_thread(ensure_js_thread).unwrap();
+    let after = thread::spawn(ensure_js_thread).join().unwrap();
+    assert_eq!(after.err(), Some(CallbackError::WrongThread));
 }

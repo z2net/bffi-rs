@@ -80,7 +80,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.2
 
       # `bun run build` shells out to cargo for every example crate -
       # install the pinned toolchain explicitly ONCE (a rustup
@@ -108,10 +108,29 @@ jobs:
       - name: bun unit tests (packages)
         run: bun test packages
 
-      # prewarm the cargo cache (the example pipelines reuse it: an
-      # unchanged crate makes the in-pipeline build nearly free)
-      - name: cargo build (release, examples)
-        run: bun run build
+  # supply-chain policy: license/ban/source checks are strict, the
+  # RUSTSEC advisory scan is informational until 1.0 (known advisories
+  # in dependencies must not block CI). One OS, no compilation -
+  # cargo-deny/cargo-audit only resolve the dependency graph.
+  supply-chain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: bun test (example e2e, full pipeline)
-        run: bun test examples
+      # match the rust/js jobs: the pinned toolchain, installed once
+      - uses: dtolnay/rust-toolchain@1.98.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@cargo-deny
+
+      - name: cargo deny check (advisories, bans, licenses, sources)
+        run: cargo deny check
+
+      # advisories are informational until 1.0
+      - uses: taiki-e/install-action@cargo-audit
+
+      - name: cargo audit
+        continue-on-error: true
+        run: cargo audit

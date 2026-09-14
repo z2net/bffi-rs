@@ -56,23 +56,68 @@ fn strict_conversions_reject_out_of_range_and_non_finite() {
 }
 
 #[test]
-fn strict_i64_u64_use_exact_power_of_two_bounds() {
+fn strict_i64_u64_enforce_the_exact_integer_limit() {
+    // 2^53 is exactly representable in f64 and stays legal.
     assert_eq!(num(9_007_199_254_740_992.0).try_into_i64(), Ok(1 << 53)); // 2^53, exact
     assert_eq!(
+        num(-9_007_199_254_740_992.0).try_into_i64(),
+        Ok(-(1_i64 << 53))
+    );
+    // 2^53 + 2 is the first f64 above the exact-integer limit (2^53 + 1
+    // rounds to 2^53 in the f64 format, so it cannot name the boundary):
+    // converting it would silently lose precision, so it is rejected.
+    assert_eq!(
+        num(9_007_199_254_740_994.0).try_into_i64(),
+        Err(ConversionError::OutOfRange),
+        "2^53 + 2 as f64 is beyond the exact-integer limit"
+    );
+    // 2^60 as f64 would previously cast lossily; it must error now.
+    assert_eq!(
+        num(1_152_921_504_606_846_976.0).try_into_i64(),
+        Err(ConversionError::OutOfRange),
+        "2^60 silently loses precision as f64"
+    );
+    // The old ±2^63 power-of-two bounds sit beyond the exact-integer
+    // limit too.
+    assert_eq!(
         num(-9_223_372_036_854_775_808.0).try_into_i64(),
-        Ok(i64::MIN)
+        Err(ConversionError::OutOfRange),
+        "i64::MIN as f64 (2^63) is beyond the exact-integer limit"
     );
     assert_eq!(
         num(9_223_372_036_854_775_808.0).try_into_i64(),
         Err(ConversionError::OutOfRange),
         "2^63 is one past i64::MAX"
     );
+    // u64 mirrors i64: values beyond 2^53 lose precision as f64.
+    assert_eq!(num(0.0).try_into_u64(), Ok(0));
+    assert_eq!(num(9_007_199_254_740_992.0).try_into_u64(), Ok(1_u64 << 53));
     assert_eq!(
         num(18_446_744_073_709_551_615.0).try_into_u64(),
         Err(ConversionError::OutOfRange),
         "f64 cannot represent u64::MAX; next representable is 2^64"
     );
-    assert_eq!(num(0.0).try_into_u64(), Ok(0));
+    assert_eq!(
+        num(9_223_372_036_854_775_808.0).try_into_u64(),
+        Err(ConversionError::OutOfRange),
+        "2^63 as f64 is beyond the exact-integer limit"
+    );
+}
+
+#[test]
+fn strict_i64_u64_reject_non_integral_values() {
+    // Fractional f64 values must not truncate into the 64-bit targets:
+    // dropping the fraction is data loss the caller did not ask for.
+    assert_eq!(num(9.5).try_into_i64(), Err(ConversionError::OutOfRange));
+    assert_eq!(num(-0.9).try_into_i64(), Err(ConversionError::OutOfRange));
+    assert_eq!(num(9.5).try_into_u64(), Err(ConversionError::OutOfRange));
+    assert_eq!(
+        num(4_294_967_295.9).try_into_u64(),
+        Err(ConversionError::OutOfRange)
+    );
+    // The <=32-bit strict policy keeps its truncating behavior.
+    assert_eq!(num(-128.9).try_into_i8(), Ok(i8::MIN)); // trunc toward zero
+    assert_eq!(num(4_294_967_295.4).try_into_u32(), Ok(u32::MAX)); // trunc
 }
 
 #[test]

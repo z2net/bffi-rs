@@ -1,0 +1,43 @@
+[package]
+name = "bffi-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.bffi]
+path = "../crates/bffi"
+
+# Keep this workspace fully detached from the repository workspace:
+# cargo-fuzz requires a nightly toolchain (see rust-toolchain.toml in
+# this directory), while the repository workspace is pinned to 1.98.0.
+# Without this empty-table root, cargo would walk up and adopt the
+# repository workspace.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "wire_decode"
+path = "fuzz_targets/wire_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "utf8_validate"
+path = "fuzz_targets/utf8_validate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "handle_ops"
+path = "fuzz_targets/handle_ops.rs"
+test = false
+doc = false
+bench = false

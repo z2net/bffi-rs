@@ -142,6 +142,23 @@ Every example is a working native module and an e2e suite
 | [`examples/callbacks`](https://github.com/z2net/bffi-rs/blob/main/examples/callbacks) | both callback directions, the thread gate, marshal delivery |
 | [`examples/wry`](https://github.com/z2net/bffi-rs/blob/main/examples/wry) | a webview window driven from Bun: wry on a native loop thread, IPC round trips through `invoke_wait` (real-window e2e: `BFFI_WRY_E2E=1`) |
 
+## Benchmarks
+
+JS boundary throughput of the workers example, `sum_to(1000n)`, 1M
+calls per loader after a 50k warmup (`cargo build --release
+-p bffi-example-workers`, then `bun scripts/bench/bench.ts`):
+
+| Loader | Calls/s | vs specialized |
+| ------ | ------- | -------------- |
+| specialized (`api.gen.ts` via `createApiFromJson`) | ~31M | 1.00x |
+| generic (`createApi` over the same module JSON) | ~7M | 0.23x |
+
+The specialized codegen is the default since 0.1.3. Rust-side
+criterion benches for the wire codec and the handle registry live in
+`crates/bffi/benches/` (`cargo bench -p bffi`).
+
+measured on AMD Ryzen 5 5600X 6-Core Processor, Windows_NT 10.0.26200 x64, bun 1.4.0
+
 ## Conventions
 
 - Conventional Commits are enforced by a `commit-msg` hook (`scripts/commit-msg.sh`).

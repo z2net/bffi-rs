@@ -60,6 +60,88 @@ pub const TAG_U64: u8 = 10;
 /// side decodes it into an `Error` instance.
 pub const TAG_ERROR: u8 = 11;
 
+/// The default maximum declared length/count the decoder accepts: a
+/// `Str`/`Bytes`/error payload length or a record/sequence element
+/// count above it is rejected before any slicing or looping happens.
+/// Hardening bound for corrupted or hostile buffers; raise or lower it
+/// for a process via [`set_max_wire_payload`].
+pub const MAX_WIRE_PAYLOAD: u32 = 64 * 1024 * 1024;
+
+/// The default maximum record/sequence nesting depth the decoder
+/// accepts; deeper composites are rejected. Recursion bound for
+/// hostile buffers; adjust via [`set_max_wire_depth`].
+pub const MAX_WIRE_DEPTH: u32 = 64;
+
+static WIRE_PAYLOAD_LIMIT: AtomicU32 = AtomicU32::new(MAX_WIRE_PAYLOAD);
+static WIRE_DEPTH_LIMIT: AtomicU32 = AtomicU32::new(MAX_WIRE_DEPTH);
+
+/// Returns the wire payload limit currently in effect.
+#[must_use]
+pub fn max_wire_payload() -> u32 {
+    WIRE_PAYLOAD_LIMIT.load(Ordering::Relaxed)
+}
+
+/// Sets the wire payload limit for the process. `0` is rejected (the
+/// previous limit stays in effect); `u32::MAX` is the natural ceiling.
+pub fn set_max_wire_payload(limit: u32) {
+    if limit == 0 {
+        return;
+    }
+    WIRE_PAYLOAD_LIMIT.store(limit, Ordering::Relaxed);
+}
+
+/// Returns the wire nesting depth limit currently in effect.
+#[must_use]
+pub fn max_wire_depth() -> u32 {
+    WIRE_DEPTH_LIMIT.load(Ordering::Relaxed)
+}
+
+/// Sets the wire nesting depth limit for the process. `0` is rejected
+/// (the previous limit stays in effect).
+pub fn set_max_wire_depth(limit: u32) {
+    if limit == 0 {
+        return;
+    }
+    WIRE_DEPTH_LIMIT.store(limit, Ordering::Relaxed);
+}
+
+thread_local! {
+    /// `(tag offset, declared count, chained depth)` of the most
+    /// recent record/sequence header decoded on this thread. A header
+    /// CHAINS onto its parent (nesting depth grows) only when it sits
+    /// exactly at the parent's first-child slot (`start == parent_tag
+    /// + 5`) and the parent declared a single field/item; anything
+    /// else (a sibling, a fresh top-level decode at offset 0, a new
+    /// payload region) restarts the depth at 1. That distinguishes
+    /// nested composites from wide sequences without any cooperation
+    /// from the generated recursive decoders, which this file cannot
+    /// see into.
+    static LAST_COMPOSITE: Cell<(usize, u32, usize)> = const { Cell::new((usize::MAX, 0, 0)) };
+}
+
+/// Registers one record/sequence header entry at `start` (the tag
+/// byte) that declared `count` children, and enforces the wire depth
+/// limit on the chained nesting depth.
+fn enter_composite(start: usize, count: u32, what: &str) -> Result<(), BffiError> {
+    let depth = LAST_COMPOSITE.with(|cell| {
+        let (last_start, last_count, last_depth) = cell.get();
+        let depth = if start == last_start.wrapping_add(5) && last_count == 1 {
+            last_depth + 1
+        } else {
+            1
+        };
+        cell.set((start, count, depth));
+        depth
+    });
+    let limit = max_wire_depth();
+    if depth > limit as usize {
+        return Err(wire_error(&format!(
+            "wire: {what} nesting depth {depth} exceeds the wire depth limit of {limit}"
+        )));
+    }
+    Ok(())
+}
+
 /// Appends one little-endian `u32`.
 pub fn push_u32_le(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
@@ -142,6 +224,8 @@ pub fn read_bool(bytes: &[u8], offset: usize) -> Option<bool> {
 // ---------------------------------------------------------------------------
 
 use crate::bffi_core::{BffiError, ErrorCode};
+use std::cell::Cell;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Builds the canonical malformed-wire error.
 fn wire_error(what: &str) -> BffiError {
@@ -276,6 +360,7 @@ pub fn encode_error_rich(
 }
 
 /// One decoded rich-error envelope.
+#[derive(Debug)]
 pub struct ErrorEnvelope {
     /// The user-defined code (0 for ad-hoc domain errors).
     pub code: u32,
@@ -292,16 +377,7 @@ pub struct ErrorEnvelope {
 pub fn decode_error_rich(bytes: &[u8], offset: usize) -> Result<(ErrorEnvelope, usize), BffiError> {
     let at = expect_tag(bytes, offset, TAG_ERROR, "wire: expected error")?;
     let read_str = |at: usize| -> Result<(String, usize), BffiError> {
-        let len = read_u32_le(bytes, at)
-            .ok_or_else(|| wire_error("wire: truncated error field length"))?
-            as usize;
-        let start = at + 4;
-        let end = start
-            .checked_add(len)
-            .ok_or_else(|| wire_error("wire: oversized error field length"))?;
-        let payload = bytes
-            .get(start..end)
-            .ok_or_else(|| wire_error("wire: truncated error field"))?;
+        let (payload, end) = decode_len_prefixed(bytes, at, "error field")?;
         let value = std::str::from_utf8(payload)
             .map_err(|_| BffiError::new(ErrorCode::InvalidUtf8, "wire: invalid UTF-8 in error"))?
             .to_owned();
@@ -421,41 +497,74 @@ pub fn decode_bytes(bytes: &[u8], offset: usize) -> Result<(&[u8], usize), BffiE
     decode_len_prefixed(bytes, at, "bytes")
 }
 
-/// Shared length-prefixed payload reader for `Str`/`Bytes`.
+/// Shared length-prefixed payload reader for `Str`/`Bytes` and the
+/// error-message/error-field payloads. Validates the declared length
+/// against the wire payload limit and against the buffer bounds
+/// BEFORE any subsequence is taken.
 fn decode_len_prefixed<'a>(
     bytes: &'a [u8],
     at: usize,
     what: &str,
 ) -> Result<(&'a [u8], usize), BffiError> {
     let len = read_u32_le(bytes, at)
-        .ok_or_else(|| wire_error(&format!("wire: truncated {what} length")))?
-        as usize;
+        .ok_or_else(|| wire_error(&format!("wire: truncated {what} length header")))?;
+    let limit = max_wire_payload();
+    if len > limit {
+        return Err(wire_error(&format!(
+            "wire: {what} declared length {len} exceeds the wire payload limit of {limit}"
+        )));
+    }
+    let len = len as usize;
     let start = at + 4;
-    let end = start
-        .checked_add(len)
-        .ok_or_else(|| wire_error("wire: oversized length"))?;
-    let payload = bytes
-        .get(start..end)
-        .ok_or_else(|| wire_error("wire: truncated payload"))?;
-    Ok((payload, end))
+    let end = start.checked_add(len).ok_or_else(|| {
+        wire_error(&format!(
+            "wire: {what} declared length {len} exceeds payload"
+        ))
+    })?;
+    if end > bytes.len() {
+        return Err(wire_error(&format!(
+            "wire: {what} declared length {len} exceeds payload"
+        )));
+    }
+    Ok((&bytes[start..end], end))
 }
 
 /// Decodes one record header at `offset`; returns the field count and
-/// the offset of the first field record.
+/// the offset of the first field record. The declared count is
+/// validated against the wire payload limit, and chained nesting
+/// (a header at its `count == 1` parent's first-child slot) is
+/// validated against the wire depth limit.
 pub fn decode_record_header(bytes: &[u8], offset: usize) -> Result<(usize, usize), BffiError> {
     let at = expect_tag(bytes, offset, TAG_RECORD, "wire: expected record")?;
-    let count =
-        read_u32_le(bytes, at).ok_or_else(|| wire_error("wire: truncated record header"))? as usize;
-    Ok((count, at + 4))
+    let count = read_u32_le(bytes, at)
+        .ok_or_else(|| wire_error("wire: truncated record field count header"))?;
+    let limit = max_wire_payload();
+    if count > limit {
+        return Err(wire_error(&format!(
+            "wire: record declared field count {count} exceeds the wire payload limit of {limit}"
+        )));
+    }
+    enter_composite(offset, count, "record")?;
+    Ok((count as usize, at + 4))
 }
 
 /// Decodes one sequence header at `offset`; returns the item count
-/// and the offset of the first item record.
+/// and the offset of the first item record. The declared count is
+/// validated against the wire payload limit, and chained nesting is
+/// validated against the wire depth limit (see
+/// [`decode_record_header`]).
 pub fn decode_seq_header(bytes: &[u8], offset: usize) -> Result<(usize, usize), BffiError> {
     let at = expect_tag(bytes, offset, TAG_SEQ, "wire: expected sequence")?;
     let count = read_u32_le(bytes, at)
-        .ok_or_else(|| wire_error("wire: truncated sequence header"))? as usize;
-    Ok((count, at + 4))
+        .ok_or_else(|| wire_error("wire: truncated sequence item count header"))?;
+    let limit = max_wire_payload();
+    if count > limit {
+        return Err(wire_error(&format!(
+            "wire: sequence declared item count {count} exceeds the wire payload limit of {limit}"
+        )));
+    }
+    enter_composite(offset, count, "sequence")?;
+    Ok((count as usize, at + 4))
 }
 
 /// Decodes a string record and maps it through `variants` (the enum
@@ -477,14 +586,17 @@ pub fn decode_variant<'a>(
 #[cfg(test)]
 mod tests {
     use super::{
-        TAG_BOOL, TAG_BYTES, TAG_ERROR, TAG_F64, TAG_I32, TAG_I64, TAG_RECORD, TAG_SEQ, TAG_STR,
-        TAG_U64, TAG_UNIT, decode_bool, decode_bytes, decode_error, decode_error_rich, decode_f64,
-        decode_i32, decode_i64, decode_record_header, decode_seq_header, decode_str, decode_u64,
-        decode_u64_lenient, decode_variant, encode_bool, encode_bytes, encode_error,
-        encode_error_rich, encode_f64, encode_i32, encode_i64, encode_record_header,
-        encode_seq_header, encode_str, encode_u64, push_bool, push_f64_le, push_i32_le,
-        push_i64_le, push_u32_le, read_bool, read_f64_le, read_i32_le, read_i64_le, read_u32_le,
+        BffiError, MAX_WIRE_DEPTH, MAX_WIRE_PAYLOAD, TAG_BOOL, TAG_BYTES, TAG_ERROR, TAG_F64,
+        TAG_I32, TAG_I64, TAG_RECORD, TAG_SEQ, TAG_STR, TAG_U64, TAG_UNIT, decode_bool,
+        decode_bytes, decode_error, decode_error_rich, decode_f64, decode_i32, decode_i64,
+        decode_record_header, decode_seq_header, decode_str, decode_u64, decode_u64_lenient,
+        decode_variant, encode_bool, encode_bytes, encode_error, encode_error_rich, encode_f64,
+        encode_i32, encode_i64, encode_record_header, encode_seq_header, encode_str, encode_u64,
+        max_wire_depth, max_wire_payload, push_bool, push_f64_le, push_i32_le, push_i64_le,
+        push_u32_le, read_bool, read_f64_le, read_i32_le, read_i64_le, read_u32_le,
+        set_max_wire_depth, set_max_wire_payload,
     };
+    use std::sync::{Mutex, PoisonError};
 
     #[test]
     fn tag_table_matches_the_documented_layout() {
@@ -544,6 +656,7 @@ mod tests {
 
     #[test]
     fn value_helpers_round_trip_every_scalar_kind() {
+        let _serial = serial();
         let mut out = Vec::new();
         encode_i32(&mut out, -7);
         encode_i64(&mut out, i64::MIN);
@@ -575,6 +688,7 @@ mod tests {
 
     #[test]
     fn record_and_seq_headers_round_trip() {
+        let _serial = serial();
         let mut out = Vec::new();
         encode_record_header(&mut out, 3);
         encode_i32(&mut out, 1);
@@ -625,6 +739,7 @@ mod tests {
 
     #[test]
     fn variant_decode_rejects_unknown_names() {
+        let _serial = serial();
         let mut out = Vec::new();
         encode_str(&mut out, "Running");
         let (name, end) = decode_variant(&out, 0, &["Idle", "Running"]).expect("known");
@@ -637,6 +752,7 @@ mod tests {
 
     #[test]
     fn u64_round_trips_exactly_and_error_carries_the_message() {
+        let _serial = serial();
         let mut out = Vec::new();
         // Above i64::MAX: the value only a U64 tag carries exactly.
         encode_u64(&mut out, u64::MAX);
@@ -683,6 +799,7 @@ mod tests {
     #[test]
     fn rich_error_envelope_round_trips_code_variant_message_payload() {
         use super::decode_error_rich;
+        let _serial = serial();
         let mut payload_record = Vec::new();
         payload_record.push(TAG_RECORD);
         push_u32_le(&mut payload_record, 1);
@@ -708,6 +825,7 @@ mod tests {
 
     #[test]
     fn rich_error_envelope_without_payload_decodes_unit() {
+        let _serial = serial();
         let mut out = Vec::new();
         encode_error_rich(&mut out, 13, "", "domain failure", None);
         let (envelope, end) = decode_error_rich(&out, 0).expect("envelope");
@@ -743,5 +861,340 @@ mod tests {
         assert_eq!(read_f64_le(&out, 0), None);
         assert_eq!(read_u32_le(&[], 0), None);
         assert_eq!(read_bool(&[], 0), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // Hostile-input limits: declared lengths/counts and nesting depth.
+    // -----------------------------------------------------------------------
+
+    /// Serializes every test that decodes or mutates the global wire
+    /// limits: the limits are process-global atomics, so limit-mutation
+    /// tests must not overlap limit-sensitive decodes.
+    static LIMIT_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Lock guard for [`LIMIT_LOCK`].
+    fn serial() -> std::sync::MutexGuard<'static, ()> {
+        LIMIT_LOCK.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Restores the default payload limit when the test scope ends (also
+    /// on a failed assert - the tests run in parallel).
+    struct ResetPayloadLimit;
+    impl Drop for ResetPayloadLimit {
+        fn drop(&mut self) {
+            set_max_wire_payload(MAX_WIRE_PAYLOAD);
+        }
+    }
+
+    /// Restores the default depth limit when the test scope ends.
+    struct ResetDepthLimit;
+    impl Drop for ResetDepthLimit {
+        fn drop(&mut self) {
+            set_max_wire_depth(MAX_WIRE_DEPTH);
+        }
+    }
+
+    /// Builds exactly `depth` chained record headers: `depth - 1`
+    /// one-field wrappers around a terminal empty record
+    /// (`[RECORD 1] * (depth - 1) [RECORD 0]`).
+    fn nested_records(depth: usize) -> Vec<u8> {
+        let mut out = Vec::new();
+        for _ in 0..depth.saturating_sub(1) {
+            out.push(TAG_RECORD);
+            push_u32_le(&mut out, 1);
+        }
+        out.push(TAG_RECORD);
+        push_u32_le(&mut out, 0);
+        out
+    }
+
+    /// The sequence twin of [`nested_records`].
+    fn nested_seqs(depth: usize) -> Vec<u8> {
+        let mut out = Vec::new();
+        for _ in 0..depth.saturating_sub(1) {
+            out.push(TAG_SEQ);
+            push_u32_le(&mut out, 1);
+        }
+        out.push(TAG_SEQ);
+        push_u32_le(&mut out, 0);
+        out
+    }
+
+    /// Walks nested record headers the way a `#[derive(BffiRecord)]`
+    /// decode does: each header's fields are decoded inside the scope
+    /// of its parent header.
+    fn recurse_record_headers(bytes: &[u8], offset: usize) -> Result<usize, BffiError> {
+        let (count, mut next) = decode_record_header(bytes, offset)?;
+        for _ in 0..count {
+            next = recurse_record_headers(bytes, next)?;
+        }
+        Ok(next)
+    }
+
+    /// The sequence twin of [`recurse_record_headers`].
+    fn recurse_seq_headers(bytes: &[u8], offset: usize) -> Result<usize, BffiError> {
+        let (count, mut next) = decode_seq_header(bytes, offset)?;
+        for _ in 0..count {
+            next = recurse_seq_headers(bytes, next)?;
+        }
+        Ok(next)
+    }
+
+    #[test]
+    fn limit_setters_reject_zero_and_report_the_effective_limit() {
+        let _serial = serial();
+        let _reset = ResetPayloadLimit;
+        let _reset_depth = ResetDepthLimit;
+
+        assert_eq!(max_wire_payload(), MAX_WIRE_PAYLOAD);
+        assert_eq!(max_wire_depth(), MAX_WIRE_DEPTH);
+
+        set_max_wire_payload(0);
+        assert_eq!(max_wire_payload(), MAX_WIRE_PAYLOAD, "0 is rejected");
+        set_max_wire_depth(0);
+        assert_eq!(max_wire_depth(), MAX_WIRE_DEPTH, "0 is rejected");
+
+        set_max_wire_payload(16);
+        assert_eq!(max_wire_payload(), 16);
+        set_max_wire_depth(2);
+        assert_eq!(max_wire_depth(), 2);
+    }
+
+    #[test]
+    fn truncated_length_headers_name_the_tag() {
+        let _serial = serial();
+        // String: tag + 2 of the 4 length bytes.
+        let mut str_rec = Vec::new();
+        str_rec.push(TAG_STR);
+        push_u32_le(&mut str_rec, 5);
+        let err = decode_str(&str_rec[..3], 0).unwrap_err();
+        assert!(err.message.contains("string"), "{}", err.message);
+        assert!(err.message.contains("truncated"), "{}", err.message);
+
+        // Bytes: same shape.
+        let mut bytes_rec = Vec::new();
+        bytes_rec.push(TAG_BYTES);
+        push_u32_le(&mut bytes_rec, 4);
+        let err = decode_bytes(&bytes_rec[..3], 0).unwrap_err();
+        assert!(err.message.contains("bytes"), "{}", err.message);
+        assert!(err.message.contains("truncated"), "{}", err.message);
+
+        // Error message: same shape.
+        let err = decode_error(&[TAG_ERROR, 1, 0], 0).unwrap_err();
+        assert!(err.message.contains("error message"), "{}", err.message);
+        assert!(err.message.contains("truncated"), "{}", err.message);
+
+        // Rich-error envelope: code reads, the variant length is cut.
+        let err = decode_error_rich(&[TAG_ERROR, 1, 0, 0, 0, 1, 0], 0).unwrap_err();
+        assert!(err.message.contains("error field"), "{}", err.message);
+        assert!(err.message.contains("truncated"), "{}", err.message);
+    }
+
+    #[test]
+    fn declared_lengths_beyond_the_buffer_name_the_violation() {
+        let _serial = serial();
+        let mut out = Vec::new();
+        out.push(TAG_STR);
+        push_u32_le(&mut out, 100);
+        out.extend_from_slice(b"ab");
+        let err = decode_str(&out, 0).unwrap_err();
+        assert!(
+            err.message.contains("declared length 100 exceeds payload"),
+            "{}",
+            err.message
+        );
+
+        let mut out = Vec::new();
+        out.push(TAG_BYTES);
+        push_u32_le(&mut out, u32::MAX - 3);
+        out.extend_from_slice(&[0xAA; 8]);
+        let err = decode_bytes(&out, 0).unwrap_err();
+        assert!(err.message.contains("declared length"), "{}", err.message);
+
+        let mut out = Vec::new();
+        out.push(TAG_ERROR);
+        push_u32_le(&mut out, 9);
+        out.extend_from_slice(b"abc");
+        let err = decode_error(&out, 0).unwrap_err();
+        assert!(
+            err.message
+                .contains("error message declared length 9 exceeds payload"),
+            "{}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn declared_lengths_above_the_payload_limit_are_rejected() {
+        let _serial = serial();
+        let _reset = ResetPayloadLimit;
+
+        // u32::MAX is above the default 64 MiB limit and is rejected
+        // before the buffer bounds are even consulted.
+        let mut out = Vec::new();
+        out.push(TAG_BYTES);
+        push_u32_le(&mut out, u32::MAX);
+        out.extend_from_slice(&[0xAA; 8]);
+        let err = decode_bytes(&out, 0).unwrap_err();
+        assert!(
+            err.message.contains("exceeds the wire payload limit"),
+            "{}",
+            err.message
+        );
+
+        // A lowered limit rejects payloads that are fully present.
+        set_max_wire_payload(8);
+        let mut small = Vec::new();
+        small.push(TAG_STR);
+        push_u32_le(&mut small, 16);
+        small.extend_from_slice(&[b'x'; 16]);
+        let err = decode_str(&small, 0).unwrap_err();
+        assert!(
+            err.message.contains("exceeds the wire payload limit of 8"),
+            "{}",
+            err.message
+        );
+
+        // At-or-under the limit keeps decoding.
+        let mut ok = Vec::new();
+        ok.push(TAG_STR);
+        push_u32_le(&mut ok, 4);
+        ok.extend_from_slice(b"okay");
+        assert_eq!(decode_str(&ok, 0).unwrap(), ("okay", 9));
+    }
+
+    #[test]
+    fn declared_counts_above_the_payload_limit_are_rejected() {
+        let _serial = serial();
+        let _reset = ResetPayloadLimit;
+
+        // u32::MAX declared fields/items cannot be legitimate.
+        let mut rec = Vec::new();
+        rec.push(TAG_RECORD);
+        push_u32_le(&mut rec, u32::MAX);
+        let err = decode_record_header(&rec, 0).unwrap_err();
+        assert!(
+            err.message.contains("record declared field count"),
+            "{}",
+            err.message
+        );
+        assert!(
+            err.message.contains("exceeds the wire payload limit"),
+            "{}",
+            err.message
+        );
+
+        let mut seq = Vec::new();
+        seq.push(TAG_SEQ);
+        push_u32_le(&mut seq, u32::MAX);
+        let err = decode_seq_header(&seq, 0).unwrap_err();
+        assert!(
+            err.message.contains("sequence declared item count"),
+            "{}",
+            err.message
+        );
+
+        // A lowered limit rejects counts above it even when the items
+        // are all present.
+        set_max_wire_payload(2);
+        let mut rec = Vec::new();
+        rec.push(TAG_RECORD);
+        push_u32_le(&mut rec, 3);
+        encode_i32(&mut rec, 1);
+        encode_i32(&mut rec, 2);
+        encode_i32(&mut rec, 3);
+        let err = decode_record_header(&rec, 0).unwrap_err();
+        assert!(
+            err.message.contains("exceeds the wire payload limit of 2"),
+            "{}",
+            err.message
+        );
+
+        // A count at the limit still reads its header.
+        let mut rec = Vec::new();
+        rec.push(TAG_RECORD);
+        push_u32_le(&mut rec, 2);
+        encode_i32(&mut rec, 1);
+        encode_i32(&mut rec, 2);
+        let (count, _) = decode_record_header(&rec[..5], 0).unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn rich_error_field_lengths_go_through_the_payload_limit() {
+        let _serial = serial();
+        let _reset = ResetPayloadLimit;
+
+        let mut out = Vec::new();
+        out.push(TAG_ERROR);
+        push_u32_le(&mut out, 0x1001);
+        push_u32_le(&mut out, u32::MAX);
+        let err = decode_error_rich(&out, 0).unwrap_err();
+        assert!(
+            err.message.contains("error field declared length"),
+            "{}",
+            err.message
+        );
+        assert!(
+            err.message.contains("exceeds the wire payload limit"),
+            "{}",
+            err.message
+        );
+
+        set_max_wire_payload(4);
+        let mut out = Vec::new();
+        out.push(TAG_ERROR);
+        push_u32_le(&mut out, 0x1001);
+        push_u32_le(&mut out, 8);
+        out.extend_from_slice(b"NotFound");
+        let err = decode_error_rich(&out, 0).unwrap_err();
+        assert!(
+            err.message.contains("exceeds the wire payload limit of 4"),
+            "{}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn record_and_seq_nesting_is_depth_limited() {
+        // The depth limit is a process-global: serialize the whole
+        // test so concurrent limit-mutation tests cannot interfere.
+        let _serial = serial();
+
+        // At the default limit: 64 nested records decode, 65 error.
+        let ok_buf = nested_records(MAX_WIRE_DEPTH as usize);
+        assert!(recurse_record_headers(&ok_buf, 0).is_ok());
+
+        let deep = nested_records(MAX_WIRE_DEPTH as usize + 1);
+        let err = recurse_record_headers(&deep, 0).unwrap_err();
+        assert!(
+            err.message.contains("record nesting depth"),
+            "{}",
+            err.message
+        );
+        assert!(
+            err.message.contains("exceeds the wire depth limit"),
+            "{}",
+            err.message
+        );
+
+        // Sequences are depth-limited through the same counter.
+        let ok_seq = nested_seqs(MAX_WIRE_DEPTH as usize);
+        assert!(recurse_seq_headers(&ok_seq, 0).is_ok());
+        let deep_seq = nested_seqs(MAX_WIRE_DEPTH as usize + 1);
+        let err = recurse_seq_headers(&deep_seq, 0).unwrap_err();
+        assert!(
+            err.message.contains("sequence nesting depth"),
+            "{}",
+            err.message
+        );
+
+        // A lowered limit takes effect.
+        let _reset = ResetDepthLimit;
+        set_max_wire_depth(2);
+        let three = nested_records(3);
+        assert!(recurse_record_headers(&three, 0).is_err());
+        let two = nested_records(2);
+        assert!(recurse_record_headers(&two, 0).is_ok());
     }
 }

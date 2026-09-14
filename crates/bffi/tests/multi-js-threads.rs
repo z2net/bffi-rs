@@ -144,9 +144,19 @@ fn invoke_wait_delivers_each_entry_to_its_own_isolate() {
 
 #[test]
 fn invoke_wait_reports_loop_stopped_when_the_owner_is_gone() {
+    // The process must stay BOUND while the owner is gone: a live
+    // keeper isolate holds a registration, so the unregistered caller
+    // below takes the targeted marshal path. (With NO registration
+    // left, the unbound-process policy admits the caller and the
+    // direct path reports WrongThread instead - a scheduling-dependent
+    // outcome when this test relied on a sibling test's registrations.)
+    let keeper_registered = Arc::new(Barrier::new(2));
+    let _keeper = Isolate::start("bffi-js-keeper", Arc::clone(&keeper_registered));
+    let _guard = keeper_registered.wait();
+
     let registered = Arc::new(Barrier::new(2));
     let a = Isolate::start("bffi-js-a", Arc::clone(&registered));
-    let _guard = registered.wait();
+    let _ = registered.wait();
 
     let handle = bind_on(&a);
     // The isolate ends: its slot queue is retired with the thread.

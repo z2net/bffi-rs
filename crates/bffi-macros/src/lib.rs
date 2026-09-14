@@ -235,8 +235,11 @@ pub fn bffi(attrs: TokenStream, item: TokenStream) -> TokenStream {
 /// return is the P2 matrix (`()`, primitives, `i64`/`u64`,
 /// `String`, `Vec<u8>`, `CopiedBuf`, `Result<T, E>`). Borrowed
 /// parameters (`&str`, `&[u8]`) cannot cross the spawn boundary and
-/// are rejected with `E002`; `Option` async returns are rejected with
-/// `E003`.
+/// are rejected with `E002`; zero-copy view types
+/// (`ZeroCopyStr` / `ZeroCopyBuf`, qualified paths included) borrow
+/// only for the synchronous call and are rejected with `E015` -
+/// copy (`Vec<u8>`/`String`) or use an owned type instead; `Option`
+/// async returns are rejected with `E003`.
 ///
 /// # Expansion
 ///

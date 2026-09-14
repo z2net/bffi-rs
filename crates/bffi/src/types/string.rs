@@ -28,8 +28,11 @@ pub fn bytes_to_string(bytes: &[u8]) -> Result<String, BffiError> {
         return Err(invalid_utf8());
     }
     let copy = bytes.to_vec();
-    // SAFETY: `utf8::validate` just verified that `bytes` is valid UTF-8
-    // and `copy` is a byte-for-byte copy of it.
+    // SAFETY: `utf8::validate` - the SIMD UTF-8 validator in
+    // `super::utf8` (SSSE3/NEON with a scalar DFA fallback, semantics
+    // identical to `std::str::from_utf8`) - returned `true` above for
+    // exactly these bytes, and `copy` is a byte-for-byte copy of them,
+    // so `copy` is valid UTF-8.
     Ok(unsafe { String::from_utf8_unchecked(copy) })
 }
 

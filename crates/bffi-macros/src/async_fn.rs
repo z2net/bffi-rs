@@ -11,7 +11,10 @@
 //! Borrowed parameters (`&str`, `&[u8]`) are rejected: they cannot
 //! cross the spawn boundary (the borrow must outlive the future, but
 //! the cstring/view only lives for the shim call). The owned shapes -
-//! `String` and `Vec<u8>` - are accepted and moved in.
+//! `String` and `Vec<u8>` - are accepted and moved in. Zero-copy view
+//! types (`ZeroCopyStr` / `ZeroCopyBuf`, qualified paths included) are
+//! rejected with `E015`: a view borrows the caller's buffer only for
+//! the synchronous call and must never reach the future.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -154,19 +157,25 @@ impl AsyncFnModel {
 }
 
 /// Classifies an owned async parameter: primitives, bigints, `bool`,
-/// `String` and `Vec<u8>`. Borrowed parameters (`&str`, `&[u8]`) are
-/// rejected with the async-specific help.
+/// `String` and `Vec<u8>`. Borrowed parameters (`&str`, `&[u8]`) and
+/// zero-copy view types are rejected - the latter with the dedicated
+/// `E015` diagnostic.
 fn classify_async_param(ty: &syn::Type, name: &str) -> syn::Result<AsyncParam> {
+    if is_zero_copy_view(ty) {
+        return Err(errors::async_zero_copy_param(ty.span(), ty, name));
+    }
     if let Some(kind) = path_kind(ty) {
         return Ok(match kind {
             support::classify::PathKind::Prim(prim) => AsyncParam::Prim(prim),
             support::classify::PathKind::BigInt(big) => AsyncParam::BigInt(big),
         });
     }
-    if let Some((single, false)) = path_ident(ty) {
+    if let Some((single, has_args)) = path_ident(ty) {
         match single.as_str() {
-            "String" => return Ok(AsyncParam::OwnedStr),
-            "Vec" => {
+            "String" if !has_args => return Ok(AsyncParam::OwnedStr),
+            // `Vec<u8>` is the owned byte shape; anything else behind
+            // `Vec<..>` stays rejected.
+            "Vec" if has_args => {
                 let args = generic_args(ty);
                 if args.len() == 1 && is_u8(args[0]) {
                     return Ok(AsyncParam::OwnedBytes);
@@ -176,6 +185,26 @@ fn classify_async_param(ty: &syn::Type, name: &str) -> syn::Result<AsyncParam> {
         }
     }
     Err(errors::async_param_type(ty.span(), ty, name))
+}
+
+/// The zero-copy view type names: a parameter of one of these types
+/// borrows the caller's buffer only for the synchronous call, so an
+/// async signature must reject it (`E015`).
+const ZERO_COPY_VIEW_NAMES: &[&str] = &["ZeroCopyStr", "ZeroCopyBuf"];
+
+/// Whether `ty` is a zero-copy view type: any path whose LAST segment
+/// (case-sensitive) is `ZeroCopyStr` or `ZeroCopyBuf` - bare names,
+/// qualified paths and generic/lifetime arguments included. The sync
+/// `#[bffi]` macro is unaffected: its shims create and copy the views
+/// internally, within the synchronous call.
+fn is_zero_copy_view(ty: &syn::Type) -> bool {
+    let syn::Type::Path(path) = ty else {
+        return false;
+    };
+    let Some(last) = path.path.segments.last() else {
+        return false;
+    };
+    ZERO_COPY_VIEW_NAMES.contains(&last.ident.to_string().as_str())
 }
 
 /// The async spawn shim: parameter declarations, the conversion
@@ -465,5 +494,57 @@ fn async_value_from(paths: &PathCtx, ret: &RetKind) -> TokenStream {
             }}
         }
         _ => quote! { #async_root::AsyncValue::from(__value) },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::classify_async_param;
+
+    /// Parses a type source, panicking in tests only (allowed by the
+    /// crate-root `cfg_attr(test)` escape hatch).
+    fn ty(src: &str) -> syn::Type {
+        syn::parse_str(src).expect("valid type source")
+    }
+
+    #[test]
+    fn zero_copy_views_are_rejected_in_both_spellings() {
+        for src in [
+            "ZeroCopyStr<'a>",
+            "ZeroCopyBuf<'a>",
+            "bffi::unsafe_zero_copy::ZeroCopyStr<'_>",
+            "my_views::ZeroCopyBuf",
+        ] {
+            let err = classify_async_param(&ty(src), "data")
+                .expect_err("zero-copy views must be rejected");
+            assert!(
+                err.to_string().contains("bffi[E015]"),
+                "`{src}` must carry E015"
+            );
+        }
+    }
+
+    #[test]
+    fn zero_copy_like_names_stay_generic_rejections() {
+        // The matcher is case-sensitive and exact: lookalikes keep the
+        // generic async-parameter rejection.
+        for src in ["zero_copy_str<'a>", "MyZeroCopyStr<'a>"] {
+            let err =
+                classify_async_param(&ty(src), "data").expect_err("unknown types stay rejected");
+            assert!(
+                err.to_string().contains("bffi[E002]"),
+                "`{src}` must carry the generic E002"
+            );
+        }
+    }
+
+    #[test]
+    fn owned_shapes_stay_accepted() {
+        for src in ["u32", "i64", "bool", "String", "Vec<u8>"] {
+            assert!(
+                classify_async_param(&ty(src), "data").is_ok(),
+                "`{src}` must stay accepted"
+            );
+        }
     }
 }

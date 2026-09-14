@@ -69,4 +69,6 @@ pub use value::{CallbackSig, Value, ValueType};
 // async slices record the owning isolate at registration time); not
 // part of the public facade.
 #[cfg(feature = "event-loop")]
-pub(crate) use thread::{binding_thread, current_thread_id, is_js_thread};
+pub(crate) use thread::{
+    binding_thread, current_thread_id, end_wait, is_js_thread, try_begin_wait,
+};

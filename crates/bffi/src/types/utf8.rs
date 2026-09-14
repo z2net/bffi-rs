@@ -13,9 +13,10 @@
 //!
 //! The only `unsafe` here is the vector load from a `&[u8]` slice (always
 //! in bounds: loads happen on full 16-byte chunks) and the unchecked UTF-8
-//! constructors in [`super::string`] / [`super::unsafe_zero_copy`], which
-//! rely on this validator's `true` result. Every block carries a `SAFETY:`
-//! justification; public API remains safe.
+//! constructor in [`super::string`], which relies on this validator's
+//! `true` result (the zero-copy `str_view` validates through the checked
+//! `std::str::from_utf8` and needs no unchecked step). Every block
+//! carries a `SAFETY:` justification; public API remains safe.
 //!
 //! # Algorithm
 //!

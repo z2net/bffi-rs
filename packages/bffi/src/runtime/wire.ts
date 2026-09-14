@@ -27,6 +27,29 @@ export const TAG_SEQ = 8;
 export const TAG_U64 = 10;
 export const TAG_ERROR = 11;
 
+/** Ceiling on any declared payload length/count the decoder accepts
+ * (mirrors the Rust-side `MAX_WIRE_PAYLOAD`); adjustable at runtime
+ * via `setMaxWirePayload`. */
+export const MAX_WIRE_PAYLOAD = 64 * 1024 * 1024;
+
+/** Maximum record/seq nesting the decoder walks before refusing
+ * (mirrors the Rust-side `MAX_WIRE_DEPTH`). */
+export const MAX_WIRE_DEPTH = 64;
+
+let maxWirePayload = MAX_WIRE_PAYLOAD;
+
+/** Overrides the declared-payload ceiling for the decoder (mirrors
+ * the Rust-side setter). `limit` must be an integer in
+ * `1..=0xFFFFFFFF`. */
+export function setMaxWirePayload(limit: number): void {
+  if (!Number.isInteger(limit) || limit <= 0 || limit > 0xffffffff) {
+    throw new Error(
+      `invalid max wire payload: ${limit} (must be an integer between 1 and 4294967295)`,
+    );
+  }
+  maxWirePayload = limit;
+}
+
 /** A decoded wire value: composites decode positionally, an error
  * item decodes into an `Error` instance. */
 export type WireValue =
@@ -81,8 +104,17 @@ export function decodeErrorEnvelope(
   const code = view.getUint32(at, true);
   at += 4;
   const readStr = (): { value: string; next: number } => {
+    if (at + 4 > bytes.byteLength) {
+      throw truncated(4, at, bytes.byteLength);
+    }
     const len = view.getUint32(at, true);
+    if (len > maxWirePayload) {
+      throw tooLarge(len, at, "bytes");
+    }
     const start = at + 4;
+    if (start + len > bytes.byteLength) {
+      throw truncated(len, at, bytes.byteLength);
+    }
     const value = new TextDecoder().decode(bytes.subarray(start, start + len));
     return { value, next: start + len };
   };
@@ -96,7 +128,13 @@ export function decodeErrorEnvelope(
   let next = at;
   const payloadTag = bytes[at];
   if (payloadTag === TAG_RECORD) {
+    if (at + 5 > bytes.byteLength) {
+      throw truncated(5, at, bytes.byteLength);
+    }
     const count = view.getUint32(at + 1, true);
+    if (count > maxWirePayload) {
+      throw tooLarge(count, at, "items");
+    }
     let cursor = at + 5;
     const fields: WireValue[] = [];
     for (let i = 0; i < count; i++) {
@@ -115,8 +153,12 @@ export function decodeErrorEnvelope(
   };
 }
 
-/** Decodes one record at `offset`. */
-export function decodeAt(bytes: Uint8Array, offset: number): Decoded {
+/** Decodes one record at `offset`. `depth` is internal: nested
+ * records/sequences increment it past `MAX_WIRE_DEPTH`. */
+export function decodeAt(bytes: Uint8Array, offset: number, depth = 0): Decoded {
+  if (depth > MAX_WIRE_DEPTH) {
+    throw new Error(`wire nesting deeper than ${MAX_WIRE_DEPTH}`);
+  }
   const tag = bytes[offset];
   if (tag === undefined) {
     throw new Error(`truncated wire payload at offset ${offset}`);
@@ -138,42 +180,71 @@ export function decodeAt(bytes: Uint8Array, offset: number): Decoded {
     case TAG_BOOL:
       return { value: (bytes[offset + 1] ?? 0) !== 0, next: offset + 2 };
     case TAG_STR: {
+      requireHeader(bytes, offset, 5);
       const len = view.getUint32(offset + 1, true);
+      if (len > maxWirePayload) {
+        throw tooLarge(len, offset, "bytes");
+      }
       const start = offset + 5;
+      if (start + len > bytes.byteLength) {
+        throw truncated(len, offset, bytes.byteLength);
+      }
       const value = new TextDecoder().decode(bytes.subarray(start, start + len));
       return { value, next: start + len };
     }
     case TAG_BYTES: {
+      requireHeader(bytes, offset, 5);
       const len = view.getUint32(offset + 1, true);
+      if (len > maxWirePayload) {
+        throw tooLarge(len, offset, "bytes");
+      }
       const start = offset + 5;
+      if (start + len > bytes.byteLength) {
+        throw truncated(len, offset, bytes.byteLength);
+      }
       const value = bytes.slice(start, start + len);
       return { value, next: start + len };
     }
     case TAG_U64:
       return { value: view.getBigUint64(offset + 1, true), next: offset + 9 };
     case TAG_ERROR: {
+      requireHeader(bytes, offset, 5);
       const len = view.getUint32(offset + 1, true);
+      if (len > maxWirePayload) {
+        throw tooLarge(len, offset, "bytes");
+      }
       const start = offset + 5;
+      if (start + len > bytes.byteLength) {
+        throw truncated(len, offset, bytes.byteLength);
+      }
       const message = new TextDecoder().decode(bytes.subarray(start, start + len));
       return { value: new Error(message), next: start + len };
     }
     case TAG_RECORD: {
+      requireHeader(bytes, offset, 5);
       const count = view.getUint32(offset + 1, true);
+      if (count > maxWirePayload) {
+        throw tooLarge(count, offset, "items");
+      }
       let at = offset + 5;
       const fields: WireValue[] = [];
       for (let i = 0; i < count; i++) {
-        const decoded = decodeAt(bytes, at);
+        const decoded = decodeAt(bytes, at, depth + 1);
         fields.push(decoded.value);
         at = decoded.next;
       }
       return { value: { fields }, next: at };
     }
     case TAG_SEQ: {
+      requireHeader(bytes, offset, 5);
       const count = view.getUint32(offset + 1, true);
+      if (count > maxWirePayload) {
+        throw tooLarge(count, offset, "items");
+      }
       let at = offset + 5;
       const items: WireValue[] = [];
       for (let i = 0; i < count; i++) {
-        const decoded = decodeAt(bytes, at);
+        const decoded = decodeAt(bytes, at, depth + 1);
         items.push(decoded.value);
         at = decoded.next;
       }
@@ -182,6 +253,28 @@ export function decodeAt(bytes: Uint8Array, offset: number): Decoded {
     default:
       throw new Error(`unknown wire value tag: ${tag}`);
   }
+}
+
+/** Throws when the fixed-size record header runs past the buffer. */
+function requireHeader(bytes: Uint8Array, offset: number, size: number): void {
+  if (offset + size > bytes.byteLength) {
+    throw truncated(size, offset, bytes.byteLength);
+  }
+}
+
+/** Builds the truncated-payload error (`declared N bytes at offset X,
+ * have M`). */
+function truncated(declared: number, offset: number, have: number): Error {
+  return new Error(
+    `wire payload truncated: declared ${declared} bytes at offset ${offset}, have ${have}`,
+  );
+}
+
+/** Builds the over-ceiling error for a declared length/count. */
+function tooLarge(declared: number, offset: number, kind: "bytes" | "items"): Error {
+  return new Error(
+    `wire payload too large: declared ${declared} ${kind} at offset ${offset}, limit is ${maxWirePayload}`,
+  );
 }
 
 /**

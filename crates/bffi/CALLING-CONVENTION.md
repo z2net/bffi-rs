@@ -105,6 +105,7 @@ not revalidated.
 | 12   | `WrongThread`      | Error          | call from a non-JS thread that could not be marshalled |
 | 13   | `DomainError`      | Error          | `Err` from a `Result<T, E>` return |
 | 15   | `Timeout`          | Error          | a bounded cross-thread wait (`invoke_wait`) expired before the JS thread delivered |
+| 16   | `ReentrantCall`    | Error          | re-entrant `invoke_wait` - the calling thread is already waiting inside one; fails fast instead of expiring |
 | 0x1000-0xFFFF | (user codes, from a `#[derive(BffiError)]` conversion) | Error | typed domain error; replaces the framework `13` in the ABI return |
 
 ## 7. Type tag ranges
@@ -215,7 +216,11 @@ the job is queued fails immediately with status `1` (`LoopStopped`
 domain error). Deadlock contract: the JS side MUST keep draining the
 loop (`pump`/`run`) while a native thread waits; a re-entrant wait
 (the JS thread itself inside a native call that waits for JS) is
-forbidden and ends in the timeout.
+forbidden - and DETECTED, not timed out: every `invoke_wait` wait
+section is wrapped in a per-thread wait-depth gate, so a NESTED
+`invoke_wait` on the same thread fails immediately with status `16`
+(`CallbackError::ReentrantWait`) instead of burning the timeout;
+restructure so the native work runs off the JS thread.
 
 The user crate expands the generator once:
 

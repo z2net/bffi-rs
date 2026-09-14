@@ -33,6 +33,8 @@ use bffi_core::{Handle, Registry, TypeTag};
 use super::error::CallbackError;
 use super::thread::ensure_js_thread;
 use super::value::{CallbackSig, Value, ValueType};
+#[cfg(feature = "event-loop")]
+use super::{end_wait, try_begin_wait};
 
 /// The type tag of the native (JS -> Rust) callback table.
 const NATIVE_TAG: TypeTag = TypeTag(0x0200);
@@ -560,14 +562,20 @@ fn call_js_ptr(sig: &CallbackSig, ptr: usize, args: &[Value]) -> Result<Value, C
 ///
 /// Deadlock contract: the JS thread MUST keep draining the loop while
 /// a native thread waits. A re-entrant wait - the JS thread itself
-/// inside a native call that `invoke_wait`s back into JS - never
-/// completes and ends in the timeout.
+/// inside a native call that `invoke_wait`s back into JS - can never
+/// complete: the parked thread cannot also drain the loop. Every wait
+/// section is therefore wrapped in a per-thread wait-depth gate, and a
+/// NESTED `invoke_wait` on the same thread fails FAST with
+/// [`CallbackError::ReentrantWait`] (status `16`) instead of burning
+/// the timeout.
 ///
 /// # Errors
 ///
 /// [`CallbackError::InvalidHandle`] / [`CallbackError::SignatureMismatch`]
 /// / [`CallbackError::NullPointer`] / [`CallbackError::
 /// UnsupportedSignature`] from the invoked entry;
+/// [`CallbackError::ReentrantWait`] when the CALLING thread is already
+/// waiting inside another `invoke_wait`;
 /// [`CallbackError::Timeout`] when `timeout` expired before the JS
 /// thread delivered; [`CallbackError::LoopStopped`] when the event
 /// loop has been stopped, so the job could not be queued at all
@@ -591,14 +599,24 @@ pub fn invoke_wait(
     if ensure_js_thread().is_ok() {
         return invoke(handle, args);
     }
+    // Re-entrancy gate: a thread already parked inside a wait section
+    // cannot also drain the loop its job depends on, so a nested
+    // `invoke_wait` fails fast instead of burning the timeout. The
+    // depth is released before every return below.
+    if try_begin_wait().is_err() {
+        return Err(CallbackError::ReentrantWait);
+    }
     let slot = Arc::new(WaitSlot::default());
     let job_slot = Arc::clone(&slot);
     let job_args = args.to_vec();
-    crate::bffi_event_loop::enqueue(Box::new(move || {
+    let outcome = match crate::bffi_event_loop::enqueue(Box::new(move || {
         job_slot.fill(invoke(handle, &job_args));
-    }))
-    .map_err(|_| CallbackError::LoopStopped)?;
-    slot.take_within(timeout)
+    })) {
+        Ok(()) => slot.take_within(timeout),
+        Err(_) => Err(CallbackError::LoopStopped),
+    };
+    end_wait();
+    outcome
 }
 
 /// The JS-bound half of [`invoke_wait`]: fail-fast validation on the
@@ -610,6 +628,10 @@ pub fn invoke_wait(
 /// crosses an isolate boundary. Entries bound while the process was
 /// unbound (`thread == 0`, pure-Rust usage) keep the legacy
 /// untargeted delivery.
+///
+/// The wait section carries the same per-thread re-entrancy gate as
+/// the native path: a nested wait fails fast with
+/// [`CallbackError::ReentrantWait`].
 #[cfg(feature = "event-loop")]
 fn invoke_js_entry_wait(
     handle: Handle,
@@ -632,6 +654,12 @@ fn invoke_js_entry_wait(
     if ensure_js_thread().is_ok() {
         return invoke_js_entry(handle, args);
     }
+    // The same re-entrancy gate as the native path: a thread already
+    // parked inside a wait section cannot also drain the loop its job
+    // depends on. The depth is released before every return below.
+    if try_begin_wait().is_err() {
+        return Err(CallbackError::ReentrantWait);
+    }
     let slot = Arc::new(WaitSlot::default());
     let job_slot = Arc::clone(&slot);
     let job_args = args.to_vec();
@@ -651,8 +679,12 @@ fn invoke_js_entry_wait(
             }),
         )
     };
-    queued.map_err(|_| CallbackError::LoopStopped)?;
-    slot.take_within(timeout)
+    let outcome = match queued {
+        Ok(()) => slot.take_within(timeout),
+        Err(_) => Err(CallbackError::LoopStopped),
+    };
+    end_wait();
+    outcome
 }
 
 /// Binds a JS-side callback (Rust -> JS direction) and returns its

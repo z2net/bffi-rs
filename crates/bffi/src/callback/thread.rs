@@ -12,6 +12,12 @@
 //! While the process has NO registered JS threads it admits every
 //! caller, so pure-Rust usage and unit tests need no binding ritual.
 //!
+//! The wait-depth gate ([`try_begin_wait`] / [`end_wait`]) tracks the
+//! marshal-and-wait sections per thread: a NESTED `invoke_wait` on a
+//! thread already parked inside one can never be satisfied (the
+//! parked thread cannot also drain the loop), so it fails fast with
+//! [`CallbackError::ReentrantWait`] instead of burning the timeout.
+//!
 //! Delivery targeting lives in the event loop: JS-facing entries
 //! (JS-bound callbacks, stream wakes, async resolvers) record the
 //! thread that created them and are marshalled to that thread's
@@ -185,6 +191,45 @@ pub(crate) fn current_thread_id() -> u64 {
     })
 }
 
+#[cfg(feature = "event-loop")]
+thread_local! {
+    /// The per-thread `invoke_wait` nesting depth: `> 0` while this
+    /// thread is parked inside a marshal-and-wait section.
+    static WAIT_DEPTH: Cell<u32> = const { Cell::new(0) };
+}
+
+/// Marks the calling thread as entering an `invoke_wait` wait
+/// section (the `Mutex` + `Condvar` park).
+///
+/// `Err` means the thread is ALREADY inside a wait: a nested
+/// marshal-and-wait can never be satisfied - the parked thread cannot
+/// also drain the event loop its job depends on - so the caller
+/// translates this into [`CallbackError::ReentrantWait`] and fails
+/// fast instead of burning the whole timeout.
+///
+/// # Errors
+///
+/// `Err(())` when a wait section is already active on this thread
+/// (not yet closed by [`end_wait`]).
+#[cfg(feature = "event-loop")]
+pub(crate) fn try_begin_wait() -> Result<(), ()> {
+    WAIT_DEPTH.with(|depth| {
+        if depth.get() > 0 {
+            return Err(());
+        }
+        depth.set(depth.get() + 1);
+        Ok(())
+    })
+}
+
+/// Marks the calling thread as having left the wait section (the
+/// [`try_begin_wait`] counterpart); a surplus call is absorbed so the
+/// depth can never underflow.
+#[cfg(feature = "event-loop")]
+pub(crate) fn end_wait() {
+    WAIT_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+}
+
 #[cfg(test)]
 mod tests {
     // NOTE (test isolation): the JS-thread table is process-global,
@@ -196,8 +241,14 @@ mod tests {
     // `tests/threading.rs` and `tests/multi-js-threads.rs`, separate
     // processes.
     use std::sync::{Mutex, PoisonError};
+    use std::time::{Duration, Instant};
 
-    use super::{current_thread_id, ensure_js_thread, is_js_thread, set_js_thread};
+    use super::{
+        current_thread_id, end_wait, ensure_js_thread, is_js_thread, set_js_thread, try_begin_wait,
+    };
+    use crate::bffi_callback::{
+        CallbackError, CallbackSig, ValueType, bind_js_callback, invoke_wait,
+    };
 
     static REGISTRY_LOCK: Mutex<()> = Mutex::new(());
 
@@ -262,5 +313,65 @@ mod tests {
         drop(release_tx);
         keeper.join().expect("keeper must not panic");
         assert!(!is_js_thread(first));
+    }
+
+    #[test]
+    fn wait_depth_refuses_nested_begins_and_absorbs_surplus_ends() {
+        assert!(try_begin_wait().is_ok(), "a fresh thread has depth 0");
+        assert_eq!(try_begin_wait(), Err(()), "a nested begin is refused");
+        end_wait();
+        end_wait(); // surplus: absorbed, the depth must not underflow
+        assert!(
+            try_begin_wait().is_ok(),
+            "the depth must not have underflowed"
+        );
+        end_wait();
+    }
+
+    #[test]
+    fn nested_invoke_wait_fails_fast_with_reentrant_wait() {
+        let _guard = REGISTRY_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+
+        // A live registration makes the process BOUND, so the
+        // unregistered caller below takes the marshal-and-wait path -
+        // the only path with a wait section to gate. The keeper never
+        // pumps: the gate fires BEFORE anything is queued.
+        let (id_tx, id_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let keeper = std::thread::spawn(move || {
+            set_js_thread().expect("bind ok");
+            id_tx.send(current_thread_id()).expect("send id");
+            let _ = release_rx.recv();
+        });
+        let _id = id_rx.recv().expect("keeper must announce");
+
+        // The entry is bound by the (still unregistered) test thread,
+        // so it records the legacy untargeted sentinel - irrelevant:
+        // the gate fires before any queue interaction.
+        let handle = bind_js_callback(CallbackSig::new(ValueType::Bool, &[]), 0)
+            .expect("callback table has room");
+
+        let started = Instant::now();
+        let outcome = std::thread::spawn(move || {
+            // Simulated nesting: this thread is "already waiting"
+            // (the outer begin succeeded), so invoke_wait must refuse
+            // instead of parking for the full timeout.
+            try_begin_wait().expect("the outer wait begins");
+            let outcome = invoke_wait(handle, &[], Duration::from_secs(30));
+            end_wait();
+            outcome
+        })
+        .join()
+        .expect("the waiting thread must not panic");
+        let elapsed = started.elapsed();
+
+        assert_eq!(outcome, Err(CallbackError::ReentrantWait));
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "the gate must fail fast, not burn the timeout: {elapsed:?}"
+        );
+
+        drop(release_tx);
+        keeper.join().expect("keeper must not panic");
     }
 }

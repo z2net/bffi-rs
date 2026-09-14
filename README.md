@@ -95,7 +95,7 @@ Domain errors derive `BffiError` with stable user codes in the
 reserved range `0x1000..=0xFFFF`; the code replaces the framework
 status in the ABI return and surfaces as `e.code` on the JS side,
 with `e.name` (the variant), `e.payload` (the variant fields) and
-`e.nativeStack` (a `RUST_BACKTRACE`-gated backtrace) alongside.
+`e.nativeStack` (a `RUST_BACKTRACE`-gated backtrace - keep it off in production) alongside. See [SECURITY.md](SECURITY.md) for the trust model: the `.bffi/` manifest is trusted input, `libraryPath` is an explicit trust decision, and bffi provides panic CONTAINMENT (not process isolation).
 
 ```rust
 #[derive(BffiError, Debug)]

@@ -268,7 +268,7 @@ The generic callback ABI (four exports the crate expands via
 
 | Helper | Direction | What it does |
 | --- | --- | --- |
-| `setJsThread(lib)` | - | registers the CALLING thread as a JS thread (multi-isolate: every Worker registers its own; idempotent) |
+| `setJsThread(lib)` | - | registers the CALLING thread as a JS thread (multi-isolate; idempotent). `bffi()` AUTO-BINDS the loading isolate when the module ships the callback surface - the manual call is only needed for advanced setups |
 | `unsetJsThread(lib)` | - | deregisters the CALLING thread (a Worker calls it before exiting; idempotent) |
 | `bindJsCallback(lib, sig, fn)` | Rust -> JS | wraps `fn` into a `JSCallback` (`sig.ret`/`sig.params` are `"i32" \| "i64" \| "f64" \| "bool" \| "cstring"`), stores the pointer under a fresh handle; returns `{ handle, revoke() }` |
 | `invokeCallback(lib, handle, ...args)` | JS -> Rust | wire-encodes `args`, invokes the native body registered by the crate, decodes the result |

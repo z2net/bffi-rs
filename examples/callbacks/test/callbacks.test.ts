@@ -150,11 +150,12 @@ describe("callbacks through the full pipeline", () => {
       const boundMessage = await waitFor(worker, "bound");
       expect(boundMessage.bindStatus).toBe(0);
 
-      // The main thread is now the WRONG thread: the direct invoke is
-      // rejected with WrongThread (12) - both through the status
-      // variant and the generic invoke ABI.
-      expect(api.callback_invoke_status(handle, 1)).toBe(12);
-      expect(() => invokeCallback(raw, handle, 1)).toThrow(/non-JS thread/);
+      // Multi-isolate + auto-bind: bffi() registered THIS thread at
+      // startup, so the direct invoke PASSES the JS-thread gate
+      // (WrongThread is now reserved for UNREGISTERED native threads,
+      // covered by the Rust integration tests).
+      expect(api.callback_invoke_status(handle, 1)).toBe(0);
+      expect(invokeCallback(raw, handle, 1)).toBe(2);
 
       // The marshal path: the job is delivered to the worker's run()
       // loop. The runner may not be up yet when "bound" arrives (the

@@ -5,7 +5,7 @@
  * object literal) ships exact signatures without hand-written types.
  */
 import { dlopen, ptr } from "bun:ffi";
-import { ErrorCode, type FfiLib, makeTakeError, sym } from "../runtime/error.ts";
+import { ErrorCode, symOptional, type FfiLib, makeTakeError, sym } from "../runtime/error.ts";
 import { makeReadBuffer } from "../runtime/buffer.ts";
 import { assertSchema, BFFI_ABI_VERSION, buildDeclarations, type BuiltinFeatures, type FunctionJson, type ModuleJson, type TsName } from "./loader.ts";
 import { wrapTask } from "../runtime/async.ts";
@@ -307,6 +307,24 @@ function runHandshake(json: ModuleJson, lib: FfiLib): void {
 }
 
 /**
+ * Registers the CALLING thread as a JS thread when the module ships
+ * the callback surface (multi-isolate: every JS isolate that loads a
+ * module binds itself - the manual `setJsThread()` ritual is gone;
+ * idempotent, so an explicit later call is still fine). Modules
+ * without the callback exports skip silently.
+ */
+function autoBindJsThread(lib: FfiLib): void {
+  const setThread = symOptional(lib, "bffi_callback_set_thread");
+  if (setThread === undefined) {
+    return;
+  }
+  const status = Number(setThread());
+  if (status !== ErrorCode.Ok) {
+    throw new Error(`bffi_callback_set_thread failed: ${String(status)}`);
+  }
+}
+
+/**
  * The pure factory over an already-loaded symbol table: the
  * testable half of [`createApi`] (mock libraries in unit tests).
  *
@@ -316,6 +334,7 @@ function runHandshake(json: ModuleJson, lib: FfiLib): void {
 export function createApiFromLib<J extends ModuleJson>(json: J, lib: FfiLib): ApiOf<J> {
   assertSchema(json);
   runHandshake(json, lib);
+  autoBindJsThread(lib);
   const takeError = makeTakeError(lib);
   const readBuffer = makeReadBuffer(lib);
 

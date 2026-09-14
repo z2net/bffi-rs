@@ -79,6 +79,13 @@ path = "src/bin/emit_json.rs"
 
 [dependencies]
 bffi = "0.1.3"
+
+# REQUIRED by the bffi boundary policy: release shims wrap every
+# export in catch_unwind, which only works with unwinding panics.
+# panic = "abort" here would abort the whole Bun host process on
+# the first Rust panic. bffi doctor checks this.
+[profile.release]
+panic = "unwind"
 `;
   await Bun.write(joinOut(crateRoot, "Cargo.toml"), cargoToml);
 

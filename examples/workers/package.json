@@ -1,0 +1,14 @@
+{
+  "name": "bffi-example-workers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Example bffi-rs native module: the multi-isolate surface (two JS threads of one process, targeted callback delivery across isolates on Bun 1.4 workers). Dependencies come from the package registries (npm: @z2net/bffi, crates.io: bffi).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@z2net/bffi": "^0.1.0"
+  }
+}

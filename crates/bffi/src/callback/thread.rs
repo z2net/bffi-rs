@@ -105,6 +105,30 @@ pub fn set_js_thread() -> Result<(), CallbackError> {
     Ok(())
 }
 
+/// Deregisters the CURRENT thread.
+///
+/// The explicit shutdown half of [`set_js_thread`]: a JS isolate that
+/// is about to exit (a `Worker` before `terminate`) calls this so its
+/// slot queue retires immediately and further targeted deliveries
+/// fail fast. WITHOUT this call the registration is reclaimed only by
+/// the TLS guard on a normal thread exit - and a TERMINATED worker
+/// thread (Windows `TerminateThread` semantics) never runs TLS
+/// destructors, leaving a zombie registration whose deliveries time
+/// out. Idempotent for an unregistered thread.
+///
+/// # Errors
+///
+/// Never fails today; the [`CallbackError`] return keeps the ABI
+/// shape stable for future admission policies.
+pub fn unset_js_thread() -> Result<(), CallbackError> {
+    // Dropping the guard runs the deregistration path (table removal
+    // + slot queue retirement) exactly like a thread exit would.
+    REGISTRATION.with(|slot| {
+        drop(slot.borrow_mut().take());
+    });
+    Ok(())
+}
+
 /// Ensures the CURRENT thread is a registered JS thread.
 ///
 /// - No JS threads registered: `Ok` (pure-Rust usage and unit tests).

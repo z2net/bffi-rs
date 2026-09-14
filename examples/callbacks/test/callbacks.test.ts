@@ -8,12 +8,11 @@
  * Run with `bun test examples/callbacks` from the REPO ROOT (the
  * root tsconfig paths resolve `@z2net/bffi`).
  *
- * The tests are ORDER-DEPENDENT and phased ON PURPOSE: the JS-thread
- * binding is process-global and sticky (the first binder wins), so
- * everything that relies on the process being UNBOUND must run before
- * the worker binds - and nothing can run after the worker binds
- * except wrong-thread rejections and the marshal path itself. Keep
- * the order.
+ * The tests are ORDER-DEPENDENT and phased ON PURPOSE: while the
+ * process is UNBOUND (before the worker registers) every thread is
+ * admitted; after the worker registers, unregistered threads are
+ * rejected - and the phase-C worker is deliberately not unbound until
+ * the final assertions. Keep the order.
  */
 import { describe, expect, test } from "bun:test";
 import { JSCallback, dlopen, ptr } from "bun:ffi";
@@ -184,9 +183,14 @@ describe("callbacks through the full pipeline", () => {
       expect(done.executed).toBe(1n);
       worker.terminate();
 
-      // The binding is sticky: a late setJsThread from the main
-      // thread is rejected - the worker owns the binding for good.
-      expect(() => setJsThread(raw)).toThrow(/non-JS thread/);
+      // Multi-isolate (Bun 1.4): a late setJsThread from the main
+      // thread REGISTERS it as a second JS thread - that is how a
+      // Worker joins. The old sticky single-binding policy is gone;
+      // only UNREGISTERED threads are rejected.
+      setJsThread(raw);
+      // And now the main thread passes the JS-thread gate for
+      // isolate-independent native callbacks:
+      expect(api.callback_invoke_status(handle, 1)).toBe(0);
     },
     20_000,
   );

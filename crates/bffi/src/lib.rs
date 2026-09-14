@@ -112,7 +112,7 @@ pub use crate::bffi_build::BuildError;
 #[cfg(feature = "callback")]
 pub use crate::bffi_callback::{
     CallbackError, CallbackSig, JsCallbackInfo, Value, ValueType, bind_js_callback,
-    ensure_js_thread, invoke, js_callback, register, revoke, set_js_thread,
+    ensure_js_thread, invoke, js_callback, register, revoke, set_js_thread, unset_js_thread,
 };
 // Marshal-and-wait rides the event loop, so it exists only when that
 // slice is compiled in (event-loop implies callback).

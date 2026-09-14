@@ -8,6 +8,7 @@ members = [
     "examples/async",
     "examples/event-loop",
     "examples/callbacks",
+    "examples/workers",
     "examples/records",
     "examples/streams",
     "examples/errors",

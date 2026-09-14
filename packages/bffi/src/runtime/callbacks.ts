@@ -156,14 +156,29 @@ export function revokeCallback(lib: FfiLib, handle: bigint): void {
 }
 
 /**
- * Binds the calling thread as the process-wide JS thread (sticky;
- * `WrongThread` when already bound elsewhere - surfaces as a thrown
- * `Error`). Required once before native callbacks may be invoked.
+ * Binds the calling thread as one of the process's JS threads
+ * (multi-isolate: every Bun 1.4 Worker calls this once on its own
+ * thread; idempotent). Required once before native callbacks may be
+ * invoked on that thread.
  */
 export function setJsThread(lib: FfiLib): void {
   const takeError = makeTakeError(lib);
   const status = sym(lib, "bffi_callback_set_thread")();
   if (status !== ErrorCode.Ok) {
     throw takeError() ?? new Error(`bffi_callback_set_thread failed: ${String(status)}`);
+  }
+}
+
+/**
+ * Deregisters the calling thread: the explicit shutdown half of
+ * {@link setJsThread}. A Worker calls this right before exiting so
+ * its slot queue retires immediately and further targeted deliveries
+ * to it fail fast (LoopStopped) instead of timing out. Idempotent.
+ */
+export function unsetJsThread(lib: FfiLib): void {
+  const takeError = makeTakeError(lib);
+  const status = sym(lib, "bffi_callback_unset_thread")();
+  if (status !== ErrorCode.Ok) {
+    throw takeError() ?? new Error(`bffi_callback_unset_thread failed: ${String(status)}`);
   }
 }

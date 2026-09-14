@@ -61,7 +61,7 @@ pub use error::CallbackError;
 #[cfg(feature = "event-loop")]
 pub use registry::invoke_wait;
 pub use registry::{JsCallbackInfo, bind_js_callback, invoke, js_callback, register, revoke};
-pub use thread::{ensure_js_thread, set_js_thread};
+pub use thread::{ensure_js_thread, set_js_thread, unset_js_thread};
 pub use value::{CallbackSig, Value, ValueType};
 
 // Internal cross-module surface (the event loop reads the calling

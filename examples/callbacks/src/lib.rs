@@ -13,8 +13,8 @@
 //!   call into JS is the async delivery path's job - see the async
 //!   example);
 //! - `bind_js_thread` / `loop_run` / `loop_stop` - the JS-thread
-//!   binding (first binder wins, sticky) and the blocking drain a
-//!   worker thread enters;
+//!   registration (multi-isolate: every JS isolate registers its own
+//!   thread) and the blocking drain a worker thread enters;
 //! - `marshal_invoke` - the wrong-thread delivery: the job invokes
 //!   the callback ON THE RUNNER THREAD and stores the result.
 //!
@@ -136,11 +136,11 @@ pub fn callback_ptr(handle: u64) -> Result<u64, InvokeError> {
     Ok(info.ptr as u64)
 }
 
-/// Binds the CURRENT thread as the process-wide JS thread (first
-/// binder wins; sticky for the process lifetime). Returns the raw
-/// `ErrorCode` numeric value: `0` = bound, `12` = another thread
-/// already owns the binding. The worker of the e2e test calls this
-/// before entering the loop drain.
+/// Registers the CURRENT thread as a JS thread of this process
+/// (multi-isolate: every JS isolate registers its own thread;
+/// idempotent). Returns the raw `ErrorCode` numeric value: `0` =
+/// registered. The worker of the e2e test calls this before entering
+/// the loop drain.
 #[bffi]
 pub fn bind_js_thread() -> u32 {
     match set_js_thread() {

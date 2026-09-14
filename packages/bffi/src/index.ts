@@ -44,6 +44,7 @@ export {
   invokeCallback,
   revokeCallback,
   setJsThread,
+  unsetJsThread,
   type CallbackSig,
   type CbType,
   type CbValue,

@@ -1,0 +1,23 @@
+{
+  "bffi": 1,
+  "version": "0.1.0",
+  "module": "workers",
+  "debug": false,
+  "crate": {
+    "dir": ".",
+    "targetDir": "../../target",
+    "name": "bffi-example-workers",
+    "binary": "bffi_example_workers"
+  },
+  "features": {
+    "runtime": true,
+    "async": false,
+    "callbacks": true
+  },
+  "generate": {
+    "apiGen": true,
+    "outFile": "api.gen.ts"
+  },
+  "files": ["bffi.api.json", "api.gen.ts"],
+  "libraryPath": null
+}

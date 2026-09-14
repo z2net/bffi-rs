@@ -339,6 +339,7 @@ const ASYNC_DECLARATIONS: Record<string, { args: FfiType[]; returns: FfiType }> 
 
 const CALLBACK_DECLARATIONS: Record<string, { args: FfiType[]; returns: FfiType }> = {
   bffi_callback_set_thread: { args: [], returns: "u32" },
+  bffi_callback_unset_thread: { args: [], returns: "u32" },
   bffi_callback_bind: {
     args: ["u8", "ptr", "u64", "u64", "pointer"],
     returns: "u32",

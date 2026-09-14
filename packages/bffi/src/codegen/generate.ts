@@ -627,6 +627,9 @@ function emitClass(
   lines.push(`  });`);
   lines.push(`  const ${clsId} = class {`);
   lines.push(`    handle: bigint;`);
+  lines.push(`    [Symbol.dispose](): void {`);
+  lines.push(`      this.release();`);
+  lines.push(`    }`);
   // The constructor: parameters without a return annotation (TS
   // forbids one), the handle slot read into `this.handle` - the
   // ctor descriptor's `ret`/`out` pair never leaks as a `return`.

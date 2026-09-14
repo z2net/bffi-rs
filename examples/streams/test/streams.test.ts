@@ -11,7 +11,7 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { bffi } from "@z2net/bffi";
+import { bffi, streamToWeb } from "@z2net/bffi";
 import type { Api } from "../.bffi/api.gen.ts";
 
 /** The generated Api derives the Sample shape from the schema
@@ -150,5 +150,46 @@ describe("streams through the full pipeline", () => {
       18446744073709551613n,
     ]);
     expect(items.every((n) => typeof n === "bigint")).toBe(true);
+  });
+
+  test("Symbol.dispose releases the native stream early", async () => {
+    // A stream abandoned mid-iteration: the dispose protocol (Bun 1.4
+    // executes it natively) drops the native iterator deterministically.
+    {
+      const stream = api.numbers(1000);
+      const disposable = stream as AsyncIterableIterator<number> & {
+        [Symbol.dispose](): void;
+      };
+      expect(typeof disposable[Symbol.dispose]).toBe("function");
+      disposable[Symbol.dispose]();
+      // Further pulls report done - the drop is sticky.
+      // (for-await after dispose yields nothing instead of erroring.)
+    }
+    const survivor = await collect(api.numbers(2));
+    expect(survivor).toEqual([1, 2]);
+  });
+
+  test("streamToWeb pipelines into a native ReadableStream", async () => {
+    const web = streamToWeb(api.numbers(4));
+    const chunks: number[] = [];
+    const reader = web.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      chunks.push(value);
+    }
+    expect(chunks).toEqual([1, 2, 3, 4]);
+  });
+
+  test("cancel on the web side releases the native stream", async () => {
+    const web = streamToWeb(api.numbers(1000));
+    const reader = web.getReader();
+    await reader.read();
+    await reader.cancel("enough");
+    // The native iterator was dropped through iterator.return(); the
+    // process stays healthy for the next streams.
+    expect(await collect(api.numbers(1))).toEqual([1]);
   });
 });

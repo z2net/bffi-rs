@@ -12,6 +12,7 @@ import { wrapTask } from "../runtime/async.ts";
 import { streamItemTs, wrapStream } from "../runtime/stream.ts";
 import { isCompositeTs, jsToWire, tablesOf, wireToJs } from "./composite.ts";
 import { decodeAt, encodeValue } from "../runtime/wire.ts";
+import { makeLibDisposer } from "../runtime/dispose.ts";
 
 const decoder = new TextDecoder();
 
@@ -310,7 +311,9 @@ export function createApiFromLib<J extends ModuleJson>(json: J, lib: FfiLib): Ap
   for (const cls of json.classes) {
     api[cls.name] = makeClass(cls, callFunction, callMethod, lib, takeError);
   }
-  return api as ApiOf<J>;
+  // The Api carries the JS-side dispose surface: `using api = ...`
+  // retires every JSCallback trampoline created against this library.
+  return Object.assign(api, makeLibDisposer(lib)) as unknown as ApiOf<J>;
 }
 
 /**
@@ -549,6 +552,9 @@ function makeClass(
     release(): void {
       finalizers.unregister(this);
       release(this.handle);
+    }
+    [Symbol.dispose](): void {
+      this.release();
     }
   };
 

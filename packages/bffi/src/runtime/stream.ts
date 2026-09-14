@@ -95,7 +95,23 @@ export function wrapStream<T = unknown>(
   const token = {};
   registry.register(token, handle);
 
-  const iterator: AsyncIterableIterator<T> = {
+  /** Drops the native stream and closes the wake trampoline. After
+   * this call no further wake can fire (the drop is sticky), so
+   * closing the trampoline is safe - it retires the JSCallback. */
+  const dispose = (): void => {
+    if (!done) {
+      dropSym(handle);
+      done = true;
+      queue = [];
+    }
+    if (wakeCb !== null) {
+      wakeCb.close();
+      wakeCb = null;
+    }
+    registry.unregister(token);
+  };
+
+  const iterator: AsyncIterableIterator<T> & { [Symbol.dispose](): void } = {
     [Symbol.asyncIterator](): AsyncIterableIterator<T> {
       return iterator;
     },
@@ -118,6 +134,12 @@ export function wrapStream<T = unknown>(
           const chunkHandle = out[0] ?? 0n;
           if (chunkHandle === 0n) {
             done = true;
+            // Natural exhaustion: no further wakes can arrive, the
+            // trampoline retires.
+            if (wakeCb !== null) {
+              wakeCb.close();
+              wakeCb = null;
+            }
             break;
           }
           const bytes = readBuffer(chunkHandle);
@@ -148,16 +170,36 @@ export function wrapStream<T = unknown>(
     return(value?: T): Promise<IteratorResult<T>> {
       // Early exit: release the native stream; further next() calls
       // report done (the handle drop is sticky by contract).
-      if (!done) {
-        dropSym(handle);
-        done = true;
-        queue = [];
-      }
+      dispose();
       return Promise.resolve({ value: value as T, done: true });
+    },
+    [Symbol.dispose](): void {
+      void dispose();
     },
   };
   void token;
   return iterator;
+}
+
+/**
+ * Adapts a bffi stream iterator into a native `ReadableStream`
+ * (Bun 1.4 native streams pipeline with CompressionStream and
+ * friends). Cancelling the reader releases the native stream early.
+ */
+export function streamToWeb<T>(iterator: AsyncIterableIterator<T>): ReadableStream<T> {
+  return new ReadableStream<T>({
+    async pull(controller) {
+      const { done, value } = await iterator.next();
+      if (done) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(value);
+    },
+    cancel(): void {
+      void iterator.return?.();
+    },
+  });
 }
 
 /** Extracts the item type from an `AsyncIterableIterator<T>` ts

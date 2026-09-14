@@ -22,6 +22,7 @@ import {
   bffi,
   buildDeclarations,
   findProjectRoot,
+  bindJsCallback,
   invokeCallback,
   loadConfigFile,
   localArtifactPath,
@@ -194,4 +195,18 @@ describe("callbacks through the full pipeline", () => {
     },
     20_000,
   );
+
+  test("bindJsCallback supports the dispose protocol", () => {
+    const bound = bindJsCallback(
+      raw,
+      { ret: "i32", params: ["i32"] },
+      (x) => (x as number) + 1,
+    );
+    expect(bound.handle).not.toBe(0n);
+    // Dispose = revoke + JSCallback close: the native handle is dead.
+    bound[Symbol.dispose]();
+    expect(() => api.callback_ptr(bound.handle)).toThrow(/revoked/);
+    // A second dispose is a no-op (idempotent revoke).
+    bound[Symbol.dispose]();
+  });
 });

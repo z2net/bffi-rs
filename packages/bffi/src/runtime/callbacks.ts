@@ -21,6 +21,7 @@ import { JSCallback, ptr } from "bun:ffi";
 import { ErrorCode, type FfiLib, makeTakeError, sym } from "./error.ts";
 import { makeReadBuffer } from "./buffer.ts";
 import { decodeValue, encodeValue, TAG_BOOL, TAG_F64, TAG_I32, TAG_I64, type WireValue } from "./wire.ts";
+import { registerDisposer } from "./dispose.ts";
 
 /** A callback value type (the `bffi-callback` `ValueType` matrix). */
 export type CbType = "i32" | "i64" | "f64" | "bool";
@@ -63,7 +64,11 @@ export function bindJsCallback(
   lib: FfiLib,
   sig: CallbackSig,
   fn: (...args: CbValue[]) => CbValue,
-): { handle: bigint; revoke(): void } {
+): {
+  handle: bigint;
+  revoke(): void;
+  [Symbol.dispose](): void;
+} {
   const takeError = makeTakeError(lib);
   const wrapped = new JSCallback(
     (...raw: unknown[]) => {
@@ -103,12 +108,33 @@ export function bindJsCallback(
     throw takeError() ?? new Error(`bffi_callback_bind failed: ${String(status)}`);
   }
   const handle = out[0] ?? 0n;
-  return {
+  /** The strict path: a second revoke throws (the terminal-revocation
+   * contract). Also closes the JSCallback, which previously leaked
+   * for the bind lifetime. */
+  const revoke = (): void => {
+    revokeCallback(lib, handle);
+    wrapped.close();
+    disposers.delete(dispose);
+  };
+  const dispose = (): void => {
+    revoke();
+  };
+  const disposers = registerDisposer(lib, dispose);
+  let disposed = false;
+  const result = {
     handle,
-    revoke(): void {
-      revokeCallback(lib, handle);
+    revoke,
+    /** The dispose protocol half: IDEMPOTENT (a `using` block may
+     * run it once, and a second run must not throw). */
+    [Symbol.dispose](): void {
+      if (disposed) {
+        return;
+      }
+      disposed = true;
+      revoke();
     },
   };
+  return result;
 }
 
 /**

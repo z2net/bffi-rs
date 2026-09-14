@@ -211,6 +211,9 @@ export function createApiFromJson(libraryPath: string): ApiOf<typeof moduleJson>
   });
   const cls_counter = class {
     handle: bigint;
+    [Symbol.dispose](): void {
+      this.release();
+    }
     constructor(a0: TsOf<"number", typeof moduleJson>) {
       if (arguments.length !== 1) {
         throw new Error("counter constructor: expected 1 argument(s), got " + arguments.length);

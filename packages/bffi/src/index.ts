@@ -44,7 +44,12 @@ export {
   type RetJson,
   type TsName,
 } from "./loader/index.ts";
-export { pumpUntil, wrapTask, wrapStream, streamItemTs } from "./runtime/index.ts";
+export { pumpUntil, wrapTask, wrapStream, streamItemTs, streamToWeb } from "./runtime/index.ts";
+export {
+  disposeLib,
+  installMemoryPressureGC,
+  makeLibDisposer,
+} from "./runtime/index.ts";
 export {
   createApi,
   createApiFromLib,

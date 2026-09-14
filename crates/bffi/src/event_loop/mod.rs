@@ -346,10 +346,25 @@ pub fn run() -> u64 {
 /// finishes, queued jobs stay queued), makes [`enqueue`] fail with
 /// [`EventLoopError::Stopped`] and turns [`run`] into a no-op.
 /// Idempotent.
+///
+/// The STOPPED flag is an atomic, but the NOTIFICATION must be
+/// serialized against each waiter's "check STOPPED -> enter wait"
+/// critical section: a runner holds the queue (or slot) mutex
+/// between checking the flag and blocking on the condvar, so stop()
+/// acquires the same mutexes before notifying. Without this, a stop
+/// landing in that window is LOST and the runner sleeps forever
+/// (the lost-wakeup race the event-loop doctest intermittently
+/// caught).
 pub fn stop() {
     STOPPED.store(true, Ordering::Release);
-    queue().1.notify_all();
-    notify_slots();
+    {
+        let _held = queue().0.lock().unwrap_or_else(PoisonError::into_inner);
+        queue().1.notify_all();
+    }
+    for slot in thread_queues().values() {
+        let _held = slot.0.lock().unwrap_or_else(PoisonError::into_inner);
+        slot.1.notify_all();
+    }
 }
 
 /// Number of jobs waiting for execution across the global queue and

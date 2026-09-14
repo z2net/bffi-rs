@@ -144,6 +144,13 @@ pub(crate) struct StreamEntry {
     /// when the buffer transitions empty -> non-empty or the stream
     /// completes/fails, so a waiting pull resumes without polling.
     wake: Mutex<Option<usize>>,
+    /// The JS thread that registered the wake (see
+    /// `bffi::callback::thread`): the trampoline belongs to that
+    /// isolate, so the wake job is delivered there. `0` = the
+    /// process was unbound (pure-Rust usage) - legacy untargeted
+    /// delivery.
+    #[cfg(feature = "event-loop")]
+    wake_thread: std::sync::atomic::AtomicU64,
 }
 
 enum StreamState {
@@ -259,6 +266,31 @@ fn tables() -> Result<(), bffi_core::RegistryError> {
 /// Registers the JS wake trampoline for a stream: the raw pointer of
 /// a `(u64) -> void` bun:ffi `JSCallback` the typed wrapper created.
 /// `false` for unknown/stale/foreign handles.
+///
+/// The CALLING thread is recorded as the wake's owner: the
+/// trampoline belongs to that isolate, and [`fire_wake`] delivers the
+/// wake job there (never across an isolate boundary).
+#[cfg(feature = "event-loop")]
+pub fn set_wake(handle: Handle, ptr: usize) -> bool {
+    use std::sync::atomic::Ordering;
+    match Registry::global().get_typed::<StreamEntry>(handle) {
+        Some(entry) => {
+            *entry
+                .wake
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(ptr);
+            entry
+                .wake_thread
+                .store(crate::bffi_callback::binding_thread(), Ordering::Release);
+            true
+        }
+        None => false,
+    }
+}
+
+/// Without an event loop there is no wake delivery: the JS pull
+/// relies on its polling timer (the documented contract).
+#[cfg(not(feature = "event-loop"))]
 pub fn set_wake(handle: Handle, ptr: usize) -> bool {
     match Registry::global().get_typed::<StreamEntry>(handle) {
         Some(entry) => {
@@ -276,7 +308,14 @@ pub fn set_wake(handle: Handle, ptr: usize) -> bool {
 /// runs on the JS thread and resolves the pull that is waiting on
 /// the stream. Best-effort - a stopped loop (or an unregistered
 /// trampoline) simply keeps the poll-retry contract working.
+///
+/// TARGETED delivery: when the wake has an owning isolate (its
+/// `set_wake` ran on a registered JS thread), the job is queued on
+/// that thread's slot queue; a departed worker leaves the wake
+/// undeliverable and the JS pull falls back to its bounded timer.
+#[cfg(feature = "event-loop")]
 fn fire_wake(entry: &StreamEntry) {
+    use std::sync::atomic::Ordering;
     let ptr = *entry
         .wake
         .lock()
@@ -284,20 +323,32 @@ fn fire_wake(entry: &StreamEntry) {
     let Some(ptr) = ptr else {
         return;
     };
-    let queued = crate::bffi_event_loop::enqueue(Box::new(move || {
+    let thread = entry.wake_thread.load(Ordering::Acquire);
+    let job = Box::new(move || {
         // SAFETY: `ptr` is the bun:ffi JSCallback trampoline the JS
         // wrapper registered for this stream (`(u64) -> void`); the
         // wrapper never closes it while the stream can still fire
         // (the callback outlives the stream by contract), and the
-        // call runs on the JS thread inside the loop drain.
+        // call runs on the OWNING JS thread inside its loop drain.
         let wake: extern "C" fn(u64) = unsafe { std::mem::transmute(ptr) };
         wake(0);
-    }));
+    });
+    let queued = if thread == 0 {
+        crate::bffi_event_loop::enqueue(job)
+    } else {
+        crate::bffi_event_loop::enqueue_to(thread, job)
+    };
     if queued.is_err() {
-        // The loop was stopped: the wake is undeliverable and the
-        // JS pull falls back to its bounded timer (documented).
+        // The loop was stopped, or the owning isolate is gone: the
+        // wake is undeliverable and the JS pull falls back to its
+        // bounded timer (documented).
     }
 }
+
+/// Without an event loop there is no wake delivery: the JS pull
+/// relies on its polling timer (the documented contract).
+#[cfg(not(feature = "event-loop"))]
+fn fire_wake(_entry: &StreamEntry) {}
 
 /// Registers a stream over `iter` and returns its handle. Items are
 /// the pre-encoded records; an `Err` item terminates the stream with
@@ -318,6 +369,8 @@ pub fn spawn(
             Arc::new(StreamEntry {
                 state: Mutex::new(StreamState::Items(iter)),
                 wake: Mutex::new(None),
+                #[cfg(feature = "event-loop")]
+                wake_thread: std::sync::atomic::AtomicU64::new(0),
             }),
         )
         .map_err(|_| StreamError::TableFull)
@@ -339,6 +392,8 @@ pub fn spawn_push<T: BffiStreamItem>() -> Result<(Handle, Ctx<T>), StreamError> 
             Arc::new(StreamEntry {
                 state: Mutex::new(StreamState::Buffer(PushState::new())),
                 wake: Mutex::new(None),
+                #[cfg(feature = "event-loop")]
+                wake_thread: std::sync::atomic::AtomicU64::new(0),
             }),
         )
         .map_err(|_| StreamError::TableFull)?;

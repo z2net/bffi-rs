@@ -53,9 +53,17 @@ struct NativeEntry {
 
 /// A registered JS-side callback (Rust -> JS direction): its declared
 /// signature plus the opaque pointer token handed over by the JS side.
+///
+/// `thread` is the numeric id of the JS thread that performed the
+/// binding (see `super::thread`): the JSCallback behind `ptr` belongs
+/// to THAT isolate, so every call through this entry must run there.
+/// `0` means the process was unbound at bind time (pure-Rust usage);
+/// deliveries for such an entry use the legacy untargeted queue.
 struct JsEntry {
     sig: CallbackSig,
     ptr: usize,
+    #[cfg(feature = "event-loop")]
+    thread: u64,
 }
 
 /// A read-only snapshot of a JS-side callback slot, returned by
@@ -386,7 +394,9 @@ impl<'a> JsCall<'a> {
 /// where calling a `bun:ffi` JSCallback pointer is synchronous).
 ///
 /// Check order: table lookup (dead handles land in
-/// [`CallbackError::InvalidHandle`]) -> signature
+/// [`CallbackError::InvalidHandle`]) -> isolate gate (a bound entry's
+/// `JSCallback` belongs to exactly one JS thread;
+/// [`CallbackError::WrongThread`] elsewhere) -> signature
 /// ([`CallbackError::SignatureMismatch`]) -> null pointer
 /// ([`CallbackError::NullPointer`]) -> the C-call matrix
 /// ([`CallbackError::UnsupportedSignature`]) -> the call itself.
@@ -395,6 +405,12 @@ fn invoke_js_entry(handle: Handle, args: &[Value]) -> Result<Value, CallbackErro
     let entry = Registry::global()
         .get_typed::<JsEntry>(handle)
         .ok_or(CallbackError::InvalidHandle(handle))?;
+    if entry.thread != 0 && entry.thread != super::thread::current_thread_id() {
+        // The trampoline belongs to another isolate: calling it from
+        // here would cross a JS-thread boundary (undefined behavior
+        // for bun:ffi JSCallbacks).
+        return Err(CallbackError::WrongThread);
+    }
     if !entry.sig.matches(args) {
         return Err(CallbackError::SignatureMismatch {
             expected: entry.sig.clone(),
@@ -586,15 +602,21 @@ pub fn invoke_wait(
 }
 
 /// The JS-bound half of [`invoke_wait`]: fail-fast validation on the
-/// calling thread, then the direct call (JS thread or unbound
-/// process) or the marshal job with the shared [`WaitSlot`].
+/// calling thread, then the direct call (the owning JS thread or an
+/// unbound process) or the marshal job with the shared [`WaitSlot`].
+///
+/// The marshal is TARGETED when the entry recorded its owning
+/// isolate: the job is queued on that thread's slot queue and never
+/// crosses an isolate boundary. Entries bound while the process was
+/// unbound (`thread == 0`, pure-Rust usage) keep the legacy
+/// untargeted delivery.
 #[cfg(feature = "event-loop")]
 fn invoke_js_entry_wait(
     handle: Handle,
     args: &[Value],
     timeout: Duration,
 ) -> Result<Value, CallbackError> {
-    {
+    let thread = {
         let entry = Registry::global()
             .get_typed::<JsEntry>(handle)
             .ok_or(CallbackError::InvalidHandle(handle))?;
@@ -605,19 +627,31 @@ fn invoke_js_entry_wait(
                 got: got_types(args),
             });
         }
-    }
+        entry.thread
+    };
     if ensure_js_thread().is_ok() {
         return invoke_js_entry(handle, args);
     }
     let slot = Arc::new(WaitSlot::default());
     let job_slot = Arc::clone(&slot);
     let job_args = args.to_vec();
-    crate::bffi_event_loop::enqueue(Box::new(move || {
-        // Fresh lookup: a revocation during the wait lands here, like
-        // the native path - no call through a dead slot.
-        job_slot.fill(invoke_js_entry(handle, &job_args));
-    }))
-    .map_err(|_| CallbackError::LoopStopped)?;
+    let queued = if thread == 0 {
+        crate::bffi_event_loop::enqueue(Box::new(move || {
+            // Fresh lookup: a revocation during the wait lands here, like
+            // the native path - no call through a dead slot.
+            job_slot.fill(invoke_js_entry(handle, &job_args));
+        }))
+    } else {
+        crate::bffi_event_loop::enqueue_to(
+            thread,
+            Box::new(move || {
+                // Fresh lookup: a revocation during the wait lands here,
+                // like the native path - no call through a dead slot.
+                job_slot.fill(invoke_js_entry(handle, &job_args));
+            }),
+        )
+    };
+    queued.map_err(|_| CallbackError::LoopStopped)?;
     slot.take_within(timeout)
 }
 
@@ -647,7 +681,15 @@ fn invoke_js_entry_wait(
 pub fn bind_js_callback(sig: CallbackSig, ptr: usize) -> Result<Handle, CallbackError> {
     tables()?;
     Registry::global()
-        .insert(JS_TAG, Arc::new(JsEntry { sig, ptr }))
+        .insert(
+            JS_TAG,
+            Arc::new(JsEntry {
+                sig,
+                ptr,
+                #[cfg(feature = "event-loop")]
+                thread: super::thread::binding_thread(),
+            }),
+        )
         .map_err(|_| {
             // `tables()` declared JS_TAG for `JsEntry` and the registry
             // has no undeclare, so `NotRegistered` is unreachable after

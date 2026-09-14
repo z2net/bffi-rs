@@ -53,11 +53,23 @@ pub(crate) struct TaskRecord {
     /// Set by `cancel`; the executor drops the future at the next
     /// poll boundary.
     pub cancel_requested: AtomicBool,
-    /// The attached `(resolve_ptr, reject_ptr)` pair, at most once.
-    resolvers: Mutex<Option<(usize, usize)>>,
+    /// The attached resolver pair, at most once.
+    resolvers: Mutex<Option<AttachedResolvers>>,
     /// Guards the one-shot delivery (whether a terminal outcome was
     /// already handed to a resolver pair).
     delivered: AtomicBool,
+}
+
+/// An attached `(resolve_ptr, reject_ptr)` pair plus the JS thread
+/// that attached it: the resolver trampolines belong to that
+/// isolate, so the delivery is targeted there. `thread == 0` means
+/// the process was unbound at attach time (pure-Rust usage) -
+/// legacy untargeted delivery.
+#[derive(Clone, Copy)]
+pub(crate) struct AttachedResolvers {
+    pub(crate) resolve: usize,
+    pub(crate) reject: usize,
+    pub(crate) thread: u64,
 }
 
 impl TaskRecord {
@@ -122,6 +134,11 @@ impl TaskRecord {
 
     /// Attaches the `(resolve_ptr, reject_ptr)` pair. A second attach
     /// is rejected with [`AttachError::AlreadyAttached`].
+    ///
+    /// The CURRENT thread is recorded with the pair: the resolver
+    /// trampolines belong to that JS isolate (the `#[bffi_async]`
+    /// caller attaches from its own JS thread), and the delivery is
+    /// targeted there.
     pub(crate) fn attach(&self, resolve: usize, reject: usize) -> Result<(), AttachError> {
         let mut resolvers = self
             .resolvers
@@ -130,12 +147,16 @@ impl TaskRecord {
         if resolvers.is_some() {
             return Err(AttachError::AlreadyAttached);
         }
-        *resolvers = Some((resolve, reject));
+        *resolvers = Some(AttachedResolvers {
+            resolve,
+            reject,
+            thread: crate::bffi_callback::binding_thread(),
+        });
         Ok(())
     }
 
-    /// The attached `(resolve_ptr, reject_ptr)` pair.
-    pub(crate) fn resolver_pair(&self) -> Option<(usize, usize)> {
+    /// The attached resolver pair, if any.
+    pub(crate) fn resolver_pair(&self) -> Option<AttachedResolvers> {
         *self
             .resolvers
             .lock()
@@ -251,7 +272,10 @@ mod tests {
     fn attach_then_terminal_state_is_visible_in_the_snapshot() {
         let task = fresh();
         task.attach(1, 2).expect("attach ok");
-        assert_eq!(task.resolver_pair(), Some((1, 2)));
+        // The test process never registers a JS thread, so the
+        // recorded owner is the legacy unbound sentinel.
+        let pair = task.resolver_pair().expect("attached");
+        assert_eq!((pair.resolve, pair.reject, pair.thread), (1, 2, 0));
         assert!(task.outcome_snapshot().is_none(), "still running");
 
         task.mark_completed(AsyncValue::I32(7));

@@ -18,6 +18,16 @@
 #   access to the @z2net scope. npm authentication follows the
 #   canonical pattern: actions/setup-node with registry-url writes
 #   the .npmrc, npm publish authenticates through NODE_AUTH_TOKEN.
+#
+# After all packages are published, the pipeline dispatches the CI of
+# z2net/bffi-examples - the examples consume the PUBLISHED packages,
+# so a green run there is the end-to-end confirmation of the release.
+# The dispatch needs a cross-repo token (the built-in GITHUB_TOKEN is
+# scoped to this repository only):
+#   Secrets -> Actions -> EXAMPLES_DISPATCH_TOKEN : a fine-grained
+#   PAT with "Actions: read and write" on z2net/bffi-examples.
+#   Without the secret the step skips gracefully (the release stays
+#   green; the e2e gate runs manually instead).
 name: release-npm
 
 on:
@@ -180,6 +190,31 @@ jobs:
           else
             npm publish --access public --provenance
           fi
+
+  # The end-to-end gate: the bffi-examples CI builds every example
+  # crate and runs its e2e suite against the packages that were JUST
+  # published above. A green run there confirms the release works for
+  # a real consumer installing from the registry.
+  notify-examples-e2e:
+    name: dispatch the bffi-examples e2e gate
+    needs: publish-bffi-cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch the bffi-examples CI
+        env:
+          GH_TOKEN: ${{ secrets.EXAMPLES_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "EXAMPLES_DISPATCH_TOKEN is not configured - skipping the automatic e2e gate."
+            echo "Set a fine-grained PAT (Actions: read and write on z2net/bffi-examples)"
+            echo "as a repository secret to enable it, or dispatch manually:"
+            echo "  gh workflow run ci --repo z2net/bffi-examples --ref main"
+            exit 0
+          fi
+          gh workflow run ci --repo z2net/bffi-examples --ref main
+          echo "bffi-examples CI dispatched - the examples are validating themselves"
+          echo "against the freshly published packages."
 
   publish-bffi-cli:
     name: publish @z2net/bffi-cli

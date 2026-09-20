@@ -15,7 +15,7 @@ Rust crate  ──cargo build──►  cdylib (.dll/.so/.dylib)
                               └──  dlopen ────►  typed Api object
 ```
 
-- **Bun only** (>= 1.4.0, enforced at import time - see
+- **Bun only** (>= 1.4.2, enforced at import time - see
   [Version gate](#version-gate)); no Node.js or Deno support.
 - **Zero runtime dependencies.** Everything is built on `bun:ffi`,
   `Bun.file`/`Bun.write`, `Bun.resolveSync` and standard Web APIs.
@@ -351,9 +351,9 @@ A published, installable reference:
 ## 11. The version gate
 
 `engines.bun` in package.json is advisory; the library ENFORCES
-`>= 1.4.0` at import: `assertBunVersion()` runs in the public entry
-and throws `@z2net/bffi requires Bun >= 1.4.0; found <version>`.
-The comparison is numeric (so `1.10.0` > `1.4.0`) and intentionally
+`>= 1.4.2` at import: `assertBunVersion()` runs in the public entry
+and throws `@z2net/bffi requires Bun >= 1.4.2; found <version>`.
+The comparison is numeric (so `1.10.0` > `1.4.2`) and intentionally
 avoids `Bun.semver` (which postdates the older runtimes the gate
 rejects). The CLI prints the same message and exits `2`.
 

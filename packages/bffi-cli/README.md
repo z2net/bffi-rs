@@ -7,7 +7,7 @@ pipeline. **The CLI is a thin wrapper** - every command delegates to
 the library; this document describes what each command actually does,
 the flags, and the exit-code contract.
 
-- **Bun only** (>= 1.4.0, enforced as the FIRST thing the binary does)
+- **Bun only** (>= 1.4.2, enforced as the FIRST thing the binary does)
 - single runtime dependency: `@z2net/bffi`
 - License: MIT ([LICENSE](./LICENSE))
 
@@ -32,7 +32,7 @@ of a bun-only tool).
 | `2` | input/environment failure | bad config, missing files, unsupported Bun, no cargo, HTTP/digest failures, unknown triples |
 
 The Bun version gate runs before ANY command: an outdated runtime
-prints `bffi requires Bun >= 1.4.0; found <version>` and exits `2` -
+prints `bffi requires Bun >= 1.4.2; found <version>` and exits `2` -
 the same numeric check `@z2net/bffi` enforces at import.
 
 ## Command reference
@@ -102,7 +102,7 @@ bffi doctor [--config <p>] [--root <d>]
 
 Everything `check` does, plus:
 
-- **bun runtime** - the numeric `>= 1.4.0` comparison;
+- **bun runtime** - the numeric `>= 1.4.2` comparison;
 - **cargo** - `Bun.which` FIRST (a missing binary fails fast with
   "not found in PATH" instead of hanging), then `cargo --version`
   through `Bun.spawnSync` with a 15-second timeout (a hung toolchain

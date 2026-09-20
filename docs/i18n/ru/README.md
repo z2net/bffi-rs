@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Bun](https://img.shields.io/badge/Bun-%3E%3D1.4.0-F472B6?logo=bun&logoColor=white)](https://bun.sh)
+[![Bun](https://img.shields.io/badge/Bun-%3E%3D1.4.2-F472B6?logo=bun&logoColor=white)](https://bun.sh)
 [![Rust](https://img.shields.io/badge/Rust-1.98.0-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-3DA639?logo=opensourceinitiative&logoColor=white)](https://github.com/z2net/bffi-rs/blob/main/LICENSE)
 [![GitHub Issues](https://img.shields.io/github/issues/z2net/bffi-rs)](https://github.com/z2net/bffi-rs/issues)
@@ -31,7 +31,7 @@
 
 ## Требования
 
-- [Bun](https://bun.sh) >= 1.4.0 (проверяется в рантайме `@z2net/bffi` и CLI `bffi`)
+- [Bun](https://bun.sh) >= 1.4.2 (проверяется в рантайме `@z2net/bffi` и CLI `bffi`)
 - Rust 1.98.0 (закреплён через `rust-toolchain.toml`; rustup установит его сам)
 - bash (для хука commit-msg; предустановлен на macOS/Linux, на Windows - Git Bash)
 

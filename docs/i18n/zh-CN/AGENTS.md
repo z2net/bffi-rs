@@ -45,7 +45,7 @@
    - 生产构建必须将 panic 转换为 JS `Error`。
 
 5. **最低 Bun 版本**
-   `1.4.0`
+   `1.4.2`
 
 6. **Rust / Cargo 版本**
    项目锁定为 **Cargo / Rust 1.98.0**。
@@ -205,7 +205,7 @@ chore: pin rust-toolchain to 1.98.0
 | ----------- | ----------------------------------------- |
 | 宏          | `#[bffi]`：shim（debug 直接 / release catch_unwind）+ bffi_meta_* 描述符 |
 | `#[bffi]` 返回值 | 原始类型/bigint 经 out-param;`String`/`Vec<u8>`/`CopiedBuf`(及 `Option`)作为缓冲区句柄;组合类型(records/enums/`Vec<T>`/`Vec<Vec<u8>>` 及其 `Option`)走 wire 句柄;`Result<T, E: Into<BffiError>>` -> 转换后错误的状态(`status_u32()`) |
-| 最低 Bun    | 1.4.0                                     |
+| 最低 Bun    | 1.4.2                                     |
 | Rust/Cargo  | 1.98.0                                    |
 | 句柄        | Generational Index + type-tag             |
 | 错误格式    | `BffiError` = 代码 + 消息 + 来源 + rich 槽;领域错误通过 `From` 无损转换 |

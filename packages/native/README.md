@@ -7,7 +7,7 @@ ships as its own npm package carrying the prebuilt cdylib.
 npm/Bun installs only the one matching the running platform
 through `optionalDependencies`.
 
-**Bun only** (>= 1.4.0).
+**Bun only** (>= 1.4.2).
 
 ## The package family
 

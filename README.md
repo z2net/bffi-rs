@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Bun](https://img.shields.io/badge/Bun-%3E%3D1.4.0-F472B6?logo=bun&logoColor=white)](https://bun.sh)
+[![Bun](https://img.shields.io/badge/Bun-%3E%3D1.4.2-F472B6?logo=bun&logoColor=white)](https://bun.sh)
 [![Rust](https://img.shields.io/badge/Rust-1.98.0-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-3DA639?logo=opensourceinitiative&logoColor=white)](https://github.com/z2net/bffi-rs/blob/main/LICENSE)
 [![GitHub Issues](https://img.shields.io/github/issues/z2net/bffi-rs)](https://github.com/z2net/bffi-rs/issues)
@@ -32,7 +32,7 @@ See [docs/DESIGN.md](https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md) 
 
 ## Requirements
 
-- [Bun](https://bun.sh) >= 1.4.0 (enforced at runtime by `@z2net/bffi` and the `bffi` CLI)
+- [Bun](https://bun.sh) >= 1.4.2 (enforced at runtime by `@z2net/bffi` and the `bffi` CLI)
 - Rust 1.98.0 (pinned via `rust-toolchain.toml`; rustup installs it automatically)
 - bash (for the commit-msg hook; preinstalled on macOS/Linux, Git Bash on Windows)
 

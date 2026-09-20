@@ -20,7 +20,7 @@ Please also read:
 ### Requirements
 
 - **Rust / Cargo 1.98.0** (pinned)
-- **Bun >= 1.4.0**
+- **Bun >= 1.4.2**
 - Git
 
 ```bash

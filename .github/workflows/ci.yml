@@ -30,15 +30,6 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # the wry example is a workspace member: on Linux it links
-      # webkit2gtk/gtk through pkg-config - the dev packages must be
-      # present before any cargo step (Windows/macOS need nothing)
-      - name: Install GTK/webkit dev packages (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
-
       - name: cargo fmt
         run: cargo fmt --check
 
@@ -82,20 +73,9 @@ jobs:
         with:
           bun-version: 1.4.2
 
-      # `bun run build` shells out to cargo for every example crate -
-      # install the pinned toolchain explicitly ONCE (a rustup
-      # auto-install mid-job races its own components and can fail
-      # with a "partially installed toolchain" conflict), and bring
-      # the GTK/webkit dev packages for the wry example on Linux.
-      - uses: dtolnay/rust-toolchain@1.98.0
-
-      - name: Install GTK/webkit dev packages (wry example)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
-
-      - uses: Swatinem/rust-cache@v2
-
+      # the unit-test suite is mock-based: lint, typecheck and
+      # `bun test packages` never invoke cargo, so no Rust toolchain
+      # is installed in this job
       - name: bun install
         run: bun install --frozen-lockfile
 

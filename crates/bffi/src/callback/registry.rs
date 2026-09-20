@@ -252,6 +252,7 @@ const JS_CALL_RETS: &[ValueType] = &[
     ValueType::U64,
     ValueType::F64,
     ValueType::Bool,
+    ValueType::Str,
     ValueType::Unit,
 ];
 
@@ -501,6 +502,24 @@ fn call_js_ptr(sig: &CallbackSig, ptr: usize, args: &[Value]) -> Result<Value, C
                         let call: extern "C" fn($($fty),*) -> f64 = unsafe { std::mem::transmute($ptr) };
                         Ok(Value::F64(call($($arg),*)))
                     }},
+                    (ValueType::Str, &[$(ValueType::$vt),*]) => {{
+                        // SAFETY: see the `Unit` arm.
+                        let call: extern "C" fn($($fty),*) -> *const std::os::raw::c_char = unsafe { std::mem::transmute($ptr) };
+                        let raw = call($($arg),*);
+                        if raw.is_null() {
+                            return Err(CallbackError::NullPointer);
+                        }
+                        // The cstring return is call-scoped (bun:ffi's
+                        // transcode buffer lives for the duration of
+                        // the call): clone the bytes out before the
+                        // call returns.
+                        // SAFETY: `raw` is non-null and NUL-terminated
+                        // for the duration of this call.
+                        let text = unsafe { std::ffi::CStr::from_ptr(raw) }
+                            .to_string_lossy()
+                            .into_owned();
+                        Ok(Value::Str(text))
+                    }},
                 )*
                 // Unreachable after `check_js_call_matrix`; kept total
                 // so the dispatch stays honest about its limits.
@@ -730,9 +749,9 @@ fn invoke_js_entry_wait(
 /// it: [`js_callback`] hands it back as part of the slot snapshot,
 /// and [`invoke_wait`]'s JS-bound dispatch CALLS it - on the JS
 /// thread, through the concrete `extern "C"` shape the stored
-/// [`CallbackSig`] declares (`i32`/`i64`/`f64`/`u8`/`cstring`
-/// parameters, `i32`/`i64`/`f64`/`u8`/`void` return; see
-/// [`check_js_call_matrix`]). A `ptr` of `0` is a legal opaque value
+/// [`CallbackSig`] declares (`i32`/`i64`/`u64`/`f64`/`u8`/`cstring`
+/// parameters, `i32`/`i64`/`u64`/`f64`/`u8`/`cstring`/`void` return;
+/// see [`check_js_call_matrix`]). A `ptr` of `0` is a legal opaque value
 /// in v1 - no validation is performed beyond the type; an invocation
 /// through such a handle reports [`CallbackError::NullPointer`].
 ///

@@ -63,8 +63,8 @@ pub enum CallbackError {
     InvalidCString,
     /// The signature of a JS-bound callback cannot cross the raw
     /// C call that `invoke_wait`'s dispatch performs (a `Bytes` or
-    /// `Wire` parameter, a `Str`/`Bytes`/`Wire` return, or more than
-    /// two parameters). Those types ride the buffered channels
+    /// `Wire` parameter or return, or more than two parameters).
+    /// Those types ride the buffered channels
     /// (`invoke`, async results) instead of the direct C call.
     UnsupportedSignature {
         /// The declared signature that cannot be called.

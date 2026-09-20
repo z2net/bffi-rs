@@ -182,9 +182,11 @@ kind and accepts handles from BOTH callback tables:
   `Bool` -> `u8` (bun:ffi's `bool` spelling), `Str` -> `cstring`
   (NUL-terminated UTF-8, the framework boundary-string convention);
   returns wrap back: `I32`/`I64`/`U64`/`F64` as-is, `Bool` from the
-  `u8`, `Unit` (the `void` return) as `Value::Unit`. v1 limits: at
-  most two parameters; a `Bytes` or `Wire` parameter and a
-  `Str`/`Bytes`/`Wire` return cannot cross the raw C call and fails
+  `u8`, `Str` from the `cstring` (copied out immediately - the
+  returned pointer is call-scoped), `Unit` (the `void` return) as
+  `Value::Unit`. v1 limits: at
+  most two parameters; a `Bytes` or `Wire` parameter or return
+  cannot cross the raw C call and fails
   fast with `CallbackError::UnsupportedSignature` (status `11`) -
   never with a timeout (they ride the buffered channels instead:
   `bffi_callback_invoke`, async results). The signature check runs

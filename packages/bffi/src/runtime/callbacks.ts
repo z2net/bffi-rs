@@ -27,7 +27,9 @@ import { registerDisposer } from "./dispose.ts";
 /**
  * A callback value type (the `bffi-callback` `ValueType` matrix).
  * `"u64"` is the exact unsigned carrier (a non-negative `bigint` in
- * JS); `"string"` crosses the direct C call as a `cstring` parameter.
+ * JS); `"string"` crosses the direct C call as a `cstring` in either
+ * direction (a returned pointer is call-scoped and copied out
+ * immediately).
  */
 export type CbType = "i32" | "i64" | "u64" | "f64" | "bool" | "string";
 

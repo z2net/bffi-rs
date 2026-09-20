@@ -67,6 +67,18 @@ extern "C" fn fake_js_mix(a: i32, b: u64) -> u64 {
     (a as u64).wrapping_add(b)
 }
 
+/// `() -> cstring`: a static NUL-terminated UTF-8 string (the shape a
+/// `bun:ffi` JSCallback with `returns: "cstring"` exposes).
+extern "C" fn fake_js_pong() -> *const std::os::raw::c_char {
+    c"pong".as_ptr()
+}
+
+/// `(cstring) -> cstring`: echoes the argument back (borrowed in, the
+/// returned pointer is only valid for the duration of the call).
+extern "C" fn fake_js_echo(text: *const std::os::raw::c_char) -> *const std::os::raw::c_char {
+    text
+}
+
 /// Serializes the queue-touching tests (see the module docs).
 static QUEUE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -444,6 +456,57 @@ fn invoke_wait_js_bound_calls_mixed_u64_pairs() {
 
     let result = worker.join().unwrap();
     assert_eq!(result, Ok(Value::U64(u64::MAX - 1)));
+}
+
+#[test]
+fn invoke_wait_js_bound_wraps_cstring_returns() {
+    let _guard = QUEUE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    bind_js_thread();
+
+    let handle = bind_js_callback(
+        CallbackSig::new(ValueType::Str, &[]),
+        fake_js_pong as extern "C" fn() -> *const std::os::raw::c_char as usize,
+    )
+    .expect("callback table has room");
+
+    let (worker, done) =
+        spawn_worker(move || bffi::invoke_wait(handle, &[], Duration::from_secs(10)));
+    pump_until(&done);
+
+    let result = worker.join().unwrap();
+    assert_eq!(result, Ok(Value::Str("pong".to_owned())));
+}
+
+#[test]
+fn invoke_wait_js_bound_copies_the_cstring_return_out() {
+    let _guard = QUEUE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    bind_js_thread();
+
+    // The echo stand-in returns its INPUT pointer: the call-scoped
+    // cstring the marshal carrier owns. The dispatch must clone the
+    // bytes before the call returns, when that buffer dies.
+    let handle = bind_js_callback(
+        CallbackSig::new(ValueType::Str, &[ValueType::Str]),
+        fake_js_echo as extern "C" fn(*const std::os::raw::c_char) -> *const std::os::raw::c_char
+            as usize,
+    )
+    .expect("callback table has room");
+
+    let (worker, done) = spawn_worker(move || {
+        bffi::invoke_wait(
+            handle,
+            &[Value::Str("héllo".to_owned())],
+            Duration::from_secs(10),
+        )
+    });
+    pump_until(&done);
+
+    let result = worker.join().unwrap();
+    assert_eq!(result, Ok(Value::Str("héllo".to_owned())));
 }
 
 #[test]

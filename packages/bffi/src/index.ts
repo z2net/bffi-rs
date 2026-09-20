@@ -23,6 +23,7 @@ export {
   TAG_BOOL,
   TAG_STR,
   TAG_BYTES,
+  TAG_U64,
   MAX_WIRE_DEPTH,
   MAX_WIRE_PAYLOAD,
   setMaxWirePayload,

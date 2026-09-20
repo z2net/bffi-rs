@@ -21,6 +21,8 @@ import {
   TAG_BOOL,
   TAG_I32,
   TAG_I64,
+  TAG_STR,
+  TAG_U64,
   type WireValue,
 } from "../src/index.ts";
 import type { FfiLib } from "../src/runtime/error.ts";
@@ -168,5 +170,21 @@ describe("callbacks over the mock ABI", () => {
 
     bound.revoke();
     expect(() => bound.revoke()).toThrow("bffi_callback_revoke failed: 4");
+  });
+
+  test("bindJsCallback records the extended u64 and string tags", () => {
+    const mock = makeCallbackMock();
+
+    const u64Bound = bindJsCallback(mock.lib, { ret: "u64", params: [] }, () => 1n);
+    expect(mock.jsBinds.get(u64Bound.handle)?.retTag).toBe(TAG_U64);
+    u64Bound.revoke();
+
+    const strBound = bindJsCallback(
+      mock.lib,
+      { ret: "string", params: ["string"] },
+      (s: CbValue) => `hi ${String(s)}`,
+    );
+    expect(mock.jsBinds.get(strBound.handle)?.retTag).toBe(TAG_STR);
+    strBound.revoke();
   });
 });

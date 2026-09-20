@@ -14,12 +14,11 @@
  *
  * Bun-only: module resolution goes through `Bun.resolveSync`
  * (a runtime built-in); path handling is pure string logic. The
- * integrity verification reads the platform package's manifest with
- * `node:fs`'s sync reader (implemented natively by Bun - this lookup
- * is synchronous by contract, so no async wrapping).
+ * integrity verification reads the platform package's manifest and
+ * binary through `Bun.file` - `resolvePlatformBinary` is therefore
+ * async (the integrity digest must be verified before the dlopen
+ * path is handed out, and Bun's native file readers are async).
  */
-
-import { readFileSync } from "node:fs";
 
 /** The napi-rs style triple of the RUNNING platform. Throws for
  * platforms bffi does not ship. */
@@ -108,10 +107,10 @@ function dirnameOf(path: string): string {
  * without a readable manifest) skips the check - legacy packages
  * stay loadable.
  */
-function assertIntegrity(pkgName: string, pkgDir: string, binaryPath: string): void {
+async function assertIntegrity(pkgName: string, pkgDir: string, binaryPath: string): Promise<void> {
   let expected: unknown;
   try {
-    const manifest = JSON.parse(readFileSync(`${pkgDir}/package.json`, "utf8")) as {
+    const manifest = (await Bun.file(`${pkgDir}/package.json`).json()) as {
       integrity?: unknown;
     };
     expected = manifest.integrity;
@@ -122,7 +121,7 @@ function assertIntegrity(pkgName: string, pkgDir: string, binaryPath: string): v
     return;
   }
   const hasher = new Bun.CryptoHasher("sha256");
-  hasher.update(readFileSync(binaryPath));
+  hasher.update(await Bun.file(binaryPath).bytes());
   const got = `sha256-${hasher.digest("hex")}`;
   if (got !== expected) {
     throw new Error(`integrity mismatch for ${pkgName}: expected ${expected}, got ${got}`);
@@ -141,10 +140,10 @@ function assertIntegrity(pkgName: string, pkgDir: string, binaryPath: string): v
  * Throws a clear error when the platform package is not installed
  * (optional dependencies can be skipped by package managers).
  */
-export function resolvePlatformBinary(
+export async function resolvePlatformBinary(
   base: string,
   options: ResolveOptions,
-): string {
+): Promise<string> {
   const triple = options.triple ?? tripleWithLibc(platformTriple(), options.libc ?? "auto");
   if (options.binary === undefined || options.binary.length === 0) {
     throw new Error(
@@ -169,6 +168,6 @@ export function resolvePlatformBinary(
   const { ext, prefix } = artifactExt(triple);
   const pkgDir = dirnameOf(entry);
   const binaryPath = `${pkgDir}/${prefix}${options.binary}.${ext}`;
-  assertIntegrity(packageName, pkgDir, binaryPath);
+  await assertIntegrity(packageName, pkgDir, binaryPath);
   return binaryPath;
 }

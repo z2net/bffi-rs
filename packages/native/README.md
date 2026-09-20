@@ -68,7 +68,7 @@ classic napi-rs-style distribution breakage.
 ```ts
 import { createNative } from "@z2net/bffi-native";
 
-const native = createNative(); // resolves + dlopens the platform binary
+const native = await createNative(); // resolves + dlopens the platform binary
 
 native.add(3, 4);        // => 7
 native.shout("bffi");    // => "HELLO bffi!"
@@ -80,7 +80,9 @@ What `createNative()` does:
 1. `resolvePlatformBinary("@z2net/bffi-native", { binary: "bffi_native" })`
    (from `@z2net/bffi`) resolves the installed platform package and
    returns the absolute binary path - the artifact convention makes
-   this a pure lookup, no package code has to execute;
+   this a pure lookup, no package code has to execute; the async
+   return carries the integrity verification (Bun's file readers are
+   async);
 2. `createApiFromJson(path)` (the generated
    [api.gen.ts](https://github.com/z2net/bffi-rs/blob/main/packages/native/src/api.gen.ts))
    dlopens the library and builds the typed API object.
@@ -89,7 +91,7 @@ An explicit library path overrides resolution (tests, locally built
 artifacts):
 
 ```ts
-const native = createNative("D:/path/to/bffi_native.dll");
+const native = await createNative("D:/path/to/bffi_native.dll");
 ```
 
 ## Rebuilding locally

@@ -51,11 +51,11 @@ describe("tripleWithLibc", () => {
 describe("resolvePlatformBinary", () => {
   // Expected values are built with the SAME join the implementation
   // uses, so the assertions are platform-separator agnostic.
-  test("resolves <base>-<triple> and appends the artifact convention", () => {
+  test("resolves <base>-<triple> and appends the artifact convention", async () => {
     let seenSpec = "";
     let seenFrom = "";
     const entry = "C:/proj/node_modules/@z2net/mylib-win32-x64-msvc/index.js";
-    const path = resolvePlatformBinary("@z2net/mylib", {
+    const path = await resolvePlatformBinary("@z2net/mylib", {
       triple: "win32-x64-msvc",
       binary: "bffi_mylib",
       from: "C:/proj",
@@ -70,9 +70,9 @@ describe("resolvePlatformBinary", () => {
     expect(path).toBe(expectedBinary(entry, "bffi_mylib.dll"));
   });
 
-  test("unix triples carry the lib prefix", () => {
+  test("unix triples carry the lib prefix", async () => {
     const entry = "/pkg/node_modules/@z2net/mylib-linux-x64-gnu/index.js";
-    const path = resolvePlatformBinary("@z2net/mylib", {
+    const path = await resolvePlatformBinary("@z2net/mylib", {
       triple: "linux-x64-gnu",
       binary: "bffi_mylib",
       resolveSync: () => entry,
@@ -80,9 +80,9 @@ describe("resolvePlatformBinary", () => {
     expect(path).toBe(expectedBinary(entry, "libbffi_mylib.so"));
   });
 
-  test("darwin triples use the dylib extension with the lib prefix", () => {
+  test("darwin triples use the dylib extension with the lib prefix", async () => {
     const entry = "/pkg/node_modules/@z2net/mylib-darwin-aarch64/index.js";
-    const path = resolvePlatformBinary("@z2net/mylib", {
+    const path = await resolvePlatformBinary("@z2net/mylib", {
       triple: "darwin-aarch64",
       binary: "bffi_mylib",
       resolveSync: () => entry,
@@ -90,8 +90,8 @@ describe("resolvePlatformBinary", () => {
     expect(path).toBe(expectedBinary(entry, "libbffi_mylib.dylib"));
   });
 
-  test("a missing platform package produces an actionable error", () => {
-    expect(() =>
+  test("a missing platform package produces an actionable error", async () => {
+    await expect(
       resolvePlatformBinary("@z2net/mylib", {
         triple: "linux-x64-gnu",
         binary: "bffi_mylib",
@@ -99,19 +99,19 @@ describe("resolvePlatformBinary", () => {
           throw new Error("MODULE_NOT_FOUND");
         },
       }),
-    ).toThrow(/@z2net\/mylib-linux-x64-gnu is not installed/);
+    ).rejects.toThrow(/@z2net\/mylib-linux-x64-gnu is not installed/);
   });
-  test("a missing binary option is rejected up front", () => {
+  test("a missing binary option is rejected up front", async () => {
     // The binary check runs BEFORE any resolution, so no default
     // resolver is consulted here. The option is required in the TS
     // types; the runtime guard covers untyped (JS) consumers.
     const untyped = resolvePlatformBinary as unknown as (
       base: string,
       options: Record<string, unknown>,
-    ) => string;
-    expect(() =>
+    ) => Promise<string>;
+    await expect(
       untyped("@z2net/mylib", { triple: "win32-x64-msvc" }),
-    ).toThrow(/options\.binary is required/);
+    ).rejects.toThrow(/options\.binary is required/);
   });
 });
 
@@ -127,7 +127,7 @@ describe("resolvePlatformBinary integrity", () => {
     return hasher.digest("hex");
   })();
 
-  const resolve = (): string =>
+  const resolve = async (): Promise<string> =>
     resolvePlatformBinary("@z2net/mylib", {
       triple: "win32-x64-msvc",
       binary: "bffi_mylib",
@@ -143,7 +143,7 @@ describe("resolvePlatformBinary integrity", () => {
     );
     // The implementation joins with "/", so normalize the fixture
     // path the same way for a separator-agnostic assertion.
-    expect(resolve()).toBe(BINARY.replaceAll("\\", "/"));
+    expect(await resolve()).toBe(BINARY.replaceAll("\\", "/"));
   });
 
   test("a mismatching integrity digest throws", async () => {
@@ -152,7 +152,7 @@ describe("resolvePlatformBinary integrity", () => {
       `${PKG_DIR}/package.json`,
       JSON.stringify({ integrity: `sha256-${"0".repeat(64)}` }),
     );
-    expect(() => resolve()).toThrow(
+    await expect(resolve()).rejects.toThrow(
       `integrity mismatch for @z2net/mylib-win32-x64-msvc: expected sha256-${"0".repeat(64)}, got sha256-${DIGEST}`,
     );
   });
@@ -163,12 +163,12 @@ describe("resolvePlatformBinary integrity", () => {
       `${PKG_DIR}/package.json`,
       JSON.stringify({ integrity: `sha256-${DIGEST}` }),
     );
-    expect(() => resolve()).toThrow(/integrity mismatch for @z2net\/mylib-win32-x64-msvc/);
+    await expect(resolve()).rejects.toThrow(/integrity mismatch for @z2net\/mylib-win32-x64-msvc/);
   });
 
   test("a package.json without integrity skips the check (legacy)", async () => {
     await Bun.write(`${PKG_DIR}/package.json`, JSON.stringify({ name: "@z2net/mylib-win32-x64-msvc" }));
-    expect(() => resolve()).not.toThrow();
+    await expect(resolve()).resolves.toBeDefined();
   });
 
   afterAll(async () => {

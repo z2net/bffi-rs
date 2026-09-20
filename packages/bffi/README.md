@@ -329,7 +329,7 @@ not break the install). Resolution:
 
 ```ts
 import { resolvePlatformBinary } from "@z2net/bffi";
-const path = resolvePlatformBinary("@scope/mylib", { binary: "bffi_mylib" });
+const path = await resolvePlatformBinary("@scope/mylib", { binary: "bffi_mylib" });
 // Bun.resolveSync("@scope/mylib-<triple>", from) -> entry's directory
 // -> <dir>/[lib]<binary>.<ext>                   (the ARTIFACT CONVENTION)
 ```

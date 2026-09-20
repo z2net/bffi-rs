@@ -147,6 +147,4 @@ async function main(): Promise<number> {
   return failed === 0 ? 0 : 1;
 }
 
-void main().then((code) => {
-  process.exitCode = code;
-});
+void main().then((code) => (process.exitCode = code));

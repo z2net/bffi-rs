@@ -1,38 +1,16 @@
 # ===== Rust =====
-/target/
-**/*/target/
-Cargo.lock
+# `target` at any depth: the root workspace target/ and any nested one.
+target/
 **/*.rs.bk
-*.pdb
+Cargo.lock
 
-# ===== Bun / Node / JS =====
+# ===== Bun / JS =====
 node_modules/
 .bun/
-dist/
-build/
 *.tsbuildinfo
-.turbo/
-.cache/
-coverage/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-store/
 # pattern-A platform packages are assembled artifacts (bffi pack)
 packages/native/platform/
-
-# ===== Generated =====
-*.d.ts.map
-generated/
-.bindings/
-*.so
-*.dylib
-*.dll
-*.a
-*.lib
-*.o
-*.obj
 
 # ===== OS =====
 .DS_Store
@@ -49,11 +27,8 @@ Desktop.ini
 *.swp
 *.swo
 *~
-.project
-.classpath
-.settings/
 
-# ===== VS Code (keep shared settings, ignore personal) =====
+# ===== VS Code (keep shared configs, ignore personal) =====
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
@@ -84,10 +59,7 @@ Desktop.ini
 .specs/
 .memory/
 .local/
-*.local.*
-.env.local
-.env.*.local
-.mimosa
+.mimosa/
 
 # ===== Secrets & env =====
 .env
@@ -103,16 +75,11 @@ credentials.json
 service-account*.json
 
 # ===== Test / temp =====
+# Test scaffolds create `tmp/` under their own package (check-doctor,
+# build): the whole tree stays out of git.
 tmp/
-temp/
 *.tmp
-*.temp
-.nyc_output/
 
-# ===== Misc =====
+# ===== Patch debris =====
 *.orig
 *.rej
-.direnv/
-.flake/
-shell.nix
-.pre-commit-config.yaml.bak

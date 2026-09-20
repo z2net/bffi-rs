@@ -11,7 +11,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { $ } from "bun";
 
-const ROOT = `${import.meta.dir}/tmp-build`;
+const ROOT = `${import.meta.dir}/tmp/build`;
 const BFFI_DIR = `${ROOT}/.bffi`;
 
 const VALID_CONFIG = {

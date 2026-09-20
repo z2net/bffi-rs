@@ -1,6 +1,6 @@
 {
   "name": "@z2net/bffi-native",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "The bffi-rs reference native module: prebuilt cdylibs for win32-x64/arm64, linux-x64/arm64 (glibc and musl) and darwin-x64/aarch64, loaded through the @z2net/bffi typed loader.",
   "license": "MIT",
   "repository": {
@@ -40,17 +40,17 @@
     "rust"
   ],
   "dependencies": {
-    "@z2net/bffi": "0.2.0"
+    "@z2net/bffi": "0.2.1"
   },
   "optionalDependencies": {
-    "@z2net/bffi-native-win32-x64-msvc": "0.2.0",
-    "@z2net/bffi-native-win32-arm64-msvc": "0.2.0",
-    "@z2net/bffi-native-linux-x64-gnu": "0.2.0",
-    "@z2net/bffi-native-linux-x64-musl": "0.2.0",
-    "@z2net/bffi-native-linux-arm64-gnu": "0.2.0",
-    "@z2net/bffi-native-linux-arm64-musl": "0.2.0",
-    "@z2net/bffi-native-darwin-aarch64": "0.2.0",
-    "@z2net/bffi-native-darwin-x64": "0.2.0"
+    "@z2net/bffi-native-win32-x64-msvc": "0.2.1",
+    "@z2net/bffi-native-win32-arm64-msvc": "0.2.1",
+    "@z2net/bffi-native-linux-x64-gnu": "0.2.1",
+    "@z2net/bffi-native-linux-x64-musl": "0.2.1",
+    "@z2net/bffi-native-linux-arm64-gnu": "0.2.1",
+    "@z2net/bffi-native-linux-arm64-musl": "0.2.1",
+    "@z2net/bffi-native-darwin-aarch64": "0.2.1",
+    "@z2net/bffi-native-darwin-x64": "0.2.1"
   },
   "publishConfig": {
     "access": "public",

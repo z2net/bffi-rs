@@ -5,6 +5,45 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 the versioning is [SemVer](https://semver.org/) (`0.x` may break at
 any minor).
 
+## [0.2.1] - 2026-09-20
+
+A documentation and release-infrastructure patch - no API changes. The
+crates.io and npm pages now render the corrected 0.2.0 documentation
+(the registry pages are frozen at publish time, so this release ships
+them).
+
+### Added
+
+- Benches for the callback round trip, the event-loop enqueue+pump
+  cycle and the SIMD UTF-8 validator (criterion, each with a
+  correctness gate) - joining the existing wire/handles benches.
+- The multi-isolate Worker e2e: two real Bun Workers bind JS-bound
+  callbacks, a plain native thread dispatches through `invoke_wait`,
+  and the targeted delivery must land on the owning worker.
+
+### Fixed
+
+- The registry-rendered READMEs: the `bffi` install snippet said
+  0.1.0; the macros README described the pre-merge expansion roots,
+  the internal P1/P2 phase jargon and a phantom `bffi-class` crate;
+  `bindJsCallback` documented the callback union without
+  `u64`/`string` and with a non-existent `cstring` spelling.
+- Every pre-existing oxlint warning resolved (including a real
+  `cause` preservation in `resolve.ts` and an honest `pumpUntil` loop
+  condition); `bun run lint` is now clean.
+- `release-npm` platform jobs install dependencies before running the
+  CLI (bun auto-install used to fetch the PREVIOUS published version);
+  the workspace root manifest carries the family version (the platform
+  packages assembled as 0.1.3 on the first 0.2.0 attempt).
+
+### Changed
+
+- `actions/checkout` and `actions/setup-node` bumped to v5 (the Node
+  20 deprecation warning fired on every run).
+- `release-compiled` triggers on the release event and attaches the
+  eight standalone executables to the release directly.
+- The examples repo commits its workspace `Cargo.lock` (reproducible
+  e2e gate builds) and consumes the 0.2.0 releases.
 ## [0.2.0] - 2026-09-20
 
 The callback type matrix is complete, the CLI ships as a standalone

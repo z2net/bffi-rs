@@ -132,7 +132,10 @@ crate next to `bffi_runtime_abi!()`) give the JS side access to BOTH
 callback directions without hand-written per-callback shims.
 Signatures and arguments are encoded in the framework-wide wire codec
 (`bffi_types::wire`; `Unit`=0, `I32`=1, `I64`=2, `F64`=3, `Bool`=4,
-`Str`=5, `Bytes`=6; a signature is the return tag byte followed by
+`Str`=5, `Bytes`=6, `U64`=10; tag `9` (`Wire`) appears ONLY in
+signature bytes, declaring "any record or sequence" - composite
+values themselves travel as their real `TAG_RECORD`/`TAG_SEQ`
+records; a signature is the return tag byte followed by
 one parameter tag byte each; arguments are concatenated
 `[tag][payload]` records, an empty list is the empty slice).
 
@@ -173,15 +176,19 @@ kind and accepts handles from BOTH callback tables:
   slot queue and never crosses an isolate boundary; a call attempt
   from a different registered isolate is rejected with
   `WrongThread` before touching the trampoline. The C matrix per
-  wire tag: `I32` -> `i32`, `I64` -> `i64`, `F64` -> `f64`,
+  wire tag: `I32` -> `i32`, `I64` -> `i64`, `U64` -> `u64` (the
+  exact unsigned carrier; a non-negative `I64` argument converts at
+  the same width), `F64` -> `f64`,
   `Bool` -> `u8` (bun:ffi's `bool` spelling), `Str` -> `cstring`
   (NUL-terminated UTF-8, the framework boundary-string convention);
-  returns wrap back: `I32`/`I64`/`F64` as-is, `Bool` from the `u8`,
-  `Unit` (the `void` return) as `Value::Unit`. v1 limits: at most
-  two parameters; a `Bytes` parameter or a `Str`/`Bytes` return
-  cannot cross the raw C call and fails fast with
-  `CallbackError::UnsupportedSignature` (status `11`) - never with
-  a timeout. The signature check runs on the CALLING thread first
+  returns wrap back: `I32`/`I64`/`U64`/`F64` as-is, `Bool` from the
+  `u8`, `Unit` (the `void` return) as `Value::Unit`. v1 limits: at
+  most two parameters; a `Bytes` or `Wire` parameter and a
+  `Str`/`Bytes`/`Wire` return cannot cross the raw C call and fails
+  fast with `CallbackError::UnsupportedSignature` (status `11`) -
+  never with a timeout (they ride the buffered channels instead:
+  `bffi_callback_invoke`, async results). The signature check runs
+  on the CALLING thread first
   (a mismatch fails fast, nothing queued); the job re-validates the
   lookup, so a revocation during the wait crosses the slot as
   `InvalidHandle`, and a null bound pointer surfaces as status `7`

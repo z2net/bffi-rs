@@ -41,3 +41,10 @@ path = "fuzz_targets/handle_ops.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "callback_args"
+path = "fuzz_targets/callback_args.rs"
+test = false
+doc = false
+bench = false

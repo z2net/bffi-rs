@@ -57,7 +57,7 @@
     "label": "Bun: Launch with debugger",
     "adapter": "JavaScript",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/bin/index.ts",
+    "program": "$ZED_WORKTREE_ROOT/packages/bffi-cli/bin/bffi.ts",
     "cwd": "$ZED_WORKTREE_ROOT",
     "stopOnEntry": false,
   },

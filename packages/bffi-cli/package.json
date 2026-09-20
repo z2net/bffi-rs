@@ -19,7 +19,7 @@
   "engines": {
     "bun": ">=1.4.0"
   },
-  "packageManager": "bun@1.4.0",
+  "packageManager": "bun@1.4.2",
   "type": "module",
   "bin": {
     "bffi": "./bin/bffi.ts"

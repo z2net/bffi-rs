@@ -113,14 +113,14 @@
   {
     "label": "bun: run entry",
     "command": "bun",
-    "args": ["run", "bin/index.ts"],
+    "args": ["run", "packages/bffi-cli/bin/bffi.ts"],
     "cwd": "$ZED_WORKTREE_ROOT",
     "tags": ["run"],
   },
   {
     "label": "bun: run with inspect",
     "command": "bun",
-    "args": ["--inspect-wait", "run", "bin/index.ts"],
+    "args": ["--inspect-wait", "run", "packages/bffi-cli/bin/bffi.ts"],
     "cwd": "$ZED_WORKTREE_ROOT",
     "tags": ["debug"],
   },

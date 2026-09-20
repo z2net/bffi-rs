@@ -2,7 +2,7 @@ name: fuzz
 
 # Weekly libFuzzer smoke runs over the safety-critical byte-level
 # surfaces of the bffi facade (wire codec, UTF-8 validator, handle
-# tables).
+# tables, callback argument decoder).
 #
 # Deliberately SEPARATE from ci.yml and not wired into it: cargo-fuzz
 # needs a nightly toolchain, while the repository workspace is pinned
@@ -57,6 +57,10 @@ jobs:
       - name: fuzz handle_ops (handle table / ObjectWrap op program)
         working-directory: fuzz
         run: cargo fuzz run handle_ops -- -max_total_time=120
+
+      - name: fuzz callback_args (callback argument decoder)
+        working-directory: fuzz
+        run: cargo fuzz run callback_args -- -max_total_time=120
 
       - name: Upload crash artifacts
         if: failure()

@@ -58,3 +58,15 @@ harness = false
 [[bench]]
 name = "handles_bench"
 harness = false
+
+[[bench]]
+name = "callback_bench"
+harness = false
+
+[[bench]]
+name = "event_loop_bench"
+harness = false
+
+[[bench]]
+name = "utf8_bench"
+harness = false

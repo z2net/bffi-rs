@@ -60,7 +60,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up the pinned Rust toolchain
         run: rustup toolchain install
@@ -117,7 +117,7 @@ jobs:
 
       # Canonical npm authentication: setup-node + registry-url writes
       # the .npmrc, NODE_AUTH_TOKEN authenticates the publish.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22.x"
           registry-url: "https://registry.npmjs.org"
@@ -146,9 +146,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22.x"
           registry-url: "https://registry.npmjs.org"
@@ -176,9 +176,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22.x"
           registry-url: "https://registry.npmjs.org"
@@ -231,9 +231,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22.x"
           registry-url: "https://registry.npmjs.org"

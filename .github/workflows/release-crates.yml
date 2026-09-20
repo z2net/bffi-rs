@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up the pinned Rust toolchain
         run: rustup toolchain install
@@ -44,7 +44,7 @@ jobs:
           set -e
           echo "$out"
           if [ $code -ne 0 ] && echo "$out" | grep -q "already exists"; then
-            echo "bffi-macros 0.1.0 is already published - skipping."
+            echo "bffi-macros is already published at this version - skipping."
             exit 0
           fi
           exit $code
@@ -63,7 +63,7 @@ jobs:
           set -e
           echo "$out"
           if [ $code -ne 0 ] && echo "$out" | grep -q "already exists"; then
-            echo "bffi 0.1.1 is already published - skipping."
+            echo "bffi is already published at this version - skipping."
             exit 0
           fi
           exit $code

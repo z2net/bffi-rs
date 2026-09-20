@@ -27,6 +27,36 @@ import {
 } from "../src/index.ts";
 import type { FfiLib } from "../src/runtime/error.ts";
 
+/** Mock-side wire encoder: a `WireValue` into the transient buffer
+ * bytes, mirroring the Rust `bffi_callback::abi` encoding for the
+ * primitive kinds the mock exercises. */
+const encode = (value: WireValue): Uint8Array => {
+  const bytes: number[] = [];
+  if (value === undefined) {
+    bytes.push(0);
+  } else if (typeof value === "number") {
+    bytes.push(TAG_I32);
+    const view = new DataView(new ArrayBuffer(4));
+    view.setInt32(0, value, true);
+    for (let i = 0; i < 4; i++) {
+      bytes.push(view.getUint8(i));
+    }
+  } else if (typeof value === "bigint") {
+    bytes.push(TAG_I64);
+    const view = new DataView(new ArrayBuffer(8));
+    view.setBigInt64(0, value, true);
+    for (let i = 0; i < 8; i++) {
+      bytes.push(view.getUint8(i));
+    }
+  } else if (typeof value === "boolean") {
+    bytes.push(TAG_BOOL, value ? 1 : 0);
+  } else {
+    // Strings/bytes/composites are outside the ValueType matrix.
+    throw new Error("mock: unsupported callback value kind");
+  }
+  return new Uint8Array(bytes);
+};
+
 /** Builds the mock native side: a JS re-implementation of the four
  * callback exports with the same status contract. */
 function makeCallbackMock() {
@@ -35,33 +65,6 @@ function makeCallbackMock() {
   const buffers: { bytes: Uint8Array; pointer: number }[] = [];
   const pending: { args?: WireValue[] } = {};
   let nextHandle = 100n;
-
-  const encode = (value: WireValue): Uint8Array => {
-    const bytes: number[] = [];
-    if (value === undefined) {
-      bytes.push(0);
-    } else if (typeof value === "number") {
-      bytes.push(TAG_I32);
-      const view = new DataView(new ArrayBuffer(4));
-      view.setInt32(0, value, true);
-      for (let i = 0; i < 4; i++) {
-        bytes.push(view.getUint8(i));
-      }
-    } else if (typeof value === "bigint") {
-      bytes.push(TAG_I64);
-      const view = new DataView(new ArrayBuffer(8));
-      view.setBigInt64(0, value, true);
-      for (let i = 0; i < 8; i++) {
-        bytes.push(view.getUint8(i));
-      }
-    } else if (typeof value === "boolean") {
-      bytes.push(TAG_BOOL, value ? 1 : 0);
-    } else {
-      // Strings/bytes/composites are outside the ValueType matrix.
-      throw new Error("mock: unsupported callback value kind");
-    }
-    return new Uint8Array(bytes);
-  };
 
   const store = (bytes: Uint8Array): bigint => {
     buffers.length = 0;

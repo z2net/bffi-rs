@@ -27,7 +27,7 @@ describe("dispose registry", () => {
     expect(set.size).toBe(2);
 
     makeLibDisposer(lib)[Symbol.dispose]();
-    expect(ran.sort()).toEqual(["a", "b"]);
+    expect(ran.toSorted()).toEqual(["a", "b"]);
 
     // Idempotent: the set was cleared.
     makeLibDisposer(lib)[Symbol.dispose]();
@@ -39,9 +39,6 @@ describe("dispose registry", () => {
   test("a closer removed from the set is not run", () => {
     const lib = fakeLib();
     let ran = 0;
-    const { registerDisposer } = require("../src/runtime/dispose.ts") as {
-      registerDisposer(lib: FfiLib, closer: () => void): Set<() => void>;
-    };
     const closer = (): void => {
       ran += 1;
     };

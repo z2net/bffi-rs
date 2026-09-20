@@ -107,15 +107,15 @@ export function wrapTask<T extends WireValue = WireValue>(
  * the task settles without loop delivery.
  */
 export async function pumpUntil<T>(promise: Promise<T>, pump: () => unknown): Promise<T> {
-  let settled = false;
-  const mark = (): void => {
-    settled = true;
-  };
-  void promise.then(mark, mark);
-  // `settled` flips from inside the promise callbacks above, which
-  // the lint cannot see (no-unmodified-loop-condition).
-  // oxlint-disable-next-line eslint(no-unmodified-loop-condition)
-  while (!settled) {
+  const settled = Promise.withResolvers<true>();
+  void promise.then(() => settled.resolve(true), () => settled.resolve(true));
+  for (;;) {
+    // The loop condition is the race result itself: the settle signal
+    // (fired from the promise callbacks above) versus a fresh tick,
+    // so no iteration ever reads a flag the loop cannot see.
+    if (await Promise.race([settled.promise, Promise.resolve(false)])) {
+      break;
+    }
     pump();
     // Yield a macrotask so the delivery job the pump just executed
     // (which settles the promise through its JSCallback) runs.

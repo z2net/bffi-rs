@@ -52,6 +52,17 @@ export function makeLibDisposer(lib: FfiLib): { [Symbol.dispose](): void } {
   };
 }
 
+/** The memory-pressure listener: a synchronous GC pass drives the
+ * registry finalizers. Captures nothing, so it lives at module scope
+ * and `process.off` always receives the exact reference `process.on`
+ * got. */
+const memoryPressureListener = (level: "warning" | "critical"): void => {
+  void level;
+  // A synchronous collection runs the registry finalizers: native
+  // handles behind unreachable wrappers are released now.
+  Bun.gc(true);
+};
+
 /**
  * Installs the Bun 1.4 memory-pressure hook: when the OS signals low
  * memory (`process.on("memoryPressure")`), a synchronous GC pass
@@ -64,15 +75,9 @@ export function installMemoryPressureGC(): () => void {
     return () => {};
   }
   installed = true;
-  const listener = (level: "warning" | "critical"): void => {
-    void level;
-    // A synchronous collection runs the registry finalizers: native
-    // handles behind unreachable wrappers are released now.
-    Bun.gc(true);
-  };
-  process.on("memoryPressure", listener);
+  process.on("memoryPressure", memoryPressureListener);
   return () => {
-    process.off("memoryPressure", listener);
+    process.off("memoryPressure", memoryPressureListener);
     installed = false;
   };
 }

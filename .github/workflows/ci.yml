@@ -55,12 +55,22 @@ jobs:
 
       # minimal feature slices must compile: the facade re-exports are
       # feature-gated, and this step keeps them from rotting (one OS,
-      # checks only - no new matrix entries)
+      # checks only - no new matrix entries). Every leaf slice gets its
+      # own check; the compound slices (class, macros+async) keep their
+      # historical spellings.
       - name: cargo check bffi (feature slices)
         if: matrix.os == 'ubuntu-latest'
         run: |
           cargo check -p bffi --no-default-features
           cargo check -p bffi --no-default-features --features core
+          cargo check -p bffi --no-default-features --features types
+          cargo check -p bffi --no-default-features --features error
+          cargo check -p bffi --no-default-features --features dts
+          cargo check -p bffi --no-default-features --features object
+          cargo check -p bffi --no-default-features --features build
+          cargo check -p bffi --no-default-features --features callback
+          cargo check -p bffi --no-default-features --features event-loop
+          cargo check -p bffi --no-default-features --features stream
           cargo check -p bffi --no-default-features --features class
           cargo check -p bffi --no-default-features --features macros,async
 

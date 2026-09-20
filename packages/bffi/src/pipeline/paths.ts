@@ -1,10 +1,8 @@
 /**
- * `.bffi` working-directory constants plus the path/file-URL
- * helpers.
+ * `.bffi` working-directory constants plus the path helpers.
  *
- * Bun-only: the file URL comes from the runtime built-in
- * `Bun.pathToFileURL`, and path joining is the pure-string
- * [`joinOut`] - no `node:` module imports anywhere in the package.
+ * Path joining is the pure-string [`joinOut`] - no `node:` module
+ * imports anywhere in the package.
  */
 
 /** The `.bffi` working directory name (relative). */
@@ -13,10 +11,19 @@ export const BFFI_DIR = ".bffi";
 /** The config file name inside `.bffi`. */
 export const CONFIG_FILE = "bffi.json";
 
-/** A `file://` URL for an absolute path (dynamic `import()` on
- * Windows requires the URL form). */
-export function fileUrl(path: string): string {
-  return Bun.pathToFileURL(path).href;
+/** The project root of an explicit config file path: the directory
+ * HOLDING the `.bffi/` segment, or - when the path carries no
+ * `.bffi/` segment - the config file's own directory. The single
+ * implementation shared by the pipeline and the CLI commands (the
+ * duplicated inline versions drifted: one sliced `slice(0, -1)` on a
+ * path without the segment). */
+export function rootFromConfigPath(configPath: string): string {
+  const normalized = configPath.replaceAll("\\", "/");
+  const cut = normalized.lastIndexOf(`/${BFFI_DIR}/`);
+  if (cut > 0) {
+    return normalized.slice(0, cut);
+  }
+  return normalized.slice(0, normalized.lastIndexOf("/"));
 }
 
 /** Joins `root` with every part of `parts` in order. Each part is

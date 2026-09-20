@@ -1,7 +1,7 @@
 /** `bffi check [--config <p>] [--root <d>]`: validates the project
  * WITHOUT building - config, loader JSON, generated file, artifact
  * presence. Exit 0 when everything passes, 2 otherwise. */
-import { findProjectRoot } from "@z2net/bffi";
+import { findProjectRoot, rootFromConfigPath } from "@z2net/bffi";
 import { flagString, parseArgs } from "../args.ts";
 import { runProjectChecks, type CheckResult } from "../checks.ts";
 import { EXIT, writeOut } from "../output.ts";
@@ -24,7 +24,7 @@ export async function check(argv: string[]): Promise<number> {
 
   const resolved =
     config !== undefined
-      ? config.slice(0, config.replaceAll("\\", "/").lastIndexOf("/.bffi/"))
+      ? rootFromConfigPath(config)
       : (await findProjectRoot(rootFlag)) ?? "";
   if (resolved.length === 0) {
     writeOut("FAIL  config (.bffi/bffi.json) - not found (walked up from the working directory)");

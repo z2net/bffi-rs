@@ -135,23 +135,6 @@ export const TS_NAMES: ReadonlySet<string> = new Set([
   "Promise<Uint8Array>",
 ]);
 
-/** Whether `ts` names a module composite (a record/enum table entry,
- * optionally as an array or `| null` form). */
-export function isNamedTs(
-  ts: string,
-  json: Pick<ModuleJson, "records" | "enums">,
-): boolean {
-  const stripped = ts.endsWith(" | null") ? ts.slice(0, -" | null".length) : ts;
-  const name = stripped.endsWith("[]") ? stripped.slice(0, -2) : stripped;
-  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) {
-    return false;
-  }
-  return (
-    (json.records ?? []).some((record) => record.name === name)
-    || (json.enums ?? []).some((enumeration) => enumeration.name === name)
-  );
-}
-
 export interface ParamJson {
   name: string;
   ts: TsName;

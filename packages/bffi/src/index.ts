@@ -14,7 +14,7 @@ export {
   type FfiLib,
   type FfiSymbol,
 } from "./runtime/index.ts";
-export { makeReadBuffer, makeFreeBuffer, decodeUtf8 } from "./runtime/index.ts";
+export { makeReadBuffer, decodeUtf8 } from "./runtime/index.ts";
 export {
   TAG_UNIT,
   TAG_I32,
@@ -49,7 +49,7 @@ export {
   type RetJson,
   type TsName,
 } from "./loader/index.ts";
-export { pumpUntil, wrapTask, wrapStream, streamItemTs, streamToWeb } from "./runtime/index.ts";
+export { pumpUntil, wrapTask, wrapStream, streamItemTs } from "./runtime/index.ts";
 export {
   disposeLib,
   installMemoryPressureGC,
@@ -94,7 +94,7 @@ export {
 } from "./loader/index.ts";
 export {
   joinOut,
-  fileUrl,
+  rootFromConfigPath,
   BFFI_DIR,
   CONFIG_FILE,
 } from "./pipeline/index.ts";

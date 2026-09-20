@@ -31,11 +31,6 @@ export function makeReadBuffer(lib: FfiLib): (handle: bigint) => Uint8Array {
   };
 }
 
-/** Releases a transient-buffer handle; returns the raw status code. */
-export function makeFreeBuffer(lib: FfiLib): (handle: bigint) => number {
-  return (handle: bigint) => Number(sym(lib, "bffi_types_free")(handle));
-}
-
 /** The shared UTF-8 decoder of the runtime (buffer string returns). */
 const decoder = new TextDecoder();
 

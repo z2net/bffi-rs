@@ -22,7 +22,7 @@ import {
 } from "./config.ts";
 import { buildCrate } from "./build.ts";
 import { DEFAULT_RUNTIME, renderModule } from "../codegen/generate.ts";
-import { BFFI_DIR, joinOut } from "./paths.ts";
+import { BFFI_DIR, joinOut, rootFromConfigPath } from "./paths.ts";
 import { validateModule } from "../codegen/schema.ts";
 import { createApi } from "../loader/api.ts";
 
@@ -49,12 +49,7 @@ export interface BffiOptions {
  * directory upward. */
 async function locateRoot(options: BffiOptions): Promise<string> {
   if (options.config !== undefined) {
-    const normalized = options.config.replaceAll("\\", "/");
-    const cut = normalized.lastIndexOf("/.bffi/");
-    if (cut > 0) {
-      return normalized.slice(0, cut);
-    }
-    return normalized.slice(0, normalized.lastIndexOf("/"));
+    return rootFromConfigPath(options.config);
   }
   const found = await findProjectRoot();
   if (found === undefined) {

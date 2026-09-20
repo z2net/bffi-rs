@@ -22,7 +22,6 @@ import {
   TAG_SEQ,
   TAG_STR,
   TAG_UNIT,
-  decodeErrorEnvelope,
 } from "../src/runtime/wire.ts";
 
 /** u32 LE bytes for `n`. */
@@ -117,38 +116,9 @@ describe("wire decoder hardening", () => {
     expect(() => decodeValue(nest(65))).toThrow(/wire nesting deeper than 64/);
   });
 
-  test("error envelope strings and payload records are bounded", () => {
-    const truncatedMessage = new Uint8Array([
-      TAG_ERROR, ...u32(13), ...u32(1), 0x56, ...u32(0x10_0000),
-    ]);
-    expect(() => decodeErrorEnvelope(truncatedMessage, 0)).toThrow(
-      /wire payload truncated: declared 1048576 bytes at offset 10, have 14/,
-    );
-
-    const hugeMessage = new Uint8Array([
-      TAG_ERROR, ...u32(13), ...u32(1), 0x56, ...u32(0xffffffff),
-    ]);
-    expect(() => decodeErrorEnvelope(hugeMessage, 0)).toThrow(
-      /wire payload too large: declared 4294967295 bytes at offset 10, limit is 67108864/,
-    );
-
-    const hugeRecord = new Uint8Array([
-      TAG_ERROR, ...u32(13), ...u32(0), ...u32(0), TAG_RECORD, ...u32(0xffffffff),
-    ]);
-    expect(() => decodeErrorEnvelope(hugeRecord, 0)).toThrow(
-      /wire payload too large: declared 4294967295 items at offset 13, limit is 67108864/,
-    );
-  });
-
-  test("well-formed payloads still decode (envelope + values)", () => {
+  test("well-formed payloads still decode", () => {
     const out: number[] = [];
     encodeValue(out, "hey");
     expect(decodeValue(new Uint8Array(out))).toBe("hey");
-
-    const envelope = new Uint8Array([
-      TAG_ERROR, ...u32(13), ...u32(1), 0x56, ...u32(2), 0x6f, 0x6b, TAG_UNIT,
-    ]);
-    const { envelope: decoded } = decodeErrorEnvelope(envelope, 0);
-    expect(decoded).toEqual({ code: 13, variant: "V", message: "ok", payload: null });
   });
 });

@@ -69,13 +69,3 @@ export function flagString(args: ParsedArgs, ...names: string[]): string | undef
 export function flagBool(args: ParsedArgs, ...names: string[]): boolean {
   return names.some((name) => args.flags[name] === true);
 }
-
-/** Requires the i-th positional; a missing one throws a usage error
- * message the caller prints. */
-export function requirePositional(args: ParsedArgs, index: number, what: string): string {
-  const value = args.positionals[index];
-  if (value === undefined) {
-    throw new Error(`missing argument: ${what}`);
-  }
-  return value;
-}

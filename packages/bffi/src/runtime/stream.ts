@@ -181,27 +181,6 @@ export function wrapStream<T = unknown>(
   return iterator;
 }
 
-/**
- * Adapts a bffi stream iterator into a native `ReadableStream`
- * (Bun 1.4 native streams pipeline with CompressionStream and
- * friends). Cancelling the reader releases the native stream early.
- */
-export function streamToWeb<T>(iterator: AsyncIterableIterator<T>): ReadableStream<T> {
-  return new ReadableStream<T>({
-    async pull(controller) {
-      const { done, value } = await iterator.next();
-      if (done) {
-        controller.close();
-        return;
-      }
-      controller.enqueue(value);
-    },
-    cancel(): void {
-      void iterator.return?.();
-    },
-  });
-}
-
 /** Extracts the item type from an `AsyncIterableIterator<T>` ts
  * name (also the Result form `...<T | Error>`); `null` when the
  * name is not a stream type. */

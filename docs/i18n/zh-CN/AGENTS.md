@@ -18,11 +18,11 @@
 - 仅面向 **Bun**(无 Node.js / Deno 兼容性);
 - **不**依赖 Node-API;
 - 使用 `bun:ffi` 和一层薄的 C ABI 层;
-- 自**底向上**由小型 crate 构建而成。
+- 以**自底向上的模块栈**组织(基础模块在前,门面在后),置于一个小型的三 crate 工作区中。
 
 首要目标:FFI 边界的安全性、清晰的所有权、良好的 DX 以及长期可维护性。
 
-在进行架构更改之前,请先阅读 `DESIGN.md`。
+在进行架构更改之前,请先阅读 `docs/DESIGN.md`。
 
 ---
 
@@ -52,7 +52,7 @@
    未经明确决策和 CI 更新,不得提升版本。
 
 7. **仓库中不得包含机密信息**
-   任何位于 `.grok`、`.claude`、`.codex`、`.opencode`、`.hermes`、`.mcp`、`.env` 下的内容,以及密钥、令牌等,都必须排除在 git 之外(参见 `.gitignore`)。
+   任何位于 `.grok`、`.claude`、`.codex`、`.opencode`、`.zcode`、`.hermes`、`.mcp`、`.mimosa`、`.env` 下的内容,以及密钥、令牌等,都必须排除在 git 之外(参见 `.gitignore`)。
 
 8. **许可证**
    MIT。在适当之处保留 SPDX 头部声明。
@@ -63,49 +63,54 @@
 
 ```
 bffi-rs/
-├── AGENT.md                    # this file
+├── AGENTS.md                    # this file
 ├── README.md
 ├── LICENSE
 ├── SECURITY.md
 ├── CONTACT.md
-├── Cargo.toml                  # workspace
+├── CHANGELOG.md
+├── Cargo.toml                  # workspace (3 members)
+├── deny.toml                   # cargo-deny / cargo-audit policy (CI supply-chain job)
 ├── rust-toolchain.toml         # pinned 1.98.0
 ├── package.json                # Bun workspace / scripts
+├── bun.lock
 ├── tsconfig.json
 ├── .oxlintrc.json              # linter config
 ├── lefthook.yml                # git hooks (lint, fmt, commit-msg)
+├── .gitattributes              # golden-file diff policy
 ├── .gitignore
 ├── .github/
 │   ├── ISSUE_TEMPLATE/
 │   ├── PULL_REQUEST_TEMPLATE.md
-│   └── workflows/              # CI (ci.yml) + native release (release-native.yml)
+│   └── workflows/              # ci, fuzz, bench, release-native, release-crates, release-npm
 ├── crates/
-│   ├── bffi-core/               # foundation (handles, catch_unwind, ...)
-│   ├── bffi-types/              # type conversion
-│   ├── bffi-error/
-│   ├── bffi-object/
-│   ├── bffi-callback/
-│   ├── bffi-class/
-│   ├── bffi-dts/                # TypeScript .d.ts generation
-│   ├── bffi-macros/
-│   ├── bffi-macro-support/      # shared macro internals (kinds, classify, codegen)
-│   ├── bffi-event-loop/
-│   ├── bffi-async/              # futures as JS Promises
-│   ├── bffi-build/
-│   ├── bffi-native/             # reference cdylib (runtime ABI; -> @z2net/bffi-native packages)
-│   └── bffi/                    # public facade
+│   ├── bffi/                    # the runtime stack as layered modules (core, types, error,
+│   │                            #   object, callback, dts, build, event_loop, async, stream)
+│   │                            #   + the public facade; CALLING-CONVENTION.md lives here
+│   ├── bffi-macros/             # all proc-macros: #[bffi], #[bffi_async], #[bffi_stream],
+│   │                            #   #[bffi_class]/#[bffi_impl], derives (BffiRecord/BffiEnum/
+│   │                            #   BffiError); src/support/ = shared macro internals,
+│   │                            #   src/class/ = the class family
+│   └── bffi-native/             # reference cdylib (runtime ABI; -> @z2net/bffi-native packages)
+├── fuzz/                        # self-contained cargo-fuzz workspace (nightly; fuzz.yml)
 ├── docs/
 │   ├── DESIGN.md                # architecture & decisions
+│   ├── BINDING-GUI.md           # GUI / event-driven libraries guide
 │   ├── CONTRIBUTING.md
-│   └── CODE_OF_CONDUCT.md
+│   ├── CODE_OF_CONDUCT.md
+│   └── i18n/                    # ru / zh-CN translations (README, DESIGN, AGENTS, ...)
 ├── packages/                      # JS-side: bffi (@z2net/bffi), bffi-cli, native
-└── scripts/
+└── scripts/                      # commit-msg hook + bench driver
 
 示例位于独立仓库:https://github.com/z2net/bffi-examples
 (每个示例都是独立的 crate,同时也是一个针对已发布包的 e2e 测试套件)。
 ```
 
-新的 crate 必须遵循 `bffi-*` 命名方案,并被添加到 workspace 中。
+运行时栈保持为小型、单一职责的模块(`bffi_core`、`bffi_types`、
+`bffi_error`、`bffi_object`、`bffi_callback`、`bffi_dts`、`bffi_build`、
+`bffi_event_loop`、`bffi_async`、`bffi_stream`),位于 `crates/bffi/src/`
+内,自底向上分层,顶层是 `bffi` 门面。新 crate 必须遵循 `bffi-*` 命名
+方案并加入 workspace;新模块必须保持自底向上的分层及其 feature 门控。
 
 ---
 
@@ -178,7 +183,7 @@ chore: pin rust-toolchain to 1.98.0
 2. 优先采用小的、易于审查的 diff。
 3. 绝不提交机密信息、个人 AI 配置或 `.env` 文件。
 4. 不引入 Node/Deno 兼容性。
-5. 保持自底向上的架构(小型 crate → `bffi-rs`)。
+5. 保持分层架构:基础模块在前,`bffi` 门面在后;不得绕过 `crates/bffi` 内部的 `bffi_*` 模块边界。
 6. 保持安全模型(默认复制、显式的 unsafe 零拷贝、代际句柄)。
 7. 在可能的情况下运行 `cargo fmt`、`cargo clippy` 和测试。
 8. 如果某项决策发生变化,更新 `DESIGN.md` 或相关文档。
@@ -215,7 +220,7 @@ chore: pin rust-toolchain to 1.98.0
 | 类型化错误(B3) | `#[derive(BffiError)]`:用户码 0x1000-0xFFFF 替换状态 13;variant = JS `e.name`,字段 = `e.payload`(TAG_RECORD);rich 访问器 best-effort;loader JSON 的 `errors` 表 |
 | 流(B2)  | `#[bffi_stream]`:pull(`impl Iterator<Item = T> + Send`)或 push(`async fn(ctx: Ctx<T>, ...)`,bounded 256,背压)作为 JS `AsyncIterableIterator<T>`;`bffi_stream_next(handle, max)`(TAG_SEQ 缓冲,0 = 结束;14 = Pending 重试)+ `bffi_stream_drop` + `bffi_stream_set_wake`(经 event-loop 的唤醒 trampoline,best-effort);标签 0x0600;push 生产者交付 `Result` 项(`ctx.push(Ok/Err)`) |
 | 类宏 | 基于 ObjectWrap（标签 0x0100-0x01FF）的 `#[bffi_class]`/`#[bffi_impl]`:pub 原始字段的 getter、`&self` 方法、自动生成 release;元数据拆分为 bffi_meta_<name> + bffi_meta_<name>_impl::CLASS;E005-E008 |
-| 宏支持 | `bffi-macro-support`:为 proc-macro crate(bffi-macros、bffi-class)提供共享的模型/映射/代码生成;工具 crate - 无运行时代码、无 ABI |
+| 宏支持 | `bffi-macros::support`:proc-macro crate 的共享模型/映射/代码生成内部模块(无运行时代码、无 ABI) |
 | Panic(生产) | 转换为 JS Error                           |
 | Panic(开发) | 可以中止                                  |
 | 兼容性      | 仅支持 Bun                                |
@@ -226,9 +231,9 @@ chore: pin rust-toolchain to 1.98.0
 | 回调 | `register`/`revoke` + `bind_js_callback`;标签 0x0200-0x0201;错误线程 - 拒绝;`invoke_wait` 经 marshal 把回调投递到 JS 线程,可从任意原生线程调用,必带超时(`Timeout = 15`)- 两张表(原生闭包与 JS-bound 句柄) |
 | 构建 ABI | 运行时导出（`bffi_error_*`、`bffi_buffer` 对、`bffi_types_free`）通过在用户 crate 中展开的 `bffi_runtime_abi!()` 生成；标签 0x0400-0x04FF；规范契约：bffi/CALLING-CONVENTION.md |
 | 描述符 ABI | `FunctionDef`/`MethodDef` 携带 `AbiSig`（精确 C 宽度 + out 槽）；`FieldDef` 携带 getter 的 `export_name` + out；`ClassDef` 携带 `release_export` |
-| Wire 编解码 | `bffi_types::wire`:统一的 `[tag][payload]` 表,服务异步负载与回调签名/参数/结果 |
+| Wire 编解码 | `bffi::types::wire`:统一的 `[tag][payload]` 表,服务异步负载与回调签名/参数/结果 |
 | 回调 ABI | 通过 `bffi_callback_abi!()`（`bffi_callback_set_thread`/`_bind`/`_invoke`/`_revoke`）在用户 crate 生成的泛型导出；wire 编码；CALLING-CONVENTION.md §9 |
-| Loader JSON | `bffi_build::loader_json`:由聚合的 `ModuleDef` 渲染的规范、确定性 JSON 模式 v1 |
+| Loader JSON | `bffi::build::loader_json`:由聚合的 `ModuleDef` 渲染的规范、确定性 JSON 模式 v1 |
 | TS API 代码生成 | `bun bffi codegen <json> -o <ts>`:确定性渲染器;内嵌模式字面量;`ApiOf<>` 基于 `packages/bffi` 推导精确类型 |
 | 平台分发 | napi-rs 风格的平台 npm 包(optionalDependencies 精确锁版本、`bffi pack`、resolvePlatformBinary) |
 | 参考原生模块 | `crates/bffi-native` -> `@z2net/bffi-native` 平台包家族 |

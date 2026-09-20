@@ -1,6 +1,6 @@
 {
   "name": "@z2net/bffi-cli",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "Bun-only CLI for bffi-rs: init, build, check, doctor, codegen, pack, fetch. A thin wrapper over @z2net/bffi (all pipeline logic lives there).",
   "license": "MIT",
   "repository": {
@@ -41,7 +41,7 @@
     "npm"
   ],
   "dependencies": {
-    "@z2net/bffi": "^0.1.0"
+    "@z2net/bffi": "0.2.0"
   },
   "publishConfig": {
     "access": "public",

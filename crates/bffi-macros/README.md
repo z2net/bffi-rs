@@ -31,6 +31,12 @@ those) and `Result<T, E>` through the err channel. Class declarations (`#[bffi_c
 | [`src/errors.rs`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/errors.rs)   | `MacroDiagnostic` - stable `E001`..`E004` compile-time codes     |
 | [`src/shim.rs`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/shim.rs)       | `extern "C"` shim codegen under the boundary policy              |
 | [`src/meta.rs`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/meta.rs)       | Const `bffi_meta_*` descriptor codegen for `bffi-dts`            |
+| [`src/class/`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/class)         | The `#[bffi_class]` / `#[bffi_impl]` family - constructor, `&self` methods, field getters, generated `release` (`E005`..`E008`) |
+| [`src/async_fn.rs`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/async_fn.rs) | `#[bffi_async]` - async fn parsing and the spawn shim returning a task handle |
+| [`src/stream_fn.rs`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/stream_fn.rs) | `#[bffi_stream]` - pull/push stream model and spawn shims (stream-table registration) |
+| [`src/derive.rs`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/derive.rs)   | `#[derive(BffiRecord)]` / `#[derive(BffiEnum)]` - descriptors and wire encode/decode pairs |
+| [`src/error_derive.rs`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/error_derive.rs) | `#[derive(BffiError)]` - typed domain error enums with stable user codes (`E013`..`E014`) |
+| [`src/support/`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/support)     | Shared internals - `kind`, `classify`, `codegen`, `diagnostics`, `abi`, `paths`, `util` |
 
 ---
 

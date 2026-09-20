@@ -60,7 +60,5 @@ export async function main(argv: string[]): Promise<number> {
 
 // The direct-run entry point (tests import `main` instead).
 if (import.meta.main) {
-  void main(process.argv.slice(2)).then((code) => {
-    process.exitCode = code;
-  });
+  void main(process.argv.slice(2)).then((code) => (process.exitCode = code));
 }

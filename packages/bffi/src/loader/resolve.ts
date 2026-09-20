@@ -163,6 +163,7 @@ export async function resolvePlatformBinary(
       `native package ${packageName} is not installed or failed to resolve ` +
         `(${String(error)}). Install it explicitly or pass an absolute ` +
         `library path instead.`,
+      { cause: error },
     );
   }
   const { ext, prefix } = artifactExt(triple);

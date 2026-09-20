@@ -35,7 +35,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The repo pins the toolchain via rust-toolchain.toml (1.98.0);
       # rustup resolves it on the first cargo invocation.

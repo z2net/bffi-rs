@@ -274,6 +274,14 @@ The generic callback ABI (four exports the crate expands via
 | `invokeCallback(lib, handle, ...args)` | JS -> Rust | wire-encodes `args`, invokes the native body registered by the crate, decodes the result |
 | `revokeCallback(lib, handle)` | both | terminal revocation - a dead handle never resurrects; the second revoke throws |
 
+As of 0.2.0 the value kinds crossing the callback boundary are
+`i32`, `i64`, `u64` (exact, a non-negative `bigint` in JS even above
+`i64::MAX`), `f64`, `bool` and `string` (a `cstring` both directions;
+a returned pointer is call-scoped and copied out immediately).
+Composites (arrays, records) cannot cross the raw JSCallback call -
+`invokeCallback` carries them through the wire channel in the
+JS -> Rust direction.
+
 Subtleties worth knowing:
 
 - **The thread gate.** While the process is UNBOUND every caller is

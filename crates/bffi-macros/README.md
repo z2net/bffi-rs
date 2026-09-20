@@ -9,14 +9,16 @@ the FFI boundary: no hand-written shims, no drift between the Rust signature and
 ABI (see [docs/DESIGN.md](https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md)).
 
 The macro runs in the USER crate: the expansion lands wherever `#[bffi]` is used and names
-`::bffi_core`, `::bffi_types`, and `::bffi_dts` in that crate's namespace. There is no Bun e2e
-testing in P1 - the generated shims are tested directly from Rust.
+the `bffi` facade (`::bffi::{core,types,dts,object,build,r#async}`) in that crate's
+namespace (`crate = "direct"` selects the pre-merge roots). The generated shims are
+tested directly from Rust - no Bun is needed for this crate's test suite.
 
-**Status:** P2 complete - `#[bffi]` on a plain `fn` emits the function unchanged, an
+**Status:** complete for the documented surface - `#[bffi]` on a plain `fn` emits the function unchanged, an
 `extern "C"` shim under the boundary policy, and a const `bffi-dts` descriptor; returns
 cover primitives, bigints, buffer payloads (`String`/`Vec<u8>`/`CopiedBuf`, `Option` of
-those) and `Result<T, E>` through the err channel. Class declarations arrive with
-`bffi-class`.
+those) and `Result<T, E>` through the err channel. Class declarations (`#[bffi_class]` /
+`#[bffi_impl]`) and `#[bffi_async]` / `#[bffi_stream]` live in this same crate
+(`src/class/`, `async_fn`, `stream_fn`).
 
 ---
 
@@ -227,8 +229,8 @@ let rendered = bffi::dts::render(&ModuleDef { name: "math", fns: FNS });
 // export function greet(who: string): number;
 ```
 
-At runtime the JS side links `bffi_add` / `bffi_greet` through `bun:ffi` - the loader
-is `bffi-build` (P2).
+At runtime the JS side links `bffi_add` / `bffi_greet` through `bun:ffi` - the typed
+loader ships with the `bffi` crate and the `@z2net/bffi` npm package.
 
 ## Testing
 

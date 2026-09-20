@@ -13,7 +13,7 @@ from TypeScript. One dependency, feature-gated:
 
 ```toml
 [dependencies]
-bffi = "0.2.0"
+bffi = "0.2"
 ```
 
 ## Quick start

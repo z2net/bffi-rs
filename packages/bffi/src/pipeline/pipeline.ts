@@ -21,7 +21,7 @@ import {
   type BffiConfig,
 } from "./config.ts";
 import { buildCrate } from "./build.ts";
-import { generateApiGen } from "../codegen/generate.ts";
+import { DEFAULT_RUNTIME, renderModule } from "../codegen/generate.ts";
 import { BFFI_DIR, joinOut } from "./paths.ts";
 import { validateModule } from "../codegen/schema.ts";
 import { createApi } from "../loader/api.ts";
@@ -165,4 +165,33 @@ export async function bffiBuild(options: {
   const config = await loadConfigFile(root);
   applyDebug(config.debug);
   await buildCrate(config, { root, cargo: options.cargo, skip: options.skip });
+}
+
+/**
+ * The generation step of the pipeline: reads the loader JSON working
+ * file (`.bffi/<files[0]>`, default `bffi.api.json`) and writes the
+ * generated module (`.bffi/<generate.outFile>`, default
+ * `api.gen.ts`) under `projectRoot`.
+ *
+ * The write is skipped when the content is byte-identical, so a
+ * re-run does not invalidate module caches.
+ *
+ * Returns the absolute path of the generated file.
+ */
+async function generateApiGen(config: BffiConfig, projectRoot: string): Promise<string> {
+  const dir = `${projectRoot.replace(/\/+$/, "")}/${BFFI_DIR}`;
+  const inputName = config.files[0] ?? "bffi.api.json";
+  const outName = config.generate?.outFile ?? "api.gen.ts";
+
+  const raw = JSON.parse(await Bun.file(`${dir}/${inputName}`).text());
+  const rendered = renderModule(raw, DEFAULT_RUNTIME);
+
+  const outPath = `${dir}/${outName}`;
+  const existing = await Bun.file(outPath).exists()
+    ? await Bun.file(outPath).text()
+    : undefined;
+  if (existing !== rendered) {
+    await Bun.write(outPath, rendered);
+  }
+  return outPath;
 }

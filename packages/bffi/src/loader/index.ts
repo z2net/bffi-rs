@@ -4,6 +4,7 @@
  * resolution for platform-package distribution.
  */
 export * from "./loader.ts";
+export * from "./api-types.ts";
 export * from "./api.ts";
 export * from "./composite.ts";
 export * from "./resolve.ts";

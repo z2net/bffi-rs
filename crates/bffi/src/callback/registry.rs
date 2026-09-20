@@ -861,16 +861,20 @@ mod tests {
 
     use super::{bind_js_callback, invoke, invoke_wait, js_callback, register, revoke};
     use crate::bffi_callback::error::CallbackError;
+    use crate::bffi_callback::process_state_lock;
     use crate::bffi_callback::value::{CallbackSig, Value, ValueType};
     use std::time::Duration;
 
     // NOTE (test isolation): these tests run in the lib test binary
-    // where the process stays UNBOUND - they must never call
-    // `set_js_thread` (see `src/thread.rs`). `ensure_js_thread` admits
-    // every caller while unbound, so `invoke` needs no binding ritual,
-    // and `invoke_wait` takes the direct path even on a spawned
-    // thread. The JS-bound dispatch therefore runs on the calling
-    // thread - the stand-in fns below play the JSCallback pointers.
+    // where the process must stay UNBOUND for their whole body - they
+    // never call `set_js_thread` themselves, and every one of them
+    // holds the crate-wide `process_state_lock` so a parallel test
+    // thread's binding keeper (thread.rs, event_loop.rs) cannot flip
+    // the global gate mid-test. While unbound, `ensure_js_thread`
+    // admits every caller, so `invoke` needs no binding ritual, and
+    // `invoke_wait` takes the direct path even on a spawned thread.
+    // The JS-bound dispatch therefore runs on the calling thread - the
+    // stand-in fns below play the JSCallback pointers.
 
     /// Stand-in for a `bun:ffi` JSCallback pointer: `(i32) -> i32`.
     extern "C" fn fake_js_double(x: i32) -> i32 {
@@ -895,6 +899,7 @@ mod tests {
 
     #[test]
     fn register_invoke_returns_the_closure_result() {
+        let _guard = process_state_lock();
         let sig = CallbackSig::new(ValueType::I32, &[ValueType::I32, ValueType::I32]);
         let handle = register(
             sig,
@@ -916,6 +921,7 @@ mod tests {
 
     #[test]
     fn invoke_after_revoke_is_invalid_handle() {
+        let _guard = process_state_lock();
         let sig = CallbackSig::new(ValueType::Bool, &[]);
         let handle = register(sig, Arc::new(|_| Value::Bool(true))).unwrap();
 
@@ -928,6 +934,7 @@ mod tests {
 
     #[test]
     fn revoke_returns_true_exactly_once() {
+        let _guard = process_state_lock();
         let sig = CallbackSig::new(ValueType::Bool, &[]);
         let handle = register(sig, Arc::new(|_| Value::Bool(false))).unwrap();
 
@@ -937,6 +944,7 @@ mod tests {
 
     #[test]
     fn invoke_rejects_wrong_arity_and_types() {
+        let _guard = process_state_lock();
         let expected = CallbackSig::new(ValueType::I32, &[ValueType::I32, ValueType::I32]);
         let handle = register(expected.clone(), Arc::new(|_| Value::I32(0))).unwrap();
 
@@ -961,6 +969,7 @@ mod tests {
 
     #[test]
     fn invoke_rejects_null_handle() {
+        let _guard = process_state_lock();
         assert_eq!(
             invoke(Handle::NULL, &[]).err(),
             Some(CallbackError::InvalidHandle(Handle::NULL))
@@ -970,6 +979,7 @@ mod tests {
 
     #[test]
     fn invoke_wait_delegates_to_the_sync_invoke_in_an_unbound_process() {
+        let _guard = process_state_lock();
         // NOTE: this lib test binary stays UNBOUND (see the module
         // note below), so `invoke_wait` takes the direct path even on
         // a spawned thread - no marshal job may reach the loop.
@@ -997,6 +1007,7 @@ mod tests {
 
     #[test]
     fn invoke_wait_js_bound_calls_the_bound_pointer() {
+        let _guard = process_state_lock();
         // The dispatch transmutes the bound pointer to the declared C
         // shape; a plain extern "C" fn stands in for the JSCallback.
         let handle = bind_js_callback(
@@ -1019,6 +1030,7 @@ mod tests {
 
     #[test]
     fn invoke_wait_js_bound_crosses_strings_as_cstrings() {
+        let _guard = process_state_lock();
         let handle = bind_js_callback(
             CallbackSig::new(ValueType::I32, &[ValueType::Str]),
             fake_js_len as extern "C" fn(*const c_char) -> i32 as usize,
@@ -1031,6 +1043,7 @@ mod tests {
 
     #[test]
     fn invoke_wait_js_bound_null_pointer_is_rejected() {
+        let _guard = process_state_lock();
         let handle = bind_js_callback(CallbackSig::new(ValueType::Bool, &[]), 0).unwrap();
         assert_eq!(
             invoke_wait(handle, &[], Duration::ZERO).err(),
@@ -1040,6 +1053,7 @@ mod tests {
 
     #[test]
     fn invoke_wait_js_bound_rejects_uncalleble_signatures_early() {
+        let _guard = process_state_lock();
         // `Bytes` parameters have no C spelling in the dispatch.
         let handle = bind_js_callback(
             CallbackSig::new(ValueType::Unit, &[ValueType::Bytes]),
@@ -1056,6 +1070,7 @@ mod tests {
 
     #[test]
     fn invoke_wait_js_bound_rejects_wrong_typing_without_a_queue() {
+        let _guard = process_state_lock();
         let handle = bind_js_callback(CallbackSig::new(ValueType::Bool, &[]), 0).unwrap();
         // The mismatch is detected on the CALLING thread - no timeout
         // wait, no marshal job.
@@ -1071,6 +1086,7 @@ mod tests {
 
     #[test]
     fn bind_then_js_callback_returns_the_slot() {
+        let _guard = process_state_lock();
         let sig = CallbackSig::new(ValueType::Bool, &[ValueType::I32]);
         let ptr = 0xdead_beef_usize;
         let handle = bind_js_callback(sig, ptr).unwrap();
@@ -1085,6 +1101,7 @@ mod tests {
 
     #[test]
     fn js_callback_after_revoke_is_invalid_handle() {
+        let _guard = process_state_lock();
         let sig = CallbackSig::new(ValueType::Bool, &[]);
         let handle = bind_js_callback(sig, 0).unwrap();
 
@@ -1097,6 +1114,7 @@ mod tests {
 
     #[test]
     fn revoke_removes_js_slots_through_the_same_entry_point() {
+        let _guard = process_state_lock();
         let native = register(
             CallbackSig::new(ValueType::Bool, &[]),
             Arc::new(|_| Value::Bool(true)),
@@ -1112,6 +1130,7 @@ mod tests {
 
     #[test]
     fn revoke_ignores_handles_outside_callback_tags() {
+        let _guard = process_state_lock();
         const FOREIGN: TypeTag = TypeTag(0x8100);
 
         Registry::global().declare::<u32>(FOREIGN).unwrap();

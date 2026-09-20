@@ -68,6 +68,8 @@ pub use value::{CallbackSig, Value, ValueType};
 // thread's identity to route targeted deliveries; the stream and
 // async slices record the owning isolate at registration time); not
 // part of the public facade.
+#[cfg(test)]
+pub(crate) use thread::process_state_lock;
 #[cfg(feature = "event-loop")]
 pub(crate) use thread::{
     binding_thread, current_thread_id, end_wait, is_js_thread, try_begin_wait,

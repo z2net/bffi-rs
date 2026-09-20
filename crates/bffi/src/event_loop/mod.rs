@@ -430,9 +430,22 @@ mod tests {
     /// queues, so concurrent enqueue-drain cycles would race.
     static QUEUE_LOCK: Mutex<()> = Mutex::new(());
 
+    /// The queue lock PLUS the crate-wide JS-thread-state lock: the
+    /// targeted-delivery tests below keep a registered JS thread alive
+    /// (the process is BOUND while they run), and parallel tests in
+    /// other modules must never observe that window.
+    fn queue_guard() -> (
+        std::sync::MutexGuard<'static, ()>,
+        std::sync::MutexGuard<'static, ()>,
+    ) {
+        let process = crate::bffi_callback::process_state_lock();
+        let queue = QUEUE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        (process, queue)
+    }
+
     #[test]
     fn pump_drains_the_queue_without_blocking() {
-        let _guard = QUEUE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _guard = queue_guard();
 
         // Phase 1: three queued jobs, one non-blocking drain.
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -465,14 +478,14 @@ mod tests {
 
     #[test]
     fn pump_and_pending_report_an_empty_queue() {
-        let _guard = QUEUE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _guard = queue_guard();
         assert_eq!(pump(), 0);
         assert_eq!(pending(), 0);
     }
 
     #[test]
     fn targeted_delivery_reaches_only_the_target_slot() {
-        let _guard = QUEUE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _guard = queue_guard();
 
         static HITS: AtomicUsize = AtomicUsize::new(0);
         // Register a stand-in JS thread that stays alive and drains
@@ -507,14 +520,14 @@ mod tests {
 
     #[test]
     fn targeted_delivery_to_an_unknown_thread_fails() {
-        let _guard = QUEUE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _guard = queue_guard();
         let result = enqueue_to(9_999_999, Box::new(|| {}));
         assert_eq!(result, Err(EventLoopError::NotRunning));
     }
 
     #[test]
     fn unregistered_runners_never_see_targeted_jobs() {
-        let _guard = QUEUE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _guard = queue_guard();
 
         static RAN: AtomicUsize = AtomicUsize::new(0);
         // A registered stand-in that keeps its slot open until the

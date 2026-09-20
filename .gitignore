@@ -6,6 +6,9 @@ Cargo.lock
 
 # ===== Bun / JS =====
 node_modules/
+# bun caches its cross-compile runtimes in the working directory
+.bun-cache/
+
 .bun/
 *.tsbuildinfo
 *.log

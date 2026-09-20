@@ -168,6 +168,43 @@ nothing is written). Default output directory: `target/bffi`.
 The handler is named `fetchCmd` so it never shadows the global
 `fetch` it uses.
 
+## Standalone executable
+
+`bffi` can be built as a **self-contained executable**: the bundled
+CLI plus an embedded Bun runtime and a bytecode cache in one binary -
+no installed Bun (or Node) is needed to run it on the target machine.
+
+Build locally from the repo root:
+
+```sh
+bun run compile:cli              # current host target only (default)
+bun scripts/compile-cli.ts --all # every shipped target
+```
+
+Output lands in `target/compiled/bffi-<triple>[.exe]` (gitignored),
+one executable per bun compile target: `windows-x64`,
+`windows-arm64`, `linux-x64`, `linux-x64-musl`, `linux-arm64`,
+`linux-arm64-musl`, `darwin-x64`, `darwin-aarch64`. Building requires
+Bun >= 1.4.2; older local runtimes print a SKIP message and build
+nothing (bytecode cross-compilation needs 1.4.1+, the repo floor is
+1.4.2).
+
+Bytecode note: `--bytecode` requires bun 1.4.1+, and the bytecode
+formats are identical across platforms - a cross-compiled executable
+carries the same bytecode cache as a native build, so cross
+compilation costs nothing at first run.
+
+CI: the `release-compiled` workflow (manual, `workflow_dispatch`)
+compiles every target on one ubuntu runner and uploads the
+executables as build artifacts. Attaching them to the `v`-tag GitHub
+release is a maintainer step (or future automation).
+
+Smoke caveat: only the host-target executable can be executed where
+it is built. The CI job compiles all targets but runs none of them;
+locally, `bun run compile:cli` (host-only) plus a quick
+`target/compiled/bffi-<host-triple> --help` is the smoke test -
+cross targets stay unverified until they are run on their platform.
+
 ## Architecture notes
 
 - `bin/bffi.ts` only routes: the Bun gate, a command table, try/catch

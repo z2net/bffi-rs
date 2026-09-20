@@ -77,6 +77,15 @@ jobs:
         with:
           bun-version: "1.4.2"
 
+      # The `bffi pack` step runs the CLI, which imports `@z2net/bffi`.
+      # Without an install, bun's auto-install would fetch the LATEST
+      # PUBLISHED version from the registry - the PREVIOUS release
+      # (0.2.0 is published by this very run). The lockfile resolves
+      # `@z2net/bffi` to the WORKSPACE package, so the CLI runs the
+      # sources being released.
+      - name: bun install
+        run: bun install --frozen-lockfile
+
       - name: Build the release cdylib
         shell: bash
         env:

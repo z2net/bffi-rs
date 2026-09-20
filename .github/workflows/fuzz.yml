@@ -25,7 +25,7 @@ jobs:
   libfuzzer:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Nightly is required by cargo-fuzz (-Zsanitizer). Installed with
       # plain rustup commands - the repository's rust-toolchain.toml

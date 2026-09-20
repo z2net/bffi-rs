@@ -12,12 +12,15 @@
 #   executables cannot be executed by this job (linux-x64 is the only
 #   artifact the runner could even try), so nothing is run here.
 #
-# Artifacts are uploaded as build artifacts; attaching them to the
-# v-tag GitHub release is done by the maintainer (or a future
-# automation step).
+# Artifacts are uploaded as build artifacts. When the run is the
+# release event (a published GitHub release), the executables are ALSO
+# attached to that release directly (gh release upload) - the
+# standalone binaries ship with the release, no manual step.
 name: release-compiled
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -29,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The repo floor is bun 1.4.2 (bytecode cross-compile 1.4.1+);
       # the CLI itself numerically gates >= 1.4.2 before any command.
@@ -49,3 +52,12 @@ jobs:
           name: bffi-compiled
           path: target/compiled/bffi-*
           if-no-files-found: error
+
+      # On the release event the binaries are attached to THAT release
+      # directly (the release implies the v* tag). Manual dispatches
+      # keep artifacts-only.
+      - name: Attach the executables to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" target/compiled/bffi-* --clobber

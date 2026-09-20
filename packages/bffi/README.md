@@ -390,7 +390,8 @@ rejects). The CLI prints the same message and exits `2`.
 src/
 ├── index.ts      the 1:1 re-export of all barrels + the version gate
 ├── runtime/      wire codec, error drain, buffers, wrapTask/pumpUntil,
-│                 callback helpers, version gate     -> "@z2net/bffi/runtime"
+│                 callback helpers, streams, dispose, version gate
+│                                                       -> "@z2net/bffi/runtime"
 ├── loader/       schema types, buildDeclarations, createApi/ApiOf,
 │                 platform resolution               -> "@z2net/bffi/loader"
 ├── pipeline/     config v1, cargo build step, bffi() orchestrator

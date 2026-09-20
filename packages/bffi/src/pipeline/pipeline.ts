@@ -8,7 +8,7 @@
  * const api: Api = await bffi(); // build -> json -> gen -> resolve -> dlopen
  * ```
  *
- * `bffiBuild()` / `bffiGenerate()` / `bffiLoad()` expose individual
+ * `bffiBuild()` / `bffiGenerate()` expose individual
  * pipeline steps for CI and scripts.
  */
 import {

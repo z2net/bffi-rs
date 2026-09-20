@@ -154,8 +154,8 @@ documentation and examples.
 
 ## Minimum Bun version
 
-The TypeScript side requires Bun >= 1.4.0 (enforced at runtime).
+The TypeScript side requires Bun >= 1.4.2 (enforced at runtime).
 
 ## License
 
-MIT - see [LICENSE](./LICENSE).
+MIT - see [LICENSE](https://github.com/z2net/bffi-rs/blob/main/LICENSE).

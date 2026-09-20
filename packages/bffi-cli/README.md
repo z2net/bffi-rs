@@ -7,7 +7,7 @@ pipeline. **The CLI is a thin wrapper** - every command delegates to
 the library; this document describes what each command actually does,
 the flags, and the exit-code contract.
 
-- **Bun only** (>= 1.4.0, enforced as the FIRST thing the binary does)
+- **Bun only** (>= 1.4.2, enforced as the FIRST thing the binary does)
 - single runtime dependency: `@z2net/bffi`
 - License: MIT ([LICENSE](./LICENSE))
 
@@ -32,7 +32,7 @@ of a bun-only tool).
 | `2` | input/environment failure | bad config, missing files, unsupported Bun, no cargo, HTTP/digest failures, unknown triples |
 
 The Bun version gate runs before ANY command: an outdated runtime
-prints `bffi requires Bun >= 1.4.0; found <version>` and exits `2` -
+prints `bffi requires Bun >= 1.4.2; found <version>` and exits `2` -
 the same numeric check `@z2net/bffi` enforces at import.
 
 ## Command reference
@@ -102,7 +102,7 @@ bffi doctor [--config <p>] [--root <d>]
 
 Everything `check` does, plus:
 
-- **bun runtime** - the numeric `>= 1.4.0` comparison;
+- **bun runtime** - the numeric `>= 1.4.2` comparison;
 - **cargo** - `Bun.which` FIRST (a missing binary fails fast with
   "not found in PATH" instead of hanging), then `cargo --version`
   through `Bun.spawnSync` with a 15-second timeout (a hung toolchain
@@ -167,6 +167,43 @@ the digest is verified with `Bun.CryptoHasher` (mismatch => `2`,
 nothing is written). Default output directory: `target/bffi`.
 The handler is named `fetchCmd` so it never shadows the global
 `fetch` it uses.
+
+## Standalone executable
+
+`bffi` can be built as a **self-contained executable**: the bundled
+CLI plus an embedded Bun runtime and a bytecode cache in one binary -
+no installed Bun (or Node) is needed to run it on the target machine.
+
+Build locally from the repo root:
+
+```sh
+bun run compile:cli              # current host target only (default)
+bun scripts/compile-cli.ts --all # every shipped target
+```
+
+Output lands in `target/compiled/bffi-<triple>[.exe]` (gitignored),
+one executable per bun compile target: `windows-x64`,
+`windows-arm64`, `linux-x64`, `linux-x64-musl`, `linux-arm64`,
+`linux-arm64-musl`, `darwin-x64`, `darwin-aarch64`. Building requires
+Bun >= 1.4.2; older local runtimes print a SKIP message and build
+nothing (bytecode cross-compilation needs 1.4.1+, the repo floor is
+1.4.2).
+
+Bytecode note: `--bytecode` requires bun 1.4.1+, and the bytecode
+formats are identical across platforms - a cross-compiled executable
+carries the same bytecode cache as a native build, so cross
+compilation costs nothing at first run.
+
+CI: the `release-compiled` workflow (manual, `workflow_dispatch`)
+compiles every target on one ubuntu runner and uploads the
+executables as build artifacts. Attaching them to the `v`-tag GitHub
+release is a maintainer step (or future automation).
+
+Smoke caveat: only the host-target executable can be executed where
+it is built. The CI job compiles all targets but runs none of them;
+locally, `bun run compile:cli` (host-only) plus a quick
+`target/compiled/bffi-<host-triple> --help` is the smoke test -
+cross targets stay unverified until they are run on their platform.
 
 ## Architecture notes
 

@@ -18,11 +18,11 @@
 - нацелен **только на Bun** (без совместимости с Node.js / Deno);
 - **не** зависит от Node-API;
 - использует `bun:ffi` и тонкий слой C ABI;
-- строится **снизу вверх** из небольших крейтов.
+- организован как **стек модулей снизу вверх** (сначала фундаментные модули, фасад - в конце) внутри небольшого workspace из трёх крейтов.
 
 Основные цели: безопасность на границе FFI, ясная модель владения, удобство разработки и долгосрочная сопровождаемость.
 
-Читайте `DESIGN.md` перед внесением архитектурных изменений.
+Читайте `docs/DESIGN.md` перед внесением архитектурных изменений.
 
 ---
 
@@ -45,14 +45,14 @@
    - Продакшн-сборки обязаны преобразовывать паники в JS `Error`.
 
 5. **Минимальная версия Bun**
-   `1.4.0`
+   `1.4.2`
 
 6. **Версия Rust / Cargo**
    Проект закреплён на **Cargo / Rust 1.98.0**.
    Не поднимайте версию без явного решения и обновления CI.
 
 7. **Никаких секретов в репозитории**
-   Всё, что находится под `.grok`, `.claude`, `.codex`, `.opencode`, `.hermes`, `.mcp`, `.env`, ключи, токены и т.п., должно оставаться вне git (см. `.gitignore`).
+   Всё, что находится под `.grok`, `.claude`, `.codex`, `.opencode`, `.zcode`, `.hermes`, `.mcp`, `.mimosa`, `.env`, ключи, токены и т.п., должно оставаться вне git (см. `.gitignore`).
 
 8. **Лицензия**
    MIT. Сохраняйте SPDX-заголовки там, где это уместно.
@@ -68,45 +68,52 @@ bffi-rs/
 ├── LICENSE
 ├── SECURITY.md
 ├── CONTACT.md
-├── Cargo.toml                     # workspace
+├── CHANGELOG.md
+├── Cargo.toml                     # workspace (3 крейта)
+├── deny.toml                      # политика cargo-deny / cargo-audit (supply-chain job в CI)
 ├── rust-toolchain.toml            # закреплён 1.98.0
 ├── package.json                   # Bun workspace / скрипты
+├── bun.lock
 ├── tsconfig.json
 ├── .oxlintrc.json                 # конфигурация линтера
 ├── lefthook.yml                   # git-хуки (lint, fmt, commit-msg)
+├── .gitattributes                 # политика диффов golden-файлов
 ├── .gitignore
 ├── .github/
 │   ├── ISSUE_TEMPLATE/
 │   ├── PULL_REQUEST_TEMPLATE.md
-│   └── workflows/                 # CI (ci.yml) + релиз нативных пакетов (release-native.yml)
+│   └── workflows/                 # ci, fuzz, bench, release-native, release-crates, release-npm
 ├── crates/
-│   ├── bffi-core/                 # фундамент (дескрипторы, catch_unwind, ...)
-│   ├── bffi-types/                # преобразование типов
-│   ├── bffi-error/
-│   ├── bffi-object/
-│   ├── bffi-callback/
-│   ├── bffi-class/
-│   ├── bffi-dts/                  # генерация TypeScript .d.ts
-│   ├── bffi-macros/
-│   ├── bffi-macro-support/        # общие внутренности макросов (kinds, classify, codegen)
-│   ├── bffi-event-loop/
-│   ├── bffi-async/                # фьючерсы как JS Promises
-│   ├── bffi-build/
-│   ├── bffi-native/               # эталонная cdylib (runtime ABI; -> пакеты @z2net/bffi-native)
-│   └── bffi/                      # публичный фасад
+│   ├── bffi/                      # стек рантайма как слоистые модули (core, types, error,
+│   │                              #   object, callback, dts, build, event_loop, async, stream)
+│   │                              #   + публичный фасад; здесь живёт CALLING-CONVENTION.md
+│   ├── bffi-macros/               # все проц-макросы: #[bffi], #[bffi_async], #[bffi_stream],
+│   │                              #   #[bffi_class]/#[bffi_impl], дерайвы (BffiRecord/BffiEnum/
+│   │                              #   BffiError); src/support/ - общие внутренности макросов,
+│   │                              #   src/class/ - семейство классов
+│   └── bffi-native/               # эталонная cdylib (runtime ABI; -> пакеты @z2net/bffi-native)
+├── fuzz/                          # автономный cargo-fuzz workspace (nightly; fuzz.yml)
 ├── docs/
 │   ├── DESIGN.md                  # архитектура и решения
+│   ├── BINDING-GUI.md             # руководство по GUI / событийным библиотекам
 │   ├── CONTRIBUTING.md
-│   └── CODE_OF_CONDUCT.md
+│   ├── CODE_OF_CONDUCT.md
+│   └── i18n/                      # переводы ru / zh-CN (README, DESIGN, AGENTS, ...)
 ├── packages/                      # JS-сторона: bffi (@z2net/bffi), bffi-cli, native
-└── scripts/
+└── scripts/                       # commit-msg хук + драйвер бенчмарков
 
 Примеры живут в отдельном репозитории:
 https://github.com/z2net/bffi-examples (каждый пример - самостоятельный
 крейт и набор e2e-тестов против опубликованных пакетов).
 ```
 
-Новые крейты должны следовать схеме именования `bffi-*` и добавляться в workspace.
+Стек рантайма сохраняется как небольшие модули с единственной
+ответственностью (`bffi_core`, `bffi_types`, `bffi_error`, `bffi_object`,
+`bffi_callback`, `bffi_dts`, `bffi_build`, `bffi_event_loop`, `bffi_async`,
+`bffi_stream`) внутри `crates/bffi/src/`, слоями снизу вверх, с фасадом
+`bffi` наверху. Новые крейты должны следовать схеме именования `bffi-*`
+и добавляться в workspace; новый модуль обязан сохранять слоистость
+снизу вверх и свой feature-гейт.
 
 ---
 
@@ -179,7 +186,7 @@ chore: pin rust-toolchain to 1.98.0
 2. Делать небольшие, удобные для ревью диффы.
 3. Никогда не коммитить секреты, личные AI-конфигурации или файлы `.env`.
 4. Не вводить совместимость с Node/Deno.
-5. Сохранять архитектуру снизу вверх (небольшие крейты → `bffi-rs`).
+5. Сохранять слоистую архитектуру: сначала фундаментные модули, фасад `bffi` - в конце; границы модулей `bffi_*` внутри `crates/bffi` обходить нельзя.
 6. Сохранять модель безопасности (копирование по умолчанию, явный unsafe zero-copy, дескрипторы с поколениями).
 7. Запускать `cargo fmt`, `cargo clippy` и тесты, когда это возможно.
 8. Обновлять `DESIGN.md` или документацию, если меняется решение.
@@ -201,7 +208,7 @@ chore: pin rust-toolchain to 1.98.0
 | ------------- | ---------------------------------------- |
 | Макрос        | `#[bffi]`: C-функция-обёртка (debug - без обёртки / release - под `catch_unwind`) + дескриптор `bffi_meta_*` |
 | Возвраты `#[bffi]` | примитивы/bigint через выходной параметр; `String`/`Vec<u8>`/`CopiedBuf` (и `Option` от них) как дескрипторы буферов; композиты (records/enums/`Vec<T>`/`Vec<Vec<u8>>` и `Option` от них) как wire-дескрипторы; `Result<T, E: Into<BffiError>>` -> статус конвертированной ошибки (`status_u32()`) |
-| Мин. Bun      | 1.4.0                                    |
+| Мин. Bun      | 1.4.2                                    |
 | Rust/Cargo    | 1.98.0                                   |
 | Дескрипторы   | Индекс с поколением + тег типа           |
 | Формат ошибок | `BffiError` = код + сообщение + источник + rich-слот; доменные ошибки конвертируются без потерь через `From` |
@@ -216,7 +223,7 @@ chore: pin rust-toolchain to 1.98.0
 | Typed errors (B3) | `#[derive(BffiError)]`: юзер-коды 0x1000-0xFFFF заменяют статус 13; вариант = JS `e.name`, поля = `e.payload` (TAG_RECORD); rich-аксессоры best-effort; таблица `errors` в loader JSON |
 | Streams (B2)  | `#[bffi_stream]`: pull (`impl Iterator<Item = T> + Send`) или push (`async fn(ctx: Ctx<T>, ...)`, bounded 256, backpressure) как JS `AsyncIterableIterator<T>`; `bffi_stream_next(handle, max)` (TAG_SEQ буфер, 0 = конец; 14 = Pending) + `bffi_stream_drop` + `bffi_stream_set_wake` (wake-трамплин через event loop, best-effort); тег 0x0600; push-продюсеры доставляют `Result`-элементы (`ctx.push(Ok/Err)`) |
 | Макросы классов | `#[bffi_class]`/`#[bffi_impl]` поверх ObjectWrap (теги 0x0100-0x01FF): геттеры полей, методы `&self`, автоматический release; метаданные разделены: bffi_meta_<name> + bffi_meta_<name>_impl::CLASS; диагностика E005-E008 |
-| Macro support | `bffi-macro-support`: общие модель/маппинг/кодогенерация для крейтов-проц-макросов (bffi-macros, bffi-class); служебный крейт - без кода времени выполнения и ABI |
+| Macro support | `bffi-macros::support`: общие внутренности модели/маппинга/кодогенерации крейта проц-макросов (без кода времени выполнения и ABI) |
 | Паника (prod) | Преобразуется в JS Error                 |
 | Паника (dev)  | Может прерывать процесс (abort)          |
 | Совместимость | Только Bun                               |
@@ -227,9 +234,9 @@ chore: pin rust-toolchain to 1.98.0
 | Колбэки | `register`/`revoke` + `bind_js_callback`; теги 0x0200-0x0201; вызов не из того потока - отказ; `invoke_wait` маршалит колбэк на JS-поток с ЛЮБОГО нативного потока с обязательным таймаутом (`Timeout = 15`) - обе таблицы (нативные замыкания и JS-bound хендлы) |
 | Runtime ABI | Экспорты времени выполнения (`bffi_error_*`, пара `bffi_buffer`, `bffi_types_free`) через `bffi_runtime_abi!()` в крейте пользователя; теги 0x0400-0x04FF; канонический контракт: bffi/CALLING-CONVENTION.md |
 | ABI дескрипторов | `AbiSig` (точные C-ширины + выходной слот) в `FunctionDef`/`MethodDef`; `export_name` геттера + выходной слот в `FieldDef`; `release_export` в `ClassDef` |
-| Формат обмена (wire) | `bffi_types::wire`: одна таблица `[tag][payload]` для async-результатов и сигнатур/аргументов/результатов колбэков |
+| Формат обмена (wire) | `bffi::types::wire`: одна таблица `[tag][payload]` для async-результатов и сигнатур/аргументов/результатов колбэков |
 | Callback ABI | Универсальные экспорты через `bffi_callback_abi!()` (`bffi_callback_set_thread`/`_bind`/`_invoke`/`_revoke`) в крейте пользователя; wire-кодирование; CALLING-CONVENTION.md §9 |
-| Loader JSON | `bffi_build::loader_json`: канонический детерминированный JSON схемы v1 из агрегированного `ModuleDef` |
+| Loader JSON | `bffi::build::loader_json`: канонический детерминированный JSON схемы v1 из агрегированного `ModuleDef` |
 | Генерация TS API | `bun bffi codegen <json> -o <ts>`: детерминированная генерация; встраивает литерал схемы; `ApiOf<>` выводит точные типы поверх `packages/bffi` |
 | Платформенная дистрибуция | Платформенные npm-пакеты в стиле napi-rs (точные пины в optionalDependencies, `bffi pack`, resolvePlatformBinary) |
 | Эталонный нативный модуль | `crates/bffi-native` -> семейство платформенных пакетов `@z2net/bffi-native` |

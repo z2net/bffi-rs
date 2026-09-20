@@ -138,6 +138,9 @@ pub fn decode_args(bytes: &[u8]) -> Result<Vec<Value>, BffiError> {
             wire::TAG_BOOL => {
                 wire::read_bool(bytes, offset + 1).map(|v| (Value::Bool(v), offset + 1 + 1))
             }
+            wire::TAG_U64 => wire::decode_u64(bytes, offset)
+                .ok()
+                .map(|(v, next)| (Value::U64(v), next)),
             // Var-length records decode through the shared codec
             // readers (which also validate the UTF-8 payload).
             wire::TAG_STR => wire::decode_str(bytes, offset)
@@ -146,6 +149,10 @@ pub fn decode_args(bytes: &[u8]) -> Result<Vec<Value>, BffiError> {
             wire::TAG_BYTES => wire::decode_bytes(bytes, offset)
                 .ok()
                 .map(|(payload, next)| (Value::Bytes(CopiedBuf::from_slice(payload)), next)),
+            // Composite records ride as pre-encoded `Wire` payloads:
+            // the whole span (header + children) re-emits verbatim.
+            wire::TAG_RECORD | wire::TAG_SEQ => record_end(bytes, offset, 0)
+                .map(|end| (Value::Wire(bytes[offset..end].to_vec()), end)),
             _ => None,
         };
         let (value, next) = decoded.ok_or_else(malformed)?;
@@ -153,6 +160,47 @@ pub fn decode_args(bytes: &[u8]) -> Result<Vec<Value>, BffiError> {
         offset = next;
     }
     Ok(values)
+}
+
+/// The offset just past the value record starting at `offset`
+/// (fixed-width payloads, length-prefixed payloads, and recursively
+/// the children of a composite header). `None` when the record is
+/// truncated, its declared length/count exceeds the wire limits, or
+/// the nesting runs deeper than the wire depth limit.
+fn record_end(bytes: &[u8], offset: usize, depth: u32) -> Option<usize> {
+    if depth > wire::max_wire_depth() {
+        return None;
+    }
+    let tag = *bytes.get(offset)?;
+    let len_at = |at: usize| -> Option<(usize, usize)> {
+        let len = wire::read_u32_le(bytes, at)?;
+        if len > wire::max_wire_payload() {
+            return None;
+        }
+        Some((len as usize, at + 4))
+    };
+    let end = match tag {
+        wire::TAG_UNIT => offset + 1,
+        wire::TAG_I32 => offset + 1 + 4,
+        wire::TAG_I64 | wire::TAG_U64 | wire::TAG_F64 => offset + 1 + 8,
+        wire::TAG_BOOL => offset + 1 + 1,
+        wire::TAG_STR | wire::TAG_BYTES | wire::TAG_ERROR => {
+            let (len, start) = len_at(offset + 1)?;
+            start + len
+        }
+        wire::TAG_RECORD | wire::TAG_SEQ => {
+            let (count, mut at) = len_at(offset + 1)?;
+            for _ in 0..count {
+                at = record_end(bytes, at, depth + 1)?;
+            }
+            at
+        }
+        _ => return None,
+    };
+    if end > bytes.len() {
+        return None;
+    }
+    Some(end)
 }
 
 /// Encodes the callback result into the wire record stored in the

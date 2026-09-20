@@ -3,7 +3,7 @@
     // Self-contained config: this CLI is a standalone module (installable
     // globally); its dependency @z2net/bffi comes from npm via node_modules,
     // never via paths into sibling packages.
-    // Environment setup & latest features (Bun only, min Bun 1.4.0)
+    // Environment setup & latest features (Bun only, min Bun 1.4.2)
     "lib": ["ESNext"],
     "target": "ESNext",
     "module": "Preserve",

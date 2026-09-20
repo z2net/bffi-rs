@@ -1,7 +1,7 @@
 //! The parsed and validated function model.
 //!
 //! [`FnModel::parse`] turns the annotated item into a normalized model
-//! (identity, visibility, docs, params, return) that the shim and
+//! (identity, docs, params, return) that the shim and
 //! descriptor generators in later stages consume. Every input outside
 //! the P1 boundary rules is rejected here with a spanned error, so the
 //! downstream stages can rely on the shape being valid.
@@ -34,10 +34,6 @@ pub(crate) struct FnParam {
 pub(crate) struct FnModel {
     /// Function name.
     pub ident: syn::Ident,
-    /// Function visibility.
-    // Kept lossless for later stages; nothing consumes it in P1.
-    #[allow(dead_code)]
-    pub vis: syn::Visibility,
     /// Doc-comment lines with exactly one leading space trimmed
     /// (`/// Adds.` becomes `Adds.`).
     pub docs: Vec<String>,
@@ -90,7 +86,6 @@ impl FnModel {
 
         Ok(FnModel {
             ident: func.sig.ident,
-            vis: func.vis,
             docs: extract_docs(&func.attrs),
             params,
             ret,

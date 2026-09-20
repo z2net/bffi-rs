@@ -230,37 +230,49 @@ pub(crate) fn end_wait() {
     WAIT_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
 }
 
+/// The crate-wide test lock over the process-global JS-thread state.
+/// Tests run in parallel threads of one process: every test that BINDS
+/// the process (a keeper thread inside its body) and every test that
+/// ASSUMES it unbound must hold this lock, so a parallel test thread
+/// can never observe another module's bound window.
+#[cfg(test)]
+pub(crate) fn process_state_lock() -> std::sync::MutexGuard<'static, ()> {
+    static PROCESS_STATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    PROCESS_STATE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[cfg(test)]
 mod tests {
     // NOTE (test isolation): the JS-thread table is process-global,
     // and libtest runs tests in parallel. Every registration here
     // lives in a spawned thread whose TLS guard drops before the
     // thread joins, so no registration outlives a test - and the
-    // shared REGISTRY_LOCK serializes the tests against each other.
-    // Integration-level wrong-thread behavior is covered by
-    // `tests/threading.rs` and `tests/multi-js-threads.rs`, separate
-    // processes.
-    use std::sync::{Mutex, PoisonError};
+    // shared process_state_lock serializes the tests against each
+    // other AND against every other module's tests that bind the
+    // process or assume it unbound. Integration-level wrong-thread
+    // behavior is covered by `tests/threading.rs` and
+    // `tests/multi-js-threads.rs`, separate processes.
     use std::time::{Duration, Instant};
 
     use super::{
-        current_thread_id, end_wait, ensure_js_thread, is_js_thread, set_js_thread, try_begin_wait,
+        current_thread_id, end_wait, ensure_js_thread, is_js_thread, process_state_lock,
+        set_js_thread, try_begin_wait,
     };
     use crate::bffi_callback::{
         CallbackError, CallbackSig, ValueType, bind_js_callback, invoke_wait,
     };
 
-    static REGISTRY_LOCK: Mutex<()> = Mutex::new(());
-
     #[test]
     fn unbound_ensure_is_ok() {
-        let _guard = REGISTRY_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _guard = process_state_lock();
         assert!(ensure_js_thread().is_ok());
     }
 
     #[test]
     fn registration_is_thread_scoped_and_auto_drops() {
-        let _guard = REGISTRY_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _guard = process_state_lock();
 
         let id = std::thread::spawn(|| {
             set_js_thread().expect("bind ok");
@@ -278,7 +290,7 @@ mod tests {
 
     #[test]
     fn second_registration_is_accepted() {
-        let _guard = REGISTRY_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _guard = process_state_lock();
 
         // Two registrars stay ALIVE while the assertions run - a
         // registration lives exactly as long as its thread.
@@ -330,7 +342,7 @@ mod tests {
 
     #[test]
     fn nested_invoke_wait_fails_fast_with_reentrant_wait() {
-        let _guard = REGISTRY_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let _guard = process_state_lock();
 
         // A live registration makes the process BOUND, so the
         // unregistered caller below takes the marshal-and-wait path -

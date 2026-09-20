@@ -75,9 +75,12 @@ let reply = invoke_wait(ipc_handle, &[Value::Str(body)],
   inside a JS-thread pump callback (re-entrancy) - it ends at the
   timeout by design.
 - C-call matrix for JS-bound dispatch: up to 2 parameters of
-  `i32 | i64 | f64 | bool | cstring`, returns
-  `i32 | i64 | f64 | bool | void`. Unsupported shapes fail fast
-  (`UnsupportedSignature`) without blocking.
+  `i32 | i64 | u64 | f64 | bool | cstring`, returns
+  `i32 | i64 | u64 | f64 | bool | cstring | void` (a cstring return
+  is copied out immediately; the pointer is call-scoped). Binary
+  payloads and composites (arrays, records) cannot cross the raw
+  C call - they ride the buffered channels instead; unsupported
+  shapes fail fast (`UnsupportedSignature`) without blocking.
 
 ## Config structs: Option fields in records
 

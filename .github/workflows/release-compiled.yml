@@ -1,0 +1,51 @@
+# Builds the standalone `bffi` CLI executables (bun build --compile
+# --bytecode) for every shipped platform from ONE ubuntu runner: bun
+# cross-compiles natively, no per-OS matrix and no Rust toolchain
+# (contrast release-native.yml, which cross-builds the cdylibs).
+#
+# Platform notes:
+# - bun 1.4.1+ emits bytecode that is byte-identical across platforms,
+#   so every cross-compiled executable carries the same cache;
+# - bun downloads each target runtime on demand during --compile
+#   (a one-time ~100MB per target, cached on the runner);
+# - smoke runs happen on the host platform only: cross-compiled
+#   executables cannot be executed by this job (linux-x64 is the only
+#   artifact the runner could even try), so nothing is run here.
+#
+# Artifacts are uploaded as build artifacts; attaching them to the
+# v-tag GitHub release is done by the maintainer (or a future
+# automation step).
+name: release-compiled
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  compile:
+    name: compile (all targets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The repo floor is bun 1.4.2 (bytecode cross-compile 1.4.1+);
+      # the CLI itself numerically gates >= 1.4.2 before any command.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+
+      - name: Install dependencies (frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Compile the CLI for every target
+        run: bun scripts/compile-cli.ts --all
+
+      - name: Upload the standalone executables
+        uses: actions/upload-artifact@v4
+        with:
+          name: bffi-compiled
+          path: target/compiled/bffi-*
+          if-no-files-found: error

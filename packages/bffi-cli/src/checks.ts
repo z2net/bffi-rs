@@ -35,11 +35,11 @@ function result(name: string, ok: boolean, detail = ""): CheckResult {
   return { name, ok, detail };
 }
 
-/** Bun runtime satisfies the 1.4.0 floor. */
+/** Bun runtime satisfies the 1.4.2 floor. */
 export function checkBunRuntime(): CheckResult {
   const problem = bunVersionProblem(Bun.version);
   return problem === undefined
-    ? result(`bun runtime (${String(Bun.version)})`, true, ">= 1.4.0")
+    ? result(`bun runtime (${String(Bun.version)})`, true, ">= 1.4.2")
     : result("bun runtime", false, problem);
 }
 

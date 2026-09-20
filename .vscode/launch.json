@@ -37,9 +37,9 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Rust: Debug tests (bffi-core)",
+      "name": "Rust: Debug tests (bffi)",
       "cargo": {
-        "args": ["test", "--no-run", "-p", "bffi-core"],
+        "args": ["test", "--no-run", "-p", "bffi"],
         "problemMatcher": "$rustc",
       },
       "args": ["--nocapture"],
@@ -61,8 +61,8 @@
     {
       "type": "bun",
       "request": "launch",
-      "name": "Bun: Launch bin/index.ts",
-      "program": "${workspaceFolder}/bin/index.ts",
+      "name": "Bun: Launch bffi CLI",
+      "program": "${workspaceFolder}/packages/bffi-cli/bin/bffi.ts",
       "cwd": "${workspaceFolder}",
       "runtime": "bun",
       "runtimeArgs": [],
@@ -75,7 +75,7 @@
     },
 
     // --- Bun: attach to running instance ------------------------
-    // 1. Run: bun --inspect-wait run bin/index.ts
+    // 1. Run: bun --inspect-wait run packages/bffi-cli/bin/bffi.ts
     // 2. Then select this config and press F5
     {
       "type": "bun",
@@ -90,7 +90,7 @@
       "name": "Rust + Bun (full stack)",
       "configurations": [
         "Rust: Debug bffi-rs binary",
-        "Bun: Launch bin/index.ts",
+        "Bun: Launch bffi CLI",
       ],
       "stopAll": true,
     },

@@ -13,18 +13,25 @@
  *   codec.
  *
  * Signature and argument bytes use the wire tag table
- * (`bffi_types::wire`): `I32`=1, `I64`=2, `F64`=3, `Bool`=4. Malformed
- * bytes and signature mismatches surface as thrown `Error`s carrying
- * the drained native message (`Error.cause` keeps the domain source).
+ * (`bffi_types::wire`): `I32`=1, `I64`=2, `F64`=3, `Bool`=4, `Str`=5,
+ * `U64`=10. Malformed bytes and signature mismatches surface as thrown
+ * `Error`s carrying the drained native message (`Error.cause` keeps
+ * the domain source).
  */
 import { JSCallback, ptr } from "bun:ffi";
 import { ErrorCode, type FfiLib, makeTakeError, sym } from "./error.ts";
 import { makeReadBuffer } from "./buffer.ts";
-import { decodeValue, encodeValue, TAG_BOOL, TAG_F64, TAG_I32, TAG_I64, type WireValue } from "./wire.ts";
+import { decodeValue, encodeValue, TAG_BOOL, TAG_F64, TAG_I32, TAG_I64, TAG_STR, TAG_U64, type WireValue } from "./wire.ts";
 import { registerDisposer } from "./dispose.ts";
 
-/** A callback value type (the `bffi-callback` `ValueType` matrix). */
-export type CbType = "i32" | "i64" | "f64" | "bool";
+/**
+ * A callback value type (the `bffi-callback` `ValueType` matrix).
+ * `"u64"` is the exact unsigned carrier (a non-negative `bigint` in
+ * JS); `"string"` crosses the direct C call as a `cstring` in either
+ * direction (a returned pointer is call-scoped and copied out
+ * immediately).
+ */
+export type CbType = "i32" | "i64" | "u64" | "f64" | "bool" | "string";
 
 /** A declared callback signature: return type plus parameter types. */
 export interface CallbackSig {
@@ -33,7 +40,7 @@ export interface CallbackSig {
 }
 
 /** The value a callback passes to or receives from the native side. */
-export type CbValue = number | bigint | boolean;
+export type CbValue = number | bigint | boolean | string;
 
 /** The wire tag of a callback value type (bffi_types::wire). */
 function wireTag(ty: CbType): number {
@@ -42,16 +49,26 @@ function wireTag(ty: CbType): number {
       return TAG_I32;
     case "i64":
       return TAG_I64;
+    case "u64":
+      return TAG_U64;
     case "f64":
       return TAG_F64;
     case "bool":
       return TAG_BOOL;
+    case "string":
+      return TAG_STR;
   }
 }
 
 /** The `bun:ffi` JSCallback argument spelling of a callback type. */
-function jsArgType(ty: CbType): "i32" | "i64" | "f64" | "u8" {
-  return ty === "bool" ? "u8" : ty;
+function jsArgType(ty: CbType): "i32" | "i64" | "u64" | "f64" | "u8" | "cstring" {
+  if (ty === "bool") {
+    return "u8";
+  }
+  if (ty === "string") {
+    return "cstring";
+  }
+  return ty;
 }
 
 /**

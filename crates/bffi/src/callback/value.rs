@@ -10,7 +10,9 @@
 //! wire`) plus the async-layer `AsyncValue` precedent: `Unit` (the
 //! `void` return / absent value), `Str` (UTF-8, crossing a JS-bound
 //! call as a `cstring`) and `Bytes` (raw bytes) extend the original
-//! primitive four.
+//! primitive four; `U64` rides the exact `TAG_U64` carrier, and
+//! `Wire` declares a pre-encoded composite (a `TAG_RECORD` /
+//! `TAG_SEQ` payload) so callbacks accept sequences and records.
 
 // Internal module aliases (the pre-merge crate names).
 use crate::bffi_types;
@@ -28,6 +30,9 @@ pub enum ValueType {
     I32,
     /// 64-bit signed integer.
     I64,
+    /// The exact unsigned 64-bit integer (`TAG_U64` carrier; JS sees
+    /// a non-negative `bigint` even above `i64::MAX`).
+    U64,
     /// 64-bit IEEE-754 floating-point number.
     F64,
     /// Boolean.
@@ -36,6 +41,10 @@ pub enum ValueType {
     Str,
     /// Raw bytes.
     Bytes,
+    /// A pre-encoded composite payload (a complete `TAG_RECORD` /
+    /// `TAG_SEQ` record). Declared in signatures through
+    /// [`ValueType::Wire`].
+    Wire,
 }
 
 impl ValueType {
@@ -47,10 +56,12 @@ impl ValueType {
             Self::Unit => wire::TAG_UNIT,
             Self::I32 => wire::TAG_I32,
             Self::I64 => wire::TAG_I64,
+            Self::U64 => wire::TAG_U64,
             Self::F64 => wire::TAG_F64,
             Self::Bool => wire::TAG_BOOL,
             Self::Str => wire::TAG_STR,
             Self::Bytes => wire::TAG_BYTES,
+            Self::Wire => wire::TAG_WIRE,
         }
     }
 
@@ -62,10 +73,12 @@ impl ValueType {
             wire::TAG_UNIT => Some(Self::Unit),
             wire::TAG_I32 => Some(Self::I32),
             wire::TAG_I64 => Some(Self::I64),
+            wire::TAG_U64 => Some(Self::U64),
             wire::TAG_F64 => Some(Self::F64),
             wire::TAG_BOOL => Some(Self::Bool),
             wire::TAG_STR => Some(Self::Str),
             wire::TAG_BYTES => Some(Self::Bytes),
+            wire::TAG_WIRE => Some(Self::Wire),
             _ => None,
         }
     }
@@ -84,6 +97,8 @@ pub enum Value {
     I32(i32),
     /// A 64-bit signed integer.
     I64(i64),
+    /// The exact unsigned 64-bit integer.
+    U64(u64),
     /// A 64-bit IEEE-754 floating-point number.
     F64(f64),
     /// A boolean.
@@ -92,6 +107,10 @@ pub enum Value {
     Str(String),
     /// Raw bytes (copied into the payload).
     Bytes(CopiedBuf),
+    /// A pre-encoded composite payload: the bytes already carry their
+    /// leading tag (`TAG_RECORD` / `TAG_SEQ`) and re-emit verbatim.
+    /// Declared in signatures through [`ValueType::Wire`].
+    Wire(Vec<u8>),
 }
 
 impl Value {
@@ -102,10 +121,12 @@ impl Value {
             Self::Unit => ValueType::Unit,
             Self::I32(_) => ValueType::I32,
             Self::I64(_) => ValueType::I64,
+            Self::U64(_) => ValueType::U64,
             Self::F64(_) => ValueType::F64,
             Self::Bool(_) => ValueType::Bool,
             Self::Str(_) => ValueType::Str,
             Self::Bytes(_) => ValueType::Bytes,
+            Self::Wire(_) => ValueType::Wire,
         }
     }
 
@@ -131,6 +152,7 @@ impl Value {
                 out.push(wire::TAG_I64);
                 wire::push_i64_le(out, *v);
             }
+            Self::U64(v) => wire::encode_u64(out, *v),
             Self::F64(v) => {
                 out.push(wire::TAG_F64);
                 wire::push_f64_le(out, *v);
@@ -149,6 +171,9 @@ impl Value {
                 wire::push_u32_le(out, bytes.as_slice().len() as u32);
                 out.extend_from_slice(bytes.as_slice());
             }
+            // The bytes are already a complete `[tag][payload]`
+            // record - append verbatim.
+            Self::Wire(bytes) => out.extend_from_slice(bytes),
         }
     }
 }
@@ -188,14 +213,29 @@ impl CallbackSig {
 
     /// Whether `args` satisfies this signature: the arity must agree
     /// and every element's [`Value::ty`] must equal the declared
-    /// parameter type at the same position.
+    /// parameter type at the same position - with one exact-carrier
+    /// allowance: a non-negative `I64` argument satisfies a declared
+    /// [`ValueType::U64`] and an in-range `U64` argument satisfies a
+    /// declared [`ValueType::I64`] (the JS encoder picks the tag by
+    /// value; the value-level mirror of
+    /// `wire::decode_u64_lenient`).
     #[must_use]
     pub fn matches(&self, args: &[Value]) -> bool {
         args.len() == self.params.len()
             && args
                 .iter()
                 .zip(self.params.iter())
-                .all(|(arg, param)| arg.ty() == *param)
+                .all(|(arg, param)| Self::arg_matches(arg, *param))
+    }
+
+    /// The exact-carrier match of one argument against one declared
+    /// parameter type.
+    fn arg_matches(arg: &Value, param: ValueType) -> bool {
+        match (arg, param) {
+            (Value::I64(v), ValueType::U64) => *v >= 0,
+            (Value::U64(v), ValueType::I64) => *v <= i64::MAX as u64,
+            (arg, param) => arg.ty() == param,
+        }
     }
 }
 
@@ -303,6 +343,77 @@ mod tests {
         let sig = CallbackSig::new(ValueType::F64, &params);
         assert_eq!(sig.ret(), ValueType::F64);
         assert_eq!(sig.params(), &params);
+    }
+
+    #[test]
+    fn u64_value_round_trips_through_the_exact_carrier() {
+        assert_eq!(ValueType::U64.wire_tag(), wire::TAG_U64);
+        assert_eq!(
+            ValueType::from_wire_tag(wire::TAG_U64),
+            Some(ValueType::U64)
+        );
+        assert_eq!(Value::U64(u64::MAX).ty(), ValueType::U64);
+        assert_eq!(Value::U64(u64::MAX).encode(), {
+            let mut out = Vec::new();
+            wire::encode_u64(&mut out, u64::MAX);
+            out
+        });
+    }
+
+    #[test]
+    fn wire_value_carries_a_preencoded_composite() {
+        assert_eq!(ValueType::Wire.wire_tag(), wire::TAG_WIRE);
+        assert_eq!(
+            ValueType::from_wire_tag(wire::TAG_WIRE),
+            Some(ValueType::Wire)
+        );
+        let record = {
+            let mut out = vec![wire::TAG_RECORD];
+            wire::push_u32_le(&mut out, 1);
+            wire::encode_bool(&mut out, true);
+            out
+        };
+        let value = Value::Wire(record.clone());
+        assert_eq!(value.ty(), ValueType::Wire);
+        assert_eq!(value.encode(), record, "a Wire value re-emits verbatim");
+    }
+
+    #[test]
+    fn wire_signature_matches_wire_arguments_only() {
+        let sig = CallbackSig::new(ValueType::Unit, &[ValueType::Wire]);
+        let record = {
+            let mut out = vec![wire::TAG_RECORD];
+            wire::push_u32_le(&mut out, 0);
+            out
+        };
+        assert!(sig.matches(&[Value::Wire(record)]));
+        assert!(!sig.matches(&[Value::I32(1)]));
+    }
+
+    #[test]
+    fn exact_i64_u64_args_coerce_across_the_signed_view() {
+        // The JS encoder picks the tag by value (a bigint below
+        // `i64::MAX` rides `TAG_I64`), so exact-carrier declarations
+        // accept the signed view within range - the value-level
+        // mirror of `wire::decode_u64_lenient`.
+        let unsigned = CallbackSig::new(ValueType::Unit, &[ValueType::U64]);
+        assert!(
+            unsigned.matches(&[Value::I64(5)]),
+            "a non-negative i64 satisfies a declared u64 param"
+        );
+        assert!(
+            !unsigned.matches(&[Value::I64(-1)]),
+            "a negative i64 cannot ride a u64 param"
+        );
+        let signed = CallbackSig::new(ValueType::Unit, &[ValueType::I64]);
+        assert!(
+            signed.matches(&[Value::U64(5)]),
+            "an in-range u64 satisfies a declared i64 param"
+        );
+        assert!(
+            !signed.matches(&[Value::U64(u64::MAX)]),
+            "an out-of-range u64 cannot ride an i64 param"
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@
   "compilerOptions": {
     // Self-contained config: this package is published to npm on its own
     // and must not reference anything outside its directory.
-    // Environment setup & latest features (Bun only, min Bun 1.4.0)
+    // Environment setup & latest features (Bun only, min Bun 1.4.2)
     "lib": ["ESNext"],
     "target": "ESNext",
     "module": "Preserve",

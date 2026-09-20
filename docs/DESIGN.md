@@ -117,7 +117,7 @@ Accepted decisions, one line each:
 | Event loop | Explicit pump/run contract; deliveries execute on the JS thread. |
 | TypeScript | Descriptors are the single source of truth; deterministic generation; schema v1. |
 | Distribution | Platform npm packages over a monolithic binary; exact pins. |
-| Toolchain | Bun >= 1.4.0 (enforced); Rust 1.98.0 (pinned). |
+| Toolchain | Bun >= 1.4.2 (enforced); Rust 1.98.0 (pinned). |
 | Targets | 64-bit only (seven triples); no 32-bit for now. |
 | Diagnostics | Stable E-codes for macro errors. |
 | Native-thread callbacks | `invoke_wait` marshals a callback onto the JS thread and waits with a mandatory timeout (`Timeout = 15`); the JS thread must pump. |

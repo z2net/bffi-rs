@@ -18,11 +18,11 @@ It is the Bun equivalent of `napi-rs`, but:
 - targets **only Bun** (no Node.js / Deno compatibility);
 - does **not** depend on Node-API;
 - uses `bun:ffi` and a thin C ABI layer;
-- is built **bottom-up** from small crates.
+- is organized as a **bottom-up module stack** (foundation modules first, facade last) inside a small 3-crate workspace.
 
 Primary goals: safety at the FFI boundary, clear ownership, good DX, and long-term maintainability.
 
-Read `DESIGN.md` before making architectural changes.
+Read `docs/DESIGN.md` before making architectural changes.
 
 ---
 
@@ -45,14 +45,14 @@ Read `DESIGN.md` before making architectural changes.
    - Prod builds must convert panics into JS `Error`.
 
 5. **Minimum Bun version**  
-   `1.4.0`
+   `1.4.2` (the 1.4.1 Windows `bun:ffi` JIT fix and the 1.4.2 musl/long-running-process fixes)
 
 6. **Rust / Cargo version**  
    Project is pinned to **Cargo / Rust 1.98.0**.  
    Do not bump without an explicit decision and CI update.
 
 7. **No secrets in the repo**  
-   Anything under `.grok`, `.claude`, `.codex`, `.opencode`, `.hermes`, `.mcp`, `.env`, keys, tokens, etc. must stay out of git (see `.gitignore`).
+   Anything under `.grok`, `.claude`, `.codex`, `.opencode`, `.zcode`, `.hermes`, `.mcp`, `.mimosa`, `.env`, keys, tokens, etc. must stay out of git (see `.gitignore`).
 
 8. **License**  
    MIT. Keep SPDX headers where appropriate.
@@ -63,50 +63,57 @@ Read `DESIGN.md` before making architectural changes.
 
 ```
 bffi-rs/
-├── AGENT.md                    # this file
+├── AGENTS.md                    # this file
 ├── README.md
 ├── LICENSE
 ├── SECURITY.md
 ├── CONTACT.md
-├── Cargo.toml                  # workspace
+├── CHANGELOG.md
+├── Cargo.toml                  # workspace (3 members)
+├── deny.toml                   # cargo-deny / cargo-audit policy (CI supply-chain job)
 ├── rust-toolchain.toml         # pinned 1.98.0
 ├── package.json                # Bun workspace / scripts
+├── bun.lock
 ├── tsconfig.json
 ├── .oxlintrc.json              # linter config
 ├── lefthook.yml                # git hooks (lint, fmt, commit-msg)
+├── .gitattributes              # golden-file diff policy
 ├── .gitignore
 ├── .github/
 │   ├── ISSUE_TEMPLATE/
 │   ├── PULL_REQUEST_TEMPLATE.md
-│   └── workflows/              # CI (ci.yml) + native release (release-native.yml)
+│   └── workflows/              # ci, fuzz, bench, release-native, release-crates, release-npm
 ├── crates/
-│   ├── bffi-core/               # foundation (handles, catch_unwind, ...)
-│   ├── bffi-types/              # type conversion
-│   ├── bffi-error/
-│   ├── bffi-object/
-│   ├── bffi-callback/
-│   ├── bffi-class/
-│   ├── bffi-dts/                # TypeScript .d.ts generation
-│   ├── bffi-macros/
-│   ├── bffi-macro-support/      # shared macro internals (kinds, classify, codegen)
-│   ├── bffi-event-loop/
-│   ├── bffi-async/              # futures as JS Promises
-│   ├── bffi-build/
-│   ├── bffi-native/             # reference cdylib (runtime ABI; -> @z2net/bffi-native packages)
-│   └── bffi/                    # public facade
+│   ├── bffi/                    # the runtime stack as layered modules (core, types, error,
+│   │                            #   object, callback, dts, build, event_loop, async, stream)
+│   │                            #   + the public facade; CALLING-CONVENTION.md lives here
+│   ├── bffi-macros/             # all proc-macros: #[bffi], #[bffi_async], #[bffi_stream],
+│   │                            #   #[bffi_class]/#[bffi_impl], derives (BffiRecord/BffiEnum/
+│   │                            #   BffiError); src/support/ = shared macro internals,
+│   │                            #   src/class/ = the class family
+│   └── bffi-native/             # reference cdylib (runtime ABI; -> @z2net/bffi-native packages)
+├── fuzz/                        # self-contained cargo-fuzz workspace (nightly; fuzz.yml)
 ├── docs/
 │   ├── DESIGN.md                # architecture & decisions
+│   ├── BINDING-GUI.md           # GUI / event-driven libraries guide
 │   ├── CONTRIBUTING.md
-│   └── CODE_OF_CONDUCT.md
+│   ├── CODE_OF_CONDUCT.md
+│   └── i18n/                    # ru / zh-CN translations (README, DESIGN, AGENTS, ...)
 ├── packages/                      # JS-side: bffi (@z2net/bffi), bffi-cli, native
-└── scripts/
+└── scripts/                      # commit-msg hook + bench driver
 
 Examples live in a separate repository:
 https://github.com/z2net/bffi-examples (each example is a standalone
 crate and an e2e suite against the published packages).
 ```
 
-New crates must follow the naming scheme `bffi-*` and be added to the workspace.
+The runtime stack is kept as small, single-responsibility modules
+(`bffi_core`, `bffi_types`, `bffi_error`, `bffi_object`, `bffi_callback`,
+`bffi_dts`, `bffi_build`, `bffi_event_loop`, `bffi_async`, `bffi_stream`)
+inside `crates/bffi/src/`, layered bottom-up with the `bffi` facade on
+top. New crates must follow the naming scheme `bffi-*` and be added to
+the workspace; a new module must keep the bottom-up layering and its
+feature gate.
 
 ---
 
@@ -179,7 +186,7 @@ When working on this repository an agent **must**:
 2. Prefer small, reviewable diffs.
 3. Never commit secrets, personal AI configs, or `.env` files.
 4. Not introduce Node/Deno compatibility.
-5. Keep the bottom-up architecture (small crates → `bffi-rs`).
+5. Keep the layered architecture: foundation modules first, the `bffi` facade last; `bffi_*` module boundaries inside `crates/bffi` must not be bypassed.
 6. Preserve the safety model (copy by default, explicit unsafe zero-copy, generational handles).
 7. Run `cargo fmt`, `cargo clippy`, and tests when possible.
 8. Update `DESIGN.md` or docs if a decision changes.
@@ -201,7 +208,7 @@ When unsure about architecture, prefer asking (or opening a draft PR) instead of
 | ------------- | -------------------------------------------- |
 | Macro         | `#[bffi]`: shim (debug bare / release catch_unwind) + bffi_meta_* descriptor |
 | `#[bffi]` returns | primitives/bigints via out-param; `String`/`Vec<u8>`/`CopiedBuf` (and `Option` of those) as buffer handles; `Result<T, E>` -> DomainError(13) |
-| Min Bun       | 1.4.0                                        |
+| Min Bun       | 1.4.2                                        |
 | Rust/Cargo    | 1.98.0                                       |
 | Handles       | Generational Index + type-tag                |
 | Error format  | `BffiError` = code + message + source; domain errors convert losslessly via `From` |
@@ -213,7 +220,7 @@ When unsure about architecture, prefer asking (or opening a draft PR) instead of
 | Event loop    | `run()` drains blocking; `pump()` drains non-blocking; `marshal` = wrong-thread path (code 12) |
 | TS types      | IR (ModuleDef/FunctionDef/ClassDef) + deterministic render; export_name = bffi_-prefix |
 | Class macros | `#[bffi_class]`/`#[bffi_impl]` over ObjectWrap (tags 0x0100-0x01FF): field getters, `&self` methods, generated release; metadata split bffi_meta_<name> + bffi_meta_<name>_impl::CLASS; E005-E008 |
-| Macro support | `bffi-macro-support`: shared model/mapping/codegen for the proc-macro crates (bffi-macros, bffi-class); tooling crate - no runtime code, no ABI |
+| Macro support | `bffi-macros::support`: shared model/mapping/codegen internals of the proc-macro crate (no runtime code, no ABI) |
 | Panic (prod)  | Convert to JS Error                          |
 | Panic (dev)   | May abort                                    |
 | Compatibility | Bun only                                     |
@@ -225,11 +232,11 @@ When unsure about architecture, prefer asking (or opening a draft PR) instead of
 | Callbacks | `register`/`revoke` + `bind_js_callback`; tags 0x0200-0x0201; wrong-thread reject; `invoke_wait` marshals a callback onto the JS thread from ANY native thread with a mandatory timeout (`Timeout = 15`) - both tables (native closures and JS-bound handles) |
 | Build ABI | Runtime exports (`bffi_error_*`, `bffi_buffer` pair, `bffi_types_free`) via `bffi_runtime_abi!()` in the user crate; tags 0x0400-0x04FF; canonical contract: bffi/CALLING-CONVENTION.md |
 | Descriptor ABI | `AbiSig` (exact C widths + out slot) on `FunctionDef`/`MethodDef`; getter `export_name` + out on `FieldDef`; `release_export` on `ClassDef` |
-| Wire codec | `bffi_types::wire`: one `[tag][payload]` table for async payloads and callback sigs/args/results |
+| Wire codec | `bffi::types::wire`: one `[tag][payload]` table for async payloads and callback sigs/args/results |
 | Composites (B1+B4) | Records/enums/`Vec<T>` (incl. `Vec<Vec<u8>>`) sync + async; `Option<Record>`/`Option<Vec<T>>` returns = `| null` over the 0-handle empty-buffer convention; item/field matrix rejects deeper nesting |
 | Typed errors | `#[derive(BffiError)]`: user codes 0x1000-0xFFFF replace status 13; variant = JS `e.name`, fields = `e.payload` (TAG_RECORD); rich accessors best-effort; loader JSON `errors` table |
 | Callback ABI | Generic exports via `bffi_callback_abi!()` (`bffi_callback_set_thread`/`_bind`/`_invoke`/`_revoke`) in the user crate; wire-encoded; CALLING-CONVENTION.md §9 |
-| Loader JSON | `bffi_build::loader_json`: canonical deterministic schema v1 from the aggregated `ModuleDef` |
+| Loader JSON | `bffi::build::loader_json`: canonical deterministic schema v1 from the aggregated `ModuleDef` |
 | TS API codegen | `bun bffi codegen <json> -o <ts>`: deterministic renderer; embeds the schema literal; `ApiOf<>` derives exact types over `packages/bffi` |
 | Platform distribution | napi-rs-style platform npm packages (optionalDependencies exact pins, `bffi pack`, resolvePlatformBinary) |
 | Reference native module | `crates/bffi-native` -> `@z2net/bffi-native` platform package family |

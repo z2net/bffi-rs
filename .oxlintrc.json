@@ -22,7 +22,7 @@
   "ignorePatterns": ["dist/**", "node_modules/**", "target/**", "**/*.d.ts"],
   "overrides": [
     {
-      "files": ["tests/**"],
+      "files": ["**/test/**", "**/*.test.ts"],
       "rules": {
         "no-console": "off",
         "typescript/no-explicit-any": "off"

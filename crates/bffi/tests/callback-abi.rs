@@ -80,6 +80,86 @@ fn bind_body_accepts_the_extended_tag_matrix() {
 }
 
 #[test]
+fn decode_args_admits_u64_and_composite_records() {
+    let record = {
+        let mut out = vec![wire::TAG_RECORD];
+        wire::push_u32_le(&mut out, 2);
+        Value::I32(7).encode_into(&mut out);
+        Value::Str("ok".to_owned()).encode_into(&mut out);
+        out
+    };
+    let seq = {
+        let mut out = vec![wire::TAG_SEQ];
+        wire::push_u32_le(&mut out, 1);
+        Value::Bool(false).encode_into(&mut out);
+        out
+    };
+    let mut bytes = Vec::new();
+    Value::U64(u64::MAX).encode_into(&mut bytes);
+    Value::Wire(record.clone()).encode_into(&mut bytes);
+    Value::Wire(seq.clone()).encode_into(&mut bytes);
+
+    assert_eq!(
+        decode_args(&bytes).expect("valid records"),
+        vec![Value::U64(u64::MAX), Value::Wire(record), Value::Wire(seq),]
+    );
+}
+
+#[test]
+fn decode_args_walks_nested_composites() {
+    // A sequence whose single item is itself a record: the top-level
+    // argument is the WHOLE outer sequence, nested composites and all.
+    let mut bytes = vec![wire::TAG_SEQ];
+    wire::push_u32_le(&mut bytes, 1);
+    let mut record = vec![wire::TAG_RECORD];
+    wire::push_u32_le(&mut record, 1);
+    Value::I64(-1).encode_into(&mut record);
+    bytes.extend_from_slice(&record);
+
+    assert_eq!(
+        decode_args(&bytes).expect("valid records"),
+        vec![Value::Wire(bytes.clone())]
+    );
+}
+
+#[test]
+fn decode_args_rejects_truncated_composite_headers() {
+    // A seq header declaring two items but carrying none.
+    let mut bytes = vec![wire::TAG_SEQ];
+    wire::push_u32_le(&mut bytes, 2);
+    let error = decode_args(&bytes).expect_err("truncated seq");
+    assert_eq!(error.code, ErrorCode::InvalidArgument);
+
+    // A record header whose declared length runs past the buffer.
+    let error = decode_args(&[wire::TAG_RECORD, 1, 0, 0]).expect_err("truncated header");
+    assert_eq!(error.code, ErrorCode::InvalidArgument);
+}
+
+#[test]
+fn invoke_body_carries_u64_and_composite_args() {
+    let handle = register(
+        CallbackSig::new(ValueType::Unit, &[ValueType::U64, ValueType::Wire]),
+        Arc::new(|args: &[Value]| match args {
+            [Value::U64(v), Value::Wire(payload)] => {
+                assert_eq!(*v, u64::MAX);
+                assert_eq!(payload, &vec![wire::TAG_RECORD, 0, 0, 0, 0]);
+                Value::Unit
+            }
+            _ => unreachable!("invoke checks the signature"),
+        }),
+    )
+    .expect("table has room");
+
+    let mut bytes = Vec::new();
+    Value::U64(u64::MAX).encode_into(&mut bytes);
+    Value::Wire(vec![wire::TAG_RECORD, 0, 0, 0, 0]).encode_into(&mut bytes);
+    let mut slot: u64 = 0;
+    let status = invoke_body(handle.as_u64(), &bytes, &mut slot);
+    assert_eq!(status, ErrorCode::Ok);
+    assert!(revoke_body(handle.as_u64()) == ErrorCode::Ok.as_u32());
+}
+
+#[test]
 fn decode_args_rejects_unknown_and_truncated_records() {
     let error = decode_args(&[0xFF]).expect_err("unknown tag");
     assert_eq!(error.code, ErrorCode::InvalidArgument);

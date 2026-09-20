@@ -5,6 +5,90 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 the versioning is [SemVer](https://semver.org/) (`0.x` may break at
 any minor).
 
+## [0.2.0] - 2026-09-20
+
+The callback type matrix is complete, the CLI ships as a standalone
+cross-compiled executable, and the JS side runs without a single
+`node:` import.
+
+### BREAKING
+
+- **Bun >= 1.4.2** is required (was 1.4.0), enforced at runtime by
+  the version gate. 1.4.1 fixes an intermittent Windows JIT bug when
+  optimized code passes an ArrayBuffer to a `bun:ffi` pointer
+  argument (the bffi hot path); 1.4.2 fixes a musl GC crash and a
+  rare JIT crash in long-running processes. The release workflows
+  now publish from the tested version.
+- `resolvePlatformBinary()` and `createNative()` are now ASYNC
+  (they verify the platform package's integrity digest through
+  Bun.file, whose readers are async).
+- Removed the unused exports `makeFreeBuffer`, `fileUrl`,
+  `streamToWeb`, `isNamedTs` and `decodeErrorEnvelope` /
+  `ErrorEnvelope` from `@z2net/bffi`, and `requirePositional` from
+  `@z2net/bffi-cli`.
+
+### Added
+
+- **Callback value matrix is complete.** `Value`/`ValueType` gained
+  `U64` (the exact carrier, wire tag 10) and `Wire` (a pre-encoded
+  composite; wire tag 9 is the callback-SIGNATURE marker for "any
+  record or sequence"). `decode_args` accepts `TAG_U64`,
+  `TAG_RECORD` and `TAG_SEQ`, so JavaScript can pass bigints above
+  `i64::MAX`, arrays and records into native callbacks. Exact-carrier
+  matching is lenient in-range both ways (the value-level mirror of
+  `decode_u64_lenient`): the JS encoder picks the tag by value.
+- **JS-bound dispatch matrix extended**: `u64` parameters and
+  returns, and `cstring` RETURNS (copied out immediately - the
+  pointer is call-scoped). The JS `CbType` gained `"u64"` and
+  `"string"`. The full round trip through a REAL bun:ffi JSCallback
+  is verified end to end by the reference cdylib
+  (`bffi_test_roundtrip_string` + the `BFFI_E2E`-gated suite).
+- `AsyncValue::U64`: async fn results above `i64::MAX` stay exact
+  (previously narrowed through `as i64`).
+- **Standalone `bffi` executable**: `bun run compile:cli` builds the
+  CLI with `--compile --bytecode` for all 8 platform targets
+  (`--host-only` by default); the `release-compiled` workflow
+  cross-compiles and attaches the binaries to the release. Requires
+  Bun 1.4.1+ (bytecode cross-compilation).
+- `fuzz callback_args`: libFuzzer target over the callback argument
+  decoder, registered in the weekly fuzz run.
+- Integration tests for the stream runtime (pull order, push
+  protocol, `Ctx::fail`, the `bffi_stream_*` ABI helpers); CI now
+  compile-checks every one of the 12 feature slices.
+
+### Fixed
+
+- The thread-binding unit tests no longer flake under parallel test
+  runs (a crate-wide test lock serializes the process-global
+  JS-thread state; previously 3 of 5 runs could fail).
+- `bffi check`/`bffi doctor`: a `--config` path without a `/.bffi/`
+  segment sliced the last character off the project root
+  (`slice(0, -1)`); all four root-resolution copies collapsed into
+  one `rootFromConfigPath()`.
+- `u64` async results no longer narrow through `as i64`.
+- Encoding artifacts (`┬з` -> `§`) and broken links across
+  CALLING-CONVENTION.md, READMEs and the i18n docs; AGENTS.md and
+  its translations now describe the real three-crate layout.
+
+### Changed
+
+- Zero `node:` imports across the packages and scripts: integrity
+  verification reads through `Bun.file`, the benchmark joins paths
+  with `joinOut`.
+- Module decomposition: the `invoke_wait` machinery lives in
+  `callback/wait.rs` (registry unchanged), codegen canonicalization
+  in `codegen/canonical.ts`, the loader type DSL in
+  `loader/api-types.ts` - no public API changes.
+- Dev dependencies pinned (lefthook 2.1.12, oxlint 1.81.0,
+  typescript 7.0.2); `.gitignore` pruned (the unanchored `build/`
+  rule shadowed `crates/bffi/src/build/`); docs: BINDING-GUI gained
+  ru/zh translations, SECURITY.md documents the `--no-ffi-cc`
+  hardening flag.
+- The workspace `Cargo.lock` is committed: the release builds
+  (platform cdylibs) are reproducible, and `cargo deny` / `cargo
+  audit` in CI check the exact shipped dependency graph instead of a
+  freshly-resolved one.
+
 ## [0.1.3] - 2026-09-14
 
 ### Multi-isolate JS threads (Bun 1.4 workers)

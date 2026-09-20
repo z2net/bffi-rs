@@ -24,6 +24,9 @@ pub enum AsyncValue {
     I32(i32),
     /// A 64-bit signed integer.
     I64(i64),
+    /// The exact unsigned 64-bit integer (`TAG_U64`; stays a
+    /// non-negative `bigint` in JS even above `i64::MAX`).
+    U64(u64),
     /// A double.
     F64(f64),
     /// A boolean.
@@ -57,6 +60,7 @@ impl AsyncValue {
                 out.push(wire::TAG_I64);
                 wire::push_i64_le(&mut out, *v);
             }
+            Self::U64(v) => wire::encode_u64(&mut out, *v),
             Self::F64(v) => {
                 out.push(wire::TAG_F64);
                 wire::push_f64_le(&mut out, *v);
@@ -121,7 +125,8 @@ impl From<i64> for AsyncValue {
 
 impl From<u64> for AsyncValue {
     fn from(value: u64) -> Self {
-        Self::I64(value as i64)
+        // The exact carrier: no `as i64` narrowing above `i64::MAX`.
+        Self::U64(value)
     }
 }
 
@@ -176,7 +181,7 @@ impl From<()> for AsyncValue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bffi_types::wire::{TAG_BOOL, TAG_BYTES, TAG_I32, TAG_I64, TAG_STR, TAG_UNIT};
+    use bffi_types::wire::{TAG_BOOL, TAG_BYTES, TAG_I32, TAG_I64, TAG_STR, TAG_U64, TAG_UNIT};
 
     #[test]
     fn unit_encodes_as_a_single_tag() {
@@ -203,5 +208,22 @@ mod tests {
 
         let encoded = AsyncValue::Bytes(CopiedBuf::from_slice(&[9, 8])).encode();
         assert_eq!(encoded, vec![TAG_BYTES, 2, 0, 0, 0, 9, 8]);
+    }
+
+    #[test]
+    fn u64_encodes_exactly_above_the_signed_range() {
+        let encoded = AsyncValue::U64(u64::MAX).encode();
+        assert_eq!(encoded[0], TAG_U64);
+        assert_eq!(
+            u64::from_le_bytes(encoded[1..9].try_into().unwrap()),
+            u64::MAX
+        );
+        // The conversion must not narrow through `i64`: the wire
+        // exactness invariant holds for values above `i64::MAX`.
+        assert_eq!(AsyncValue::from(u64::MAX), AsyncValue::U64(u64::MAX));
+        assert_eq!(
+            AsyncValue::from(9_223_372_036_854_775_808_u64),
+            AsyncValue::U64(9_223_372_036_854_775_808)
+        );
     }
 }

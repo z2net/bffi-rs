@@ -10,13 +10,11 @@
  *
  *   bun scripts/bench/bench.ts [path-to-cdylib] [calls]
  *
- * No dependencies: plain console table.
+ * No dependencies: plain console table; path handling goes through
+ * `joinOut` (no `node:` imports anywhere).
  */
 
-import path from "node:path";
-
-import { createApi } from "@z2net/bffi";
-import process from "node:process";
+import { createApi, joinOut } from "@z2net/bffi";
 import {
   createApiFromJson,
   moduleJson,
@@ -34,10 +32,13 @@ function defaultLibraryName(): string {
   }
 }
 
-const repoRoot = path.join(import.meta.dir, "..", "..");
+/** Two directory levels up from this script: the repo root. */
+let repoRoot = import.meta.dir.replaceAll("\\", "/");
+for (let i = 0; i < 2; i++) {
+  repoRoot = repoRoot.slice(0, repoRoot.lastIndexOf("/"));
+}
 const libraryPath =
-  process.argv[2] ??
-  path.join(repoRoot, "target", "release", defaultLibraryName());
+  process.argv[2] ?? joinOut(repoRoot, "target", "release", defaultLibraryName());
 const calls = Number(process.argv[3] ?? 1_000_000);
 const warmupCalls = 50_000;
 const a = 1;

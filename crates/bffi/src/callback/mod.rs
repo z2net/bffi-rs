@@ -56,19 +56,21 @@ pub mod error;
 pub mod registry;
 pub mod thread;
 pub mod value;
+#[cfg(feature = "event-loop")]
+mod wait;
 
 pub use error::CallbackError;
-#[cfg(feature = "event-loop")]
-pub use registry::invoke_wait;
 pub use registry::{JsCallbackInfo, bind_js_callback, invoke, js_callback, register, revoke};
 pub use thread::{ensure_js_thread, set_js_thread, unset_js_thread};
 pub use value::{CallbackSig, Value, ValueType};
+#[cfg(feature = "event-loop")]
+pub use wait::invoke_wait;
 
 // Internal cross-module surface (the event loop reads the calling
 // thread's identity to route targeted deliveries; the stream and
 // async slices record the owning isolate at registration time); not
 // part of the public facade.
+#[cfg(test)]
+pub(crate) use thread::process_state_lock;
 #[cfg(feature = "event-loop")]
-pub(crate) use thread::{
-    binding_thread, current_thread_id, end_wait, is_js_thread, try_begin_wait,
-};
+pub(crate) use thread::{binding_thread, current_thread_id, is_js_thread};

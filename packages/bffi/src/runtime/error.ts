@@ -6,7 +6,7 @@
  * paired exports, then released.
  */
 
-/** ErrorCode values that cross the C ABI (bffi-core/src/error.rs). */
+/** ErrorCode values that cross the C ABI (crates/bffi/src/core/error.rs). */
 export const ErrorCode = {
   Ok: 0,
   Error: 1,

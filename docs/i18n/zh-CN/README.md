@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Bun](https://img.shields.io/badge/Bun-%3E%3D1.4.0-F472B6?logo=bun&logoColor=white)](https://bun.sh)
+[![Bun](https://img.shields.io/badge/Bun-%3E%3D1.4.2-F472B6?logo=bun&logoColor=white)](https://bun.sh)
 [![Rust](https://img.shields.io/badge/Rust-1.98.0-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-3DA639?logo=opensourceinitiative&logoColor=white)](https://github.com/z2net/bffi-rs/blob/main/LICENSE)
 [![GitHub Issues](https://img.shields.io/github/issues/z2net/bffi-rs)](https://github.com/z2net/bffi-rs/issues)
@@ -31,7 +31,7 @@ Bun 的绑定框架 - [Bun](https://bun.sh) 的 napi-rs 等价物,构建于 `bun
 
 ## 环境要求
 
-- [Bun](https://bun.sh) >= 1.4.0(运行时由 `@z2net/bffi` 与 `bffi` CLI 强制检查)
+- [Bun](https://bun.sh) >= 1.4.2(运行时由 `@z2net/bffi` 与 `bffi` CLI 强制检查)
 - Rust 1.98.0(经 `rust-toolchain.toml` 锁定;rustup 会自动安装)
 - bash(commit-msg 钩子需要;macOS/Linux 预装,Windows 上为 Git Bash)
 

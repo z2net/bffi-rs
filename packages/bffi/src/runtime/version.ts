@@ -1,17 +1,20 @@
 /**
  * The runtime Bun version gate (AGENTS.md hard rule: minimum Bun
- * 1.4.0). `engines` in package.json is advisory only; this module
+ * 1.4.2 - raised for the 1.4.1 Windows JIT fix when optimized code
+ * passes an ArrayBuffer to a `bun:ffi` pointer argument and the
+ * 1.4.2 musl GC and long-running-process JIT crash fixes).
+ * `engines` in package.json is advisory only; this module
  * ENFORCES the floor.
  *
  * The comparison is numeric (a `"1.10.0"` must count as newer than
- * `"1.4.0"`, which rules out string comparison) and does NOT use
+ * `"1.4.2"`, which rules out string comparison) and does NOT use
  * `Bun.semver` - that API postdates older 1.x releases, so the gate
  * must work on the very runtimes it rejects. Prerelease suffixes
- * (`1.4.0-canary.12`) are compared by their leading numeric triple.
+ * (`1.4.2-canary.12`) are compared by their leading numeric triple.
  */
 
 /** The minimum Bun version this framework supports. */
-export const MIN_BUN_VERSION = "1.4.0";
+export const MIN_BUN_VERSION = "1.4.2";
 
 /** Parses the leading numeric triple of a version string. */
 function parseTuple(version: string): [number, number, number] | undefined {

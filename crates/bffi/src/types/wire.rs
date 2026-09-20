@@ -20,6 +20,9 @@
 //! | 6   | raw bytes (`u32` LE length + bytes)       |
 //! | 7   | record (`u32` LE field count + one value record per field, positional - the field names come from the descriptor, not the wire) |
 //! | 8   | sequence (`u32` LE item count + one value record per item) |
+//! | 9   | wire composite - SIGNATURE MARKER ONLY: declares "any record or sequence" in a callback signature; never emitted as a value tag |
+//! | 10  | exact `u64` (8 bytes LE)                   |
+//! | 11  | error item (UTF-8 message, `u32` LE length + bytes) |
 //!
 //! Tags 7-8 are the composite containers of the B1 type matrix: a
 //! `#[derive(BffiRecord)]` struct serializes as one record value, a
@@ -51,6 +54,11 @@ pub const TAG_RECORD: u8 = 7;
 /// The sequence value (`u32` LE item count + one value record per
 /// item): the wire form of a `Vec<T>` whose item type is not `u8`.
 pub const TAG_SEQ: u8 = 8;
+/// The composite-signature marker: appears ONLY in callback
+/// signature bytes, declaring "any record or sequence" parameter or
+/// return. Never emitted as a value tag - composite values travel as
+/// their real `TAG_RECORD`/`TAG_SEQ` records.
+pub const TAG_WIRE: u8 = 9;
 /// The exact `u64` value (`8` bytes LE): JS decodes it as a
 /// non-negative `bigint` (`BigInt64`/`BigUint64` agree below
 /// `i64::MAX`; `U64` is the exact carrier above it).
@@ -587,7 +595,7 @@ pub fn decode_variant<'a>(
 mod tests {
     use super::{
         BffiError, MAX_WIRE_DEPTH, MAX_WIRE_PAYLOAD, TAG_BOOL, TAG_BYTES, TAG_ERROR, TAG_F64,
-        TAG_I32, TAG_I64, TAG_RECORD, TAG_SEQ, TAG_STR, TAG_U64, TAG_UNIT, decode_bool,
+        TAG_I32, TAG_I64, TAG_RECORD, TAG_SEQ, TAG_STR, TAG_U64, TAG_UNIT, TAG_WIRE, decode_bool,
         decode_bytes, decode_error, decode_error_rich, decode_f64, decode_i32, decode_i64,
         decode_record_header, decode_seq_header, decode_str, decode_u64, decode_u64_lenient,
         decode_variant, encode_bool, encode_bytes, encode_error, encode_error_rich, encode_f64,
@@ -612,6 +620,11 @@ mod tests {
         // agree forever - never renumber.
         assert_eq!(TAG_RECORD, 7);
         assert_eq!(TAG_SEQ, 8);
+        // The callback-signature composite marker (never a value tag).
+        assert_eq!(TAG_WIRE, 9);
+        // The exact u64 carrier and the stream error item.
+        assert_eq!(TAG_U64, 10);
+        assert_eq!(TAG_ERROR, 11);
     }
 
     #[test]

@@ -62,9 +62,10 @@ pub enum CallbackError {
     /// byte and cannot cross as a `cstring`.
     InvalidCString,
     /// The signature of a JS-bound callback cannot cross the raw
-    /// C call that `invoke_wait`'s dispatch performs (a `Bytes`
-    /// parameter, a `Str`/`Bytes` return, or more than two
-    /// parameters).
+    /// C call that `invoke_wait`'s dispatch performs (a `Bytes` or
+    /// `Wire` parameter, a `Str`/`Bytes`/`Wire` return, or more than
+    /// two parameters). Those types ride the buffered channels
+    /// (`invoke`, async results) instead of the direct C call.
     UnsupportedSignature {
         /// The declared signature that cannot be called.
         sig: CallbackSig,
@@ -72,16 +73,18 @@ pub enum CallbackError {
 }
 
 /// Renders a [`ValueType`] as it is spelled in signatures and error
-/// messages (`i32`, `i64`, `f64`, `bool`, `str`).
+/// messages (`i32`, `i64`, `u64`, `f64`, `bool`, `str`).
 fn render_value_type(ty: ValueType) -> &'static str {
     match ty {
         ValueType::Unit => "unit",
         ValueType::I32 => "i32",
         ValueType::I64 => "i64",
+        ValueType::U64 => "u64",
         ValueType::F64 => "f64",
         ValueType::Bool => "bool",
         ValueType::Str => "str",
         ValueType::Bytes => "bytes",
+        ValueType::Wire => "wire",
     }
 }
 

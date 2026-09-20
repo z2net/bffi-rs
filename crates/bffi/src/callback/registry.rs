@@ -237,6 +237,7 @@ impl WaitSlot {
 const JS_CALL_PARAMS: &[ValueType] = &[
     ValueType::I32,
     ValueType::I64,
+    ValueType::U64,
     ValueType::F64,
     ValueType::Bool,
     ValueType::Str,
@@ -248,6 +249,7 @@ const JS_CALL_PARAMS: &[ValueType] = &[
 const JS_CALL_RETS: &[ValueType] = &[
     ValueType::I32,
     ValueType::I64,
+    ValueType::U64,
     ValueType::F64,
     ValueType::Bool,
     ValueType::Unit,
@@ -291,6 +293,8 @@ enum CArg {
     I32(i32),
     /// `i64` by value.
     I64(i64),
+    /// `u64` by value (the exact unsigned carrier).
+    U64(u64),
     /// `f64` by value.
     F64(f64),
     /// `u8` by value (bun:ffi's spelling of `bool`).
@@ -324,6 +328,12 @@ impl<'a> JsCall<'a> {
             let converted = match (param, value) {
                 (ValueType::I32, Value::I32(v)) => CArg::I32(*v),
                 (ValueType::I64, Value::I64(v)) => CArg::I64(*v),
+                (ValueType::U64, Value::U64(v)) => CArg::U64(*v),
+                // The exact-carrier allowance of `CallbackSig::matches`
+                // (the JS encoder picks the tag by value): convert the
+                // in-range view at the same width.
+                (ValueType::U64, Value::I64(v)) if *v >= 0 => CArg::U64(*v as u64),
+                (ValueType::I64, Value::U64(v)) if *v <= i64::MAX as u64 => CArg::I64(*v as i64),
                 (ValueType::F64, Value::F64(v)) => CArg::F64(*v),
                 (ValueType::Bool, Value::Bool(v)) => CArg::U8(u8::from(*v)),
                 (ValueType::Str, Value::Str(text)) => {
@@ -361,6 +371,14 @@ impl<'a> JsCall<'a> {
     fn arg_i64(&self, i: usize) -> Result<i64, CallbackError> {
         match self.cargs.get(i) {
             Some(CArg::I64(v)) => Ok(*v),
+            _ => Err(self.mismatch()),
+        }
+    }
+
+    /// The `i`-th argument as a C `u64` (the exact unsigned carrier).
+    fn arg_u64(&self, i: usize) -> Result<u64, CallbackError> {
+        match self.cargs.get(i) {
+            Some(CArg::U64(v)) => Ok(*v),
             _ => Err(self.mismatch()),
         }
     }
@@ -433,9 +451,9 @@ fn invoke_js_entry(handle: Handle, args: &[Value]) -> Result<Value, CallbackErro
 /// # Safety contract
 ///
 /// `ptr` must be a live `bun:ffi` JSCallback pointer declared with
-/// exactly this C shape (the bun:ffi spellings: `i32`, `i64`, `f64`,
-/// `u8` for `Bool`, `cstring` for `Str`, `void` for `Unit`), and the
-/// call MUST happen on the JS thread - here: inside the
+/// exactly this C shape (the bun:ffi spellings: `i32`, `i64`, `u64`,
+/// `f64`, `u8` for `Bool`, `cstring` for `Str`, `void` for `Unit`),
+/// and the call MUST happen on the JS thread - here: inside the
 /// `invoke_wait` dispatch, whose direct path and marshal job both
 /// run there. The pointer stays valid while the JS side keeps the
 /// `JSCallback` alive and has not closed it.
@@ -473,6 +491,11 @@ fn call_js_ptr(sig: &CallbackSig, ptr: usize, args: &[Value]) -> Result<Value, C
                         let call: extern "C" fn($($fty),*) -> i64 = unsafe { std::mem::transmute($ptr) };
                         Ok(Value::I64(call($($arg),*)))
                     }},
+                    (ValueType::U64, &[$(ValueType::$vt),*]) => {{
+                        // SAFETY: see the `Unit` arm.
+                        let call: extern "C" fn($($fty),*) -> u64 = unsafe { std::mem::transmute($ptr) };
+                        Ok(Value::U64(call($($arg),*)))
+                    }},
                     (ValueType::F64, &[$(ValueType::$vt),*]) => {{
                         // SAFETY: see the `Unit` arm.
                         let call: extern "C" fn($($fty),*) -> f64 = unsafe { std::mem::transmute($ptr) };
@@ -491,31 +514,43 @@ fn call_js_ptr(sig: &CallbackSig, ptr: usize, args: &[Value]) -> Result<Value, C
         [] => (),
         [i32 => I32] => (js.arg_i32(0)?),
         [i64 => I64] => (js.arg_i64(0)?),
+        [u64 => U64] => (js.arg_u64(0)?),
         [f64 => F64] => (js.arg_f64(0)?),
         [u8 => Bool] => (js.arg_u8(0)?),
         [*const std::os::raw::c_char => Str] => (js.arg_cstring(0)?),
         [i32 => I32, i32 => I32] => (js.arg_i32(0)?, js.arg_i32(1)?),
         [i32 => I32, i64 => I64] => (js.arg_i32(0)?, js.arg_i64(1)?),
+        [i32 => I32, u64 => U64] => (js.arg_i32(0)?, js.arg_u64(1)?),
         [i32 => I32, f64 => F64] => (js.arg_i32(0)?, js.arg_f64(1)?),
         [i32 => I32, u8 => Bool] => (js.arg_i32(0)?, js.arg_u8(1)?),
         [i32 => I32, *const std::os::raw::c_char => Str] => (js.arg_i32(0)?, js.arg_cstring(1)?),
         [i64 => I64, i32 => I32] => (js.arg_i64(0)?, js.arg_i32(1)?),
         [i64 => I64, i64 => I64] => (js.arg_i64(0)?, js.arg_i64(1)?),
+        [i64 => I64, u64 => U64] => (js.arg_i64(0)?, js.arg_u64(1)?),
         [i64 => I64, f64 => F64] => (js.arg_i64(0)?, js.arg_f64(1)?),
         [i64 => I64, u8 => Bool] => (js.arg_i64(0)?, js.arg_u8(1)?),
         [i64 => I64, *const std::os::raw::c_char => Str] => (js.arg_i64(0)?, js.arg_cstring(1)?),
+        [u64 => U64, i32 => I32] => (js.arg_u64(0)?, js.arg_i32(1)?),
+        [u64 => U64, i64 => I64] => (js.arg_u64(0)?, js.arg_i64(1)?),
+        [u64 => U64, u64 => U64] => (js.arg_u64(0)?, js.arg_u64(1)?),
+        [u64 => U64, f64 => F64] => (js.arg_u64(0)?, js.arg_f64(1)?),
+        [u64 => U64, u8 => Bool] => (js.arg_u64(0)?, js.arg_u8(1)?),
+        [u64 => U64, *const std::os::raw::c_char => Str] => (js.arg_u64(0)?, js.arg_cstring(1)?),
         [f64 => F64, i32 => I32] => (js.arg_f64(0)?, js.arg_i32(1)?),
         [f64 => F64, i64 => I64] => (js.arg_f64(0)?, js.arg_i64(1)?),
+        [f64 => F64, u64 => U64] => (js.arg_f64(0)?, js.arg_u64(1)?),
         [f64 => F64, f64 => F64] => (js.arg_f64(0)?, js.arg_f64(1)?),
         [f64 => F64, u8 => Bool] => (js.arg_f64(0)?, js.arg_u8(1)?),
         [f64 => F64, *const std::os::raw::c_char => Str] => (js.arg_f64(0)?, js.arg_cstring(1)?),
         [u8 => Bool, i32 => I32] => (js.arg_u8(0)?, js.arg_i32(1)?),
         [u8 => Bool, i64 => I64] => (js.arg_u8(0)?, js.arg_i64(1)?),
+        [u8 => Bool, u64 => U64] => (js.arg_u8(0)?, js.arg_u64(1)?),
         [u8 => Bool, f64 => F64] => (js.arg_u8(0)?, js.arg_f64(1)?),
         [u8 => Bool, u8 => Bool] => (js.arg_u8(0)?, js.arg_u8(1)?),
         [u8 => Bool, *const std::os::raw::c_char => Str] => (js.arg_u8(0)?, js.arg_cstring(1)?),
         [*const std::os::raw::c_char => Str, i32 => I32] => (js.arg_cstring(0)?, js.arg_i32(1)?),
         [*const std::os::raw::c_char => Str, i64 => I64] => (js.arg_cstring(0)?, js.arg_i64(1)?),
+        [*const std::os::raw::c_char => Str, u64 => U64] => (js.arg_cstring(0)?, js.arg_u64(1)?),
         [*const std::os::raw::c_char => Str, f64 => F64] => (js.arg_cstring(0)?, js.arg_f64(1)?),
         [*const std::os::raw::c_char => Str, u8 => Bool] => (js.arg_cstring(0)?, js.arg_u8(1)?),
         [*const std::os::raw::c_char => Str, *const std::os::raw::c_char => Str] => (js.arg_cstring(0)?, js.arg_cstring(1)?),
@@ -531,11 +566,11 @@ fn call_js_ptr(sig: &CallbackSig, ptr: usize, args: &[Value]) -> Result<Value, C
 /// - A JS-bound handle (`bind_js_callback`, tag `0x0201`): the same
 ///   slot mechanics, but the job calls the bound `bun:ffi`
 ///   JSCallback pointer on the JS thread - the arguments cross as
-///   the declared C types (`i32`/`i64`/`f64`/`u8`/`cstring`) and the
-///   raw C result is wrapped back into a [`Value`]. The signature
-///   and the C-call matrix are checked on the CALLING thread first
-///   (fail fast, nothing queued); the job re-validates the lookup,
-///   so a revocation during the wait crosses the slot as
+///   the declared C types (`i32`/`i64`/`u64`/`f64`/`u8`/`cstring`)
+///   and the raw C result is wrapped back into a [`Value`]. The
+///   signature and the C-call matrix are checked on the CALLING
+///   thread first (fail fast, nothing queued); the job re-validates
+///   the lookup, so a revocation during the wait crosses the slot as
 ///   [`CallbackError::InvalidHandle`].
 /// - A native handle (`register`, tag `0x0200`): as before.
 ///

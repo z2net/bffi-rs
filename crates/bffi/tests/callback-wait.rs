@@ -57,6 +57,16 @@ extern "C" fn fake_js_ping() -> u8 {
     1
 }
 
+/// `(u64) -> u64`: the exact unsigned carrier.
+extern "C" fn fake_js_u64(x: u64) -> u64 {
+    x.wrapping_add(1)
+}
+
+/// `(i32, u64) -> u64`: a mixed pair ending on the exact carrier.
+extern "C" fn fake_js_mix(a: i32, b: u64) -> u64 {
+    (a as u64).wrapping_add(b)
+}
+
 /// Serializes the queue-touching tests (see the module docs).
 static QUEUE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -362,6 +372,78 @@ fn invoke_wait_js_bound_crosses_strings_as_cstrings() {
 
     let result = worker.join().unwrap();
     assert_eq!(result, Ok(Value::I32(6)));
+}
+
+#[test]
+fn invoke_wait_js_bound_crosses_exact_u64_values() {
+    let _guard = QUEUE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    bind_js_thread();
+
+    let handle = bind_js_callback(
+        CallbackSig::new(ValueType::U64, &[ValueType::U64]),
+        fake_js_u64 as extern "C" fn(u64) -> u64 as usize,
+    )
+    .expect("callback table has room");
+
+    let (worker, done) = spawn_worker(move || {
+        bffi::invoke_wait(handle, &[Value::U64(u64::MAX - 1)], Duration::from_secs(10))
+    });
+    pump_until(&done);
+
+    let result = worker.join().unwrap();
+    assert_eq!(result, Ok(Value::U64(u64::MAX)));
+}
+
+#[test]
+fn invoke_wait_js_bound_coerces_the_exact_carrier_views() {
+    let _guard = QUEUE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    bind_js_thread();
+
+    // The lenient matches rule admits a non-negative `I64` argument
+    // for a declared `U64` parameter; the dispatch converts it to the
+    // C `u64` at the same width.
+    let handle = bind_js_callback(
+        CallbackSig::new(ValueType::U64, &[ValueType::U64]),
+        fake_js_u64 as extern "C" fn(u64) -> u64 as usize,
+    )
+    .expect("callback table has room");
+
+    let (worker, done) =
+        spawn_worker(move || bffi::invoke_wait(handle, &[Value::I64(5)], Duration::from_secs(10)));
+    pump_until(&done);
+
+    let result = worker.join().unwrap();
+    assert_eq!(result, Ok(Value::U64(6)));
+}
+
+#[test]
+fn invoke_wait_js_bound_calls_mixed_u64_pairs() {
+    let _guard = QUEUE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    bind_js_thread();
+
+    let handle = bind_js_callback(
+        CallbackSig::new(ValueType::U64, &[ValueType::I32, ValueType::U64]),
+        fake_js_mix as extern "C" fn(i32, u64) -> u64 as usize,
+    )
+    .expect("callback table has room");
+
+    let (worker, done) = spawn_worker(move || {
+        bffi::invoke_wait(
+            handle,
+            &[Value::I32(-1), Value::U64(u64::MAX)],
+            Duration::from_secs(10),
+        )
+    });
+    pump_until(&done);
+
+    let result = worker.join().unwrap();
+    assert_eq!(result, Ok(Value::U64(u64::MAX - 1)));
 }
 
 #[test]

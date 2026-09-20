@@ -84,6 +84,10 @@ cross-compiled executable, and the JS side runs without a single
   rule shadowed `crates/bffi/src/build/`); docs: BINDING-GUI gained
   ru/zh translations, SECURITY.md documents the `--no-ffi-cc`
   hardening flag.
+- The workspace `Cargo.lock` is committed: the release builds
+  (platform cdylibs) are reproducible, and `cargo deny` / `cargo
+  audit` in CI check the exact shipped dependency graph instead of a
+  freshly-resolved one.
 
 ## [0.1.3] - 2026-09-14
 

@@ -2,7 +2,6 @@
 # `target` at any depth: the root workspace target/ and any nested one.
 target/
 **/*.rs.bk
-Cargo.lock
 
 # ===== Bun / JS =====
 node_modules/

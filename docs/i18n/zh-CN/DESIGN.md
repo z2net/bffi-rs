@@ -37,7 +37,7 @@ flowchart LR
     R --> A --> J
 ```
 
-**Rust 侧,自底向上。** `bffi-core` 是地基:世代句柄、对象注册表与边界策略。其上是各司其职的 crate - `bffi-error`、`bffi-types`(类型转换,外加共享的 wire 编解码)、`bffi-object`(ObjectWrap)、`bffi-callback`(双向回调与泛型回调 ABI)、`bffi-event-loop`(队列与排空)、`bffi-async`(把 Rust future 变成 JS Promise)、`bffi-dts`(描述符 IR 与渲染器)、`bffi-build`(运行时 ABI 导出与 loader JSON)。过程宏 crate - `bffi-macros`(`#[bffi]`、`#[bffi_async]`)与 `bffi-class`(`#[bffi_class]`) - 的内部实现放在 `bffi-macro-support` 中共享。`bffi` 是门面:一个依赖,再导出整个技术栈。`bffi-native` 是参考 cdylib。
+**Rust 侧,自底向上。** 发布的 crate `bffi` 以 feature 门控的模块形式容纳整个技术栈,并保留合并前的名称(`bffi::bffi_core`、`bffi::bffi_types` 等):`bffi-core` 是地基(世代句柄、对象注册表、边界策略);其上是 `bffi-error`(`BffiError` -> JS Error 的映射)、`bffi-types`(类型转换、SIMD UTF-8、共享的 wire 编解码)、`bffi-object`(ObjectWrap)、`bffi-callback`(双向回调与泛型回调 ABI)、`bffi-event-loop`(队列与排空)、`bffi-async`(把 Rust future 变成 JS Promise)、`bffi-dts`(描述符 IR 与渲染器)、`bffi-build`(运行时 ABI 导出与 loader JSON)。独立的过程宏 crate `bffi-macros`(物理上不可避免:过程宏无法存在于普通 crate 内)提供 `#[bffi]`、`#[bffi_async]` 与类宏,内部实现在其 `support`/`class` 模块中共享。门面以扁平方式再导出一切,外加宏展开默认引用的 `core`/`types`/`dts`/`object`/`build`/`r#async` 命名空间。`bffi-native` 是参考 cdylib。
 
 **JS 侧。** `@z2net/bffi`(packages/bffi)是配置驱动的流水线 - cargo build、loader JSON、生成 TypeScript、dlopen - 外加类型化的运行时加载器。`@z2net/bffi-cli`(packages/bffi-cli)是 `bffi` CLI:init、build、check、doctor、codegen、pack、fetch。`@z2net/bffi-native`(packages/native)是已发布的参考原生模块家族。
 

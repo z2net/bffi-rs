@@ -44,3 +44,7 @@
 - bffi 提供 **panic 遏制**(release 包装函数尽可能把 Rust panic 转换为 JS 错误),而非**进程隔离**:原生模块运行在 Bun 进程之内。原生代码中的内存损坏、`abort`、段错误或分配器破坏随时可以击垮宿主。
 - `e.nativeStack` 受 `RUST_BACKTRACE` 门控 - 生产环境请保持关闭(它会泄露路径与代码结构)。
 - 发布配置中的 `panic = "unwind"` 是必需的:模块 `[profile.release]` 中的 `panic = "abort"` 会破坏遏制策略并中止宿主(`bffi doctor` 会检查这一点)。
+
+## 运行时加固
+
+- 执行不受信任 JavaScript 的宿主可以在启动 Bun 时附加 `--no-ffi-cc`(或 `--no-addons`),以禁止通过 `bun:ffi` 的 `cc()` 在运行时编译和加载 C 代码(该标志自 Bun 1.4.1 起可用)。bffi 自身从不调用 `cc()`。

@@ -69,3 +69,10 @@ Out of scope:
   "abort"` in a module's `[profile.release]` breaks the
   containment policy and aborts the host (`bffi doctor` checks
   this).
+
+## Runtime hardening
+
+- Hosts that execute untrusted JavaScript can start Bun with
+  `--no-ffi-cc` (or `--no-addons`) to forbid runtime C compilation
+  and loading via `bun:ffi`'s `cc()` (flag available since Bun
+  1.4.1). bffi itself never calls `cc()`.

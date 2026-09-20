@@ -72,7 +72,7 @@ const native = await createNative(); // resolves + dlopens the platform binary
 
 native.add(3, 4);        // => 7
 native.shout("bffi");    // => "HELLO bffi!"
-native.version();        // => "0.1.0"
+native.version();        // => "0.2.0"
 ```
 
 What `createNative()` does:

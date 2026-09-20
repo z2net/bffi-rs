@@ -6,12 +6,21 @@
  * generation step must have (re)written `api.gen.ts` on the way.
  * A real end-to-end build lives in the examples repo.
  *
+ * The "missing config" case is an EMPTY project: `rootFromConfigPath`
+ * maps any `--config` to its `.bffi/` root, so a nonexistent config
+ * file inside a SCAFFOLDED project would still load the real config
+ * and fall through to a live `cargo build` (observed as a 5s
+ * bun:test timeout on a fresh CI checkout). The empty project fails
+ * in `loadConfigFile` BEFORE any cargo involvement - deterministic
+ * on every platform.
+ *
  * Run with `bun test packages/bffi-cli`.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { $ } from "bun";
 
 const ROOT = `${import.meta.dir}/tmp/build`;
+const EMPTY = `${import.meta.dir}/tmp/empty-build`;
 const BFFI_DIR = `${ROOT}/.bffi`;
 
 const VALID_CONFIG = {
@@ -40,18 +49,24 @@ async function scaffoldProject(): Promise<void> {
 
 describe("bffi build", () => {
   beforeAll(async () => {
+    // The empty project needs its directory to exist (the config
+    // read inside fails either way; the dir just keeps the spawn
+    // deterministic about its cwd-less error text).
+    await Bun.write(`${EMPTY}/.gitignore`, "");
     await scaffoldProject();
   });
 
   test("build fails fast on a missing config (exit 2)", () => {
+    // An empty project: `--config` maps to EMPTY, whose `.bffi/` has
+    // no config - `loadConfigFile` throws before any cargo spawn.
     const { code, stderr } = runCli([
       "build",
       "--config",
-      `${ROOT}/.bffi/does-not-exist.json`,
+      `${EMPTY}/.bffi/bffi.json`,
     ]);
     expect(code).toBe(2);
     expect(stderr).toContain("build failed");
-  });
+  }, 15000);
 
   test("build --skip-build surfaces the broken artifact (exit 2)", async () => {
     await $`rm -rf ${BFFI_DIR}/api.gen.ts`;
@@ -70,7 +85,7 @@ describe("bffi build", () => {
   }, 15000);
 
   afterAll(async () => {
-    await $`rm -rf ${ROOT}`;
+    await $`rm -rf ${ROOT} ${EMPTY}`;
   });
 });
 

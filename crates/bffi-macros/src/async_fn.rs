@@ -471,13 +471,13 @@ fn async_value_from(paths: &PathCtx, ret: &RetKind) -> TokenStream {
             // The shim body is emitted in the annotated fn's own
             // scope: the user path resolves as written (no
             // `super::` anchor - that is a descriptor-module
-            // concern).
+            // concern). Fully-qualified through the trait: a
+            // non-derived type fails with the `BffiWire` trait bound
+            // (E0277) instead of an orphaned missing-item lookup.
             let p = &path.0;
             quote! {{
-                #[allow(unused_imports)]
-                use #types::wire::BffiWire as _;
                 let mut __buf = ::std::vec::Vec::<u8>::new();
-                #p::bffi_wire_encode(&__value, &mut __buf);
+                <#p as #types::wire::BffiWire>::bffi_wire_encode(&__value, &mut __buf);
                 #async_root::AsyncValue::Wire(__buf)
             }}
         }

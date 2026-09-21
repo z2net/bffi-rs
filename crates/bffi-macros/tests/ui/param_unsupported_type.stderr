@@ -1,6 +1,7 @@
 error: bffi[E002]: unsupported type `Vec < u8 >` for parameter `data`
          = help: supported: i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|&str|&[u8]|()
          = note: borrowed `&[u8]` is the only buffer parameter; owned buffers are return-only (CALLING-CONVENTION.md)
+         = note: a bare path is a record/enum: it must derive `BffiRecord`/`BffiEnum` (otherwise the `BffiWire` trait bound fails)
          = note: boundary rules: DESIGN.md (https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md)
  --> tests/ui/param_unsupported_type.rs:5:12
   |

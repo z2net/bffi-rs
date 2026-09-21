@@ -1,0 +1,5 @@
+error: bffi[E010]: unsupported field type `Vec < Option < u32 > >` on `scores`; supported sequence items: i8|i16|i32|u8|u16|u32|f32|f64|i64|u64|bool|String|Vec<u8>|records (B1 v1)
+ --> tests/ui/record_field_unsupported_seq_item.rs:6:17
+  |
+6 |     pub scores: Vec<Option<u32>>,
+  |                 ^^^

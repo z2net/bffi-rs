@@ -52,6 +52,27 @@ pub struct Profile {
     pub big: Option<i64>,
 }
 
+/// A playlist exercising sequence fields of every supported item kind.
+#[derive(BffiRecord, Debug, PartialEq)]
+pub struct Playlist {
+    pub narrow: Vec<i16>,
+    pub wide: Vec<f64>,
+    pub bigs: Vec<i64>,
+    pub bigs_unsigned: Vec<u64>,
+    pub flags: Vec<bool>,
+    pub names: Vec<String>,
+    pub blobs: Vec<Vec<u8>>,
+    pub points: Vec<Point>,
+}
+
+/// Optional flavors over sequence fields.
+#[derive(BffiRecord, Debug, PartialEq)]
+pub struct MaybeSeq {
+    pub tags: Option<Vec<String>>,
+    pub scores: Option<Vec<f64>>,
+    pub points: Option<Vec<Point>>,
+}
+
 #[test]
 fn record_round_trips_every_field_kind() {
     let value = Point {
@@ -307,4 +328,105 @@ fn truncated_optional_field_is_an_error() {
     value.bffi_wire_encode(&mut wire);
     // Cut inside the `Some` string payload.
     assert!(Profile::bffi_wire_decode(&wire[..wire.len() - 1], 0).is_err());
+}
+
+#[test]
+fn sequence_fields_round_trip_every_item_kind() {
+    let value = Playlist {
+        narrow: vec![i16::MIN, 0, i16::MAX],
+        wide: vec![f64::MIN, 1.5],
+        bigs: vec![i64::MIN, i64::MAX],
+        bigs_unsigned: vec![u64::MAX, 0],
+        flags: vec![true, false, true],
+        names: vec!["a".to_owned(), "héllo".to_owned()],
+        blobs: vec![vec![1], Vec::new(), vec![2, 3]],
+        points: vec![profile_home()],
+    };
+    let mut wire = Vec::new();
+    value.bffi_wire_encode(&mut wire);
+    let (decoded, end) = Playlist::bffi_wire_decode(&wire, 0).expect("decode");
+    assert_eq!(decoded, value);
+    assert_eq!(end, wire.len());
+
+    // Empty sequences ride a bare header each.
+    let empty = Playlist {
+        narrow: Vec::new(),
+        wide: Vec::new(),
+        bigs: Vec::new(),
+        bigs_unsigned: Vec::new(),
+        flags: Vec::new(),
+        names: Vec::new(),
+        blobs: Vec::new(),
+        points: Vec::new(),
+    };
+    let mut wire = Vec::new();
+    empty.bffi_wire_encode(&mut wire);
+    // TAG_RECORD + count + 8 x (TAG_SEQ + zero count)
+    assert_eq!(wire.len(), 1 + 4 + 8 * (1 + 4));
+    let (decoded, end) = Playlist::bffi_wire_decode(&wire, 0).expect("decode");
+    assert_eq!(decoded, empty);
+    assert_eq!(end, wire.len());
+}
+
+#[test]
+fn truncated_sequence_field_is_an_error() {
+    let value = Playlist {
+        narrow: vec![1, 2],
+        wide: Vec::new(),
+        bigs: Vec::new(),
+        bigs_unsigned: Vec::new(),
+        flags: Vec::new(),
+        names: Vec::new(),
+        blobs: Vec::new(),
+        points: Vec::new(),
+    };
+    let mut wire = Vec::new();
+    value.bffi_wire_encode(&mut wire);
+    // Cut inside the narrow sequence payload.
+    assert!(Playlist::bffi_wire_decode(&wire[..wire.len() - 1], 0).is_err());
+}
+
+#[test]
+fn optional_sequence_fields_round_trip() {
+    let value = MaybeSeq {
+        tags: Some(vec!["x".to_owned()]),
+        scores: Some(vec![1.0, -2.5]),
+        points: Some(vec![profile_home()]),
+    };
+    let mut wire = Vec::new();
+    value.bffi_wire_encode(&mut wire);
+    let (decoded, end) = MaybeSeq::bffi_wire_decode(&wire, 0).expect("decode");
+    assert_eq!(decoded, value);
+    assert_eq!(end, wire.len());
+
+    let none = MaybeSeq {
+        tags: None,
+        scores: None,
+        points: None,
+    };
+    let mut wire = Vec::new();
+    none.bffi_wire_encode(&mut wire);
+    // TAG_RECORD + count + 3 x TAG_UNIT.
+    assert_eq!(wire.len(), 1 + 4 + 3);
+    let (decoded, end) = MaybeSeq::bffi_wire_decode(&wire, 0).expect("decode");
+    assert_eq!(decoded, none);
+    assert_eq!(end, wire.len());
+}
+
+#[test]
+fn sequence_field_descriptors_carry_the_array_types() {
+    let record = Playlist::BFFI_RECORD_DEF;
+    assert_eq!(record.fields[0].ty, TsType::NumberArray);
+    assert_eq!(record.fields[1].ty, TsType::NumberArray);
+    assert_eq!(record.fields[2].ty, TsType::BigIntArray);
+    assert_eq!(record.fields[3].ty, TsType::BigIntArray);
+    assert_eq!(record.fields[4].ty, TsType::BooleanArray);
+    assert_eq!(record.fields[5].ty, TsType::StringArray);
+    assert_eq!(record.fields[6].ty, TsType::Uint8ArrayArray);
+    assert_eq!(record.fields[7].ty, TsType::RecordArray("Point"));
+
+    let optional = MaybeSeq::BFFI_RECORD_DEF;
+    assert_eq!(optional.fields[0].ty, TsType::NullableStringArray);
+    assert_eq!(optional.fields[1].ty, TsType::NullableNumberArray);
+    assert_eq!(optional.fields[2].ty, TsType::NullableRecordArray("Point"));
 }

@@ -119,6 +119,38 @@ const FIXTURE = {
       out: "handle",
     },
     {
+      name: "greet",
+      export: "bffi_greet",
+      docs: [],
+      params: [{ name: "who", ts: "string | null", abi: "cstring" }],
+      ret: { ts: "string", abi: "buffer" },
+      out: "handle",
+    },
+    {
+      name: "scale",
+      export: "bffi_scale",
+      docs: [],
+      params: [{ name: "w", ts: "number | null", abi: "opt_number" }],
+      ret: { ts: "number", abi: "u32" },
+      out: "u32",
+    },
+    {
+      name: "bump",
+      export: "bffi_bump",
+      docs: [],
+      params: [{ name: "v", ts: "bigint | null", abi: "opt_u64" }],
+      ret: { ts: "bigint", abi: "u64" },
+      out: "u64",
+    },
+    {
+      name: "measure",
+      export: "bffi_measure",
+      docs: [],
+      params: [{ name: "data", ts: "Uint8Array | null", abi: "opt_ptr_len" }],
+      ret: { ts: "bigint", abi: "u64" },
+      out: "u64",
+    },
+    {
       name: "touch",
       export: "bffi_touch",
       docs: [],
@@ -181,6 +213,12 @@ describe("buildDeclarations", () => {
       returns: "u32",
     });
     expect(declarations.bffi_counter_release).toEqual({ args: ["u64"], returns: "u32" });
+    // The optional-parameter shapes expand through the same table.
+    expect(declarations.bffi_scale).toEqual({ args: ["f64", "u8", "pointer"], returns: "u32" });
+    expect(declarations.bffi_measure).toEqual({
+      args: ["ptr", "u64", "u8", "pointer"],
+      returns: "u32",
+    });
   });
 
   test("rejects unknown schema versions and duplicate exports", () => {
@@ -243,6 +281,23 @@ function mockLib() {
       }
       return 0;
     },
+    bffi_greet: (who: string | null, out: BigUint64Array) => {
+      out[0] = store(new TextEncoder().encode(who === null ? "none" : `hi ${who}`));
+      return 0;
+    },
+    bffi_scale: (val: number, flag: number, out: Uint32Array) => {
+      out[0] = flag === 0 ? 0 : (val as number) * 2;
+      return 0;
+    },
+    bffi_bump: (val: bigint, flag: number, out: BigUint64Array) => {
+      out[0] = flag === 0 ? 0n : (val as bigint) + 1n;
+      return 0;
+    },
+    bffi_measure: (data: unknown, len: bigint, flag: number, out: BigUint64Array) => {
+      void data;
+      out[0] = flag === 0 ? 18446744073709551615n : BigInt(len);
+      return 0;
+    },
     bffi_counter_new: (start: number, out: BigUint64Array) => {
       counter.value = start as number;
       alive = true;
@@ -288,6 +343,33 @@ describe("createApiFromLib", () => {
   test("encodes ptr_len parameters with a null pointer when empty", () => {
     const empty = api.echo(new Uint8Array(0));
     expect(empty).toEqual(new Uint8Array(0));
+  });
+
+  test("passes null cstrings for nullable string parameters", () => {
+    expect(api.greet(null)).toBe("none");
+    expect(api.greet("ada")).toBe("hi ada");
+  });
+
+  test("throws on null for a non-nullable cstring", () => {
+    // The static type is `string`; the runtime guard is what we test.
+    const bypass = null as unknown as string;
+    expect(() => api.shout(bypass)).toThrow(/expected string/);
+  });
+
+  test("encodes opt_number through the flag pair", () => {
+    expect(api.scale(null)).toBe(0);
+    expect(api.scale(21)).toBe(42);
+  });
+
+  test("encodes opt_u64 bigints through the flag pair", () => {
+    expect(api.bump(null)).toBe(0n);
+    expect(api.bump(41n)).toBe(42n);
+  });
+
+  test("distinguishes Some(empty) from None for opt_ptr_len", () => {
+    expect(api.measure(new Uint8Array(0))).toBe(0n);
+    expect(api.measure(null)).toBe(18446744073709551615n);
+    expect(api.measure(new Uint8Array([1, 2, 3]))).toBe(3n);
   });
 
   test("throws the drained error on a non-zero status", () => {

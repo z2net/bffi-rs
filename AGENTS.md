@@ -234,6 +234,7 @@ When unsure about architecture, prefer asking (or opening a draft PR) instead of
 | Descriptor ABI | `AbiSig` (exact C widths + out slot) on `FunctionDef`/`MethodDef`; getter `export_name` + out on `FieldDef`; `release_export` on `ClassDef` |
 | Wire codec | `bffi::types::wire`: one `[tag][payload]` table for async payloads and callback sigs/args/results |
 | Composites (B1+B4) | Records/enums/`Vec<T>` (incl. `Vec<Vec<u8>>`) sync + async; `Option<Record>`/`Option<Vec<T>>` returns = `| null` over the 0-handle empty-buffer convention; item/field matrix rejects deeper nesting |
+| Option parameters (sync) | `Option<&str>` (NULL cstring), `Option<&[u8]>` (ptr+len+flag triple), `Option<prim>` (`f64`+flag), `Option<i64/u64>` (width+flag), `Option<record/Vec<T>>` (`len == 0`); ABI names `opt_number`/`opt_i64`/`opt_u64`/`opt_ptr_len`; nested `Option` and async paths stay rejected |
 | Typed errors | `#[derive(BffiError)]`: user codes 0x1000-0xFFFF replace status 13; variant = JS `e.name`, fields = `e.payload` (TAG_RECORD); rich accessors best-effort; loader JSON `errors` table |
 | Callback ABI | Generic exports via `bffi_callback_abi!()` (`bffi_callback_set_thread`/`_bind`/`_invoke`/`_revoke`) in the user crate; wire-encoded; CALLING-CONVENTION.md §9 |
 | Loader JSON | `bffi::build::loader_json`: canonical deterministic schema v1 from the aggregated `ModuleDef` |

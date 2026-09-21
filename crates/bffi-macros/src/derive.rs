@@ -6,7 +6,9 @@
 //! codec pair `bffi_wire_encode` / `bffi_wire_decode` over the
 //! value-level helpers of `bffi::types::wire`. `Option<T>` fields
 //! encode `None` as the `TAG_UNIT` byte and `Some(v)` as the inner
-//! value record. A derived unit enum
+//! value record. `Vec<T>` fields ride the shared sequence matrix
+//! (`TAG_SEQ` framing, the same item kinds as function-level
+//! sequences). A derived unit enum
 //! gains the same shape with `TsType::Enum("Name")`, encoding as its
 //! variant name.
 //!
@@ -27,7 +29,8 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::spanned::Spanned;
 
-use crate::support::kind::TsKind;
+use crate::support::classify::seq_item;
+use crate::support::kind::{SeqItem, TsKind};
 use crate::support::paths::PathCtx;
 use crate::support::util::extract_docs;
 
@@ -172,6 +175,10 @@ pub(crate) enum FieldKind {
     Str,
     /// `Vec<u8>`.
     Bytes,
+    /// A `Vec<T>` of a supported sequence item: rides the shared
+    /// `TAG_SEQ` framing (the same item matrix as function-level
+    /// sequences).
+    Seq(SeqItem),
     /// A nested `BffiRecord`/`BffiEnum` type.
     Named(syn::Path),
     /// `Option<inner>` over one of the kinds above: `None` rides the
@@ -207,16 +214,24 @@ impl FieldKind {
             if let syn::PathArguments::AngleBracketed(args) = &last.arguments
                 && args.args.len() == 1
                 && let syn::GenericArgument::Type(inner) = &args.args[0]
-                && is_u8(inner)
             {
-                return Ok(Self::Bytes);
+                if is_u8(inner) {
+                    return Ok(Self::Bytes);
+                }
+                // A sequence field rides the shared item matrix;
+                // consulted only inside the `Vec` arm so bare-name
+                // fields keep their `Named` classification.
+                if let Some(item) = seq_item(inner) {
+                    return Ok(Self::Seq(item));
+                }
             }
             let ty_text = quote::ToTokens::to_token_stream(ty).to_string();
             return Err(syn::Error::new(
                 ty.span(),
                 format!(
-                    "bffi[E010]: unsupported field type `{ty_text}` on `{field}`; only \
-                     Vec<u8> of the sequence types is supported (B1 v1)"
+                    "bffi[E010]: unsupported field type `{ty_text}` on `{field}`; supported \
+                     sequence items: i8|i16|i32|u8|u16|u32|f32|f64|i64|u64|bool|String|\
+                     Vec<u8>|records (B1 v1)"
                 ),
             ));
         }
@@ -267,6 +282,7 @@ impl FieldKind {
             Self::Bool => quote! { ::bffi::dts::TsType::Boolean },
             Self::Str => quote! { ::bffi::dts::TsType::String },
             Self::Bytes => quote! { ::bffi::dts::TsType::Uint8Array },
+            Self::Seq(item) => seq_array_kind(item).tokens(&PathCtx::default()),
             Self::Named(path) => quote! { #path::BFFI_TS_TYPE },
             Self::Opt(inner) => Self::nullable_expr(inner),
         }
@@ -282,6 +298,20 @@ impl FieldKind {
             Self::Bool => TsKind::NullableBoolean,
             Self::Str => TsKind::NullableString,
             Self::Bytes => TsKind::NullableUint8Array,
+            Self::Seq(item) => match item {
+                SeqItem::Narrow | SeqItem::Wide => TsKind::NullableNumberArray,
+                SeqItem::I64 | SeqItem::U64 => TsKind::NullableBigIntArray,
+                SeqItem::Bool => TsKind::NullableBooleanArray,
+                SeqItem::Str => TsKind::NullableStringArray,
+                SeqItem::Bytes => TsKind::NullableUint8ArrayArray,
+                SeqItem::Record(path) => TsKind::NullableRecordArray(
+                    path.0
+                        .segments
+                        .last()
+                        .map(|segment| segment.ident.to_string())
+                        .unwrap_or_default(),
+                ),
+            },
             Self::Named(path) => TsKind::NullableRecord(
                 path.segments
                     .last()
@@ -312,8 +342,20 @@ impl FieldKind {
             Self::Bool => quote! { __w::encode_bool(out, #access); },
             Self::Str => quote! { __w::encode_str(out, &#access); },
             Self::Bytes => quote! { __w::encode_bytes(out, &#access); },
+            Self::Seq(item) => {
+                let push = seq_item_encode_stmt(item);
+                quote! {
+                    __w::encode_seq_header(out, #access.len());
+                    for __item in &#access {
+                        #push
+                    }
+                }
+            }
             Self::Named(path) => {
-                quote! { #path::bffi_wire_encode(&#access, out); }
+                // Fully-qualified through the trait: the expansion never
+                // depends on `BffiWire` being in scope, and a non-derived
+                // nested type fails with the trait bound (E0277).
+                quote! { <#path as ::bffi::types::wire::BffiWire>::bffi_wire_encode(&#access, out); }
             }
             Self::Opt(inner) => {
                 let some = Self::encode_access_ref(inner);
@@ -338,8 +380,18 @@ impl FieldKind {
             Self::Bool => quote! { __w::encode_bool(out, *__v); },
             Self::Str => quote! { __w::encode_str(out, __v); },
             Self::Bytes => quote! { __w::encode_bytes(out, __v); },
+            Self::Seq(item) => {
+                let push = seq_item_encode_stmt(item);
+                quote! {
+                    __w::encode_seq_header(out, __v.len());
+                    for __item in __v.iter() {
+                        #push
+                    }
+                }
+            }
             Self::Named(path) => {
-                quote! { #path::bffi_wire_encode(__v, out); }
+                // Fully-qualified through the trait (see `encode_access`).
+                quote! { <#path as ::bffi::types::wire::BffiWire>::bffi_wire_encode(__v, out); }
             }
             // Unreachable: `classify` rejects nested options before
             // an `Opt` can wrap one; the arm exists for
@@ -400,8 +452,25 @@ impl FieldKind {
                 let (__v, __off) = __w::decode_bytes(bytes, __off)?;
                 let #ident = ::std::vec::Vec::from(__v);
             },
+            Self::Seq(item) => {
+                let item_decode = seq_field_item_decode(item, ident);
+                quote! {
+                    let (seq_count, mut seq_off) = __w::decode_seq_header(bytes, __off)?;
+                    // A hostile count is bounded by the header check
+                    // (MAX_WIRE_PAYLOAD); the reservation only pre-sizes
+                    // a sane fraction of it, like the shim decode does.
+                    let mut #ident =
+                        ::std::vec::Vec::with_capacity((seq_count as usize).min(4096));
+                    for _ in 0..seq_count {
+                        #item_decode
+                    }
+                    let __off = seq_off;
+                }
+            }
             Self::Named(path) => quote! {
-                let (#ident, __off) = #path::bffi_wire_decode(bytes, __off)?;
+                // Fully-qualified through the trait (see `encode_access`).
+                let (#ident, __off) =
+                    <#path as ::bffi::types::wire::BffiWire>::bffi_wire_decode(bytes, __off)?;
             },
         }
     }
@@ -416,6 +485,74 @@ impl FieldKind {
             }
             _ => quote! { #ident },
         }
+    }
+}
+
+/// The array `TsKind` of one sequence item kind (the field-level
+/// wrapper around the shared matrix).
+fn seq_array_kind(item: &SeqItem) -> TsKind {
+    match item {
+        SeqItem::Narrow | SeqItem::Wide => TsKind::NumberArray,
+        SeqItem::I64 | SeqItem::U64 => TsKind::BigIntArray,
+        SeqItem::Bool => TsKind::BooleanArray,
+        SeqItem::Str => TsKind::StringArray,
+        SeqItem::Bytes => TsKind::Uint8ArrayArray,
+        SeqItem::Record(path) => TsKind::RecordArray(
+            path.0
+                .segments
+                .last()
+                .map(|segment| segment.ident.to_string())
+                .unwrap_or_default(),
+        ),
+    }
+}
+
+/// The encode statement for one sequence item (bound to `__item`, a
+/// shared reference) writing into `out`.
+fn seq_item_encode_stmt(item: &SeqItem) -> TokenStream2 {
+    match item {
+        SeqItem::Narrow => quote! { __w::encode_i32(out, *__item as i32); },
+        SeqItem::Wide => quote! { __w::encode_f64(out, *__item as f64); },
+        SeqItem::I64 => quote! { __w::encode_i64(out, *__item); },
+        SeqItem::U64 => quote! { __w::encode_u64(out, *__item); },
+        SeqItem::Bool => quote! { __w::encode_bool(out, *__item); },
+        SeqItem::Str => quote! { __w::encode_str(out, __item); },
+        SeqItem::Bytes => quote! { __w::encode_bytes(out, __item); },
+        SeqItem::Record(path) => {
+            let path = &path.0;
+            quote! { <#path as ::bffi::types::wire::BffiWire>::bffi_wire_encode(__item, out); }
+        }
+    }
+}
+
+/// The decode statement for one sequence item inside the field loop:
+/// advances `seq_off` over `bytes` and pushes the value into `#ident`.
+fn seq_field_item_decode(item: &SeqItem, ident: &syn::Ident) -> TokenStream2 {
+    let decode = match item {
+        SeqItem::Narrow => quote! { __w::decode_i32(bytes, seq_off)? },
+        SeqItem::Wide => quote! { __w::decode_number(bytes, seq_off)? },
+        SeqItem::I64 => quote! { __w::decode_i64(bytes, seq_off)? },
+        SeqItem::U64 => quote! { __w::decode_u64_lenient(bytes, seq_off)? },
+        SeqItem::Bool => quote! { __w::decode_bool(bytes, seq_off)? },
+        SeqItem::Str => quote! { __w::decode_str(bytes, seq_off)? },
+        SeqItem::Bytes => quote! { __w::decode_bytes(bytes, seq_off)? },
+        SeqItem::Record(path) => {
+            let path = &path.0;
+            quote! { <#path as ::bffi::types::wire::BffiWire>::bffi_wire_decode(bytes, seq_off)? }
+        }
+    };
+    let push = match item {
+        SeqItem::Narrow | SeqItem::Wide => quote! { #ident.push(value as _) },
+        SeqItem::I64 | SeqItem::U64 | SeqItem::Bool | SeqItem::Record(_) => {
+            quote! { #ident.push(value) }
+        }
+        SeqItem::Str => quote! { #ident.push(::std::string::String::from(value)) },
+        SeqItem::Bytes => quote! { #ident.push(::std::vec::Vec::from(value)) },
+    };
+    quote! {
+        let (value, next) = #decode;
+        seq_off = next;
+        #push;
     }
 }
 
@@ -560,8 +697,8 @@ fn field_type_error(ty: &syn::Type, field: &syn::Ident) -> syn::Error {
         ty.span(),
         format!(
             "bffi[E010]: unsupported field type `{ty_text}` on `{field}`; \
-                 supported: i8|i16|i32|u8|u16|u32|f32|f64|i64|bool|String|Vec<u8>|\
-                 Option<T>|nested records"
+                 supported: i8|i16|i32|u8|u16|u32|f32|f64|i64|u64|bool|String|Vec<u8>|\
+                 Vec<T> (supported items)|Option<T>|nested records"
         ),
     )
 }

@@ -1,0 +1,13 @@
+error[E0277]: `Sample` is not a bffi boundary composite
+  --> tests/ui/seq_missing_derive_item.rs:10:22
+   |
+10 | fn take(samples: Vec<Sample>) {}
+   |                      ^^^^^^ `Sample` cannot cross the bffi boundary as a record/enum
+   |
+help: the trait `BffiWire` is not implemented for `Sample`
+  --> tests/ui/seq_missing_derive_item.rs:5:1
+   |
+ 5 | struct Sample {
+   | ^^^^^^^^^^^^^
+   = note: derive `BffiRecord` (named-field structs) or `BffiEnum` (unit enums) on `Sample`, or implement `BffiWire` manually
+   = note: the boundary type matrix: crates/bffi-macros (attribute docs)

@@ -1,0 +1,24 @@
+error[E0277]: `Point` is not a bffi boundary composite
+  --> tests/ui/record_missing_derive_param.rs:11:15
+   |
+11 | fn move_to(p: Point) {}
+   |               ^^^^^ `Point` cannot cross the bffi boundary as a record/enum
+   |
+help: the trait `BffiWire` is not implemented for `Point`
+  --> tests/ui/record_missing_derive_param.rs:5:1
+   |
+ 5 | struct Point {
+   | ^^^^^^^^^^^^
+   = note: derive `BffiRecord` (named-field structs) or `BffiEnum` (unit enums) on `Point`, or implement `BffiWire` manually
+   = note: the boundary type matrix: crates/bffi-macros (attribute docs)
+
+error[E0599]: no associated function or constant named `BFFI_TS_TYPE` found for struct `Point` in the current scope
+  --> tests/ui/record_missing_derive_param.rs:10:1
+   |
+ 5 | struct Point {
+   | ------------ associated function or constant `BFFI_TS_TYPE` not found for this struct
+...
+10 | #[bffi]
+   | ^^^^^^^ associated function or constant not found in `Point`
+   |
+   = note: this error originates in the attribute macro `bffi` (in Nightly builds, run with -Z macro-backtrace for more info)

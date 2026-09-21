@@ -2,8 +2,8 @@
  * The pipeline orchestrator: ONE call from the consumer.
  *
  * ```ts
- * import { bffi } from "@z2net/bffi";
- * import type { Api } from "../.bffi/api.gen.ts";
+ * import { bffi } from "#bffi";
+ * import type { Api } from "#bffi/.bffi/api.gen.ts";
  *
  * const api: Api = await bffi(); // build -> json -> gen -> resolve -> dlopen
  * ```
@@ -14,17 +14,17 @@
 import {
   applyDebug,
   debugLog,
-} from "./debug.ts";
+} from "#bffi/pipeline/debug.ts";
 import {
   findProjectRoot,
   loadConfigFile,
   type BffiConfig,
-} from "./config.ts";
-import { buildCrate } from "./build.ts";
-import { DEFAULT_RUNTIME, renderModule } from "../codegen/generate.ts";
-import { BFFI_DIR, joinOut, rootFromConfigPath } from "./paths.ts";
-import { validateModule } from "../codegen/schema.ts";
-import { createApi } from "../loader/api.ts";
+} from "#bffi/pipeline/config.ts";
+import { buildCrate } from "#bffi/pipeline/build.ts";
+import { DEFAULT_RUNTIME, renderModule } from "#bffi/codegen/generate.ts";
+import { BFFI_DIR, joinOut, rootFromConfigPath } from "#bffi/pipeline/paths.ts";
+import { validateModule } from "#bffi/codegen/schema.ts";
+import { createApi } from "#bffi/loader/api.ts";
 
 /** Options of [`bffi`] (the full pipeline). */
 export interface BffiOptions {
@@ -85,7 +85,7 @@ async function readLoaderJson(
  * call site with the generated `Api` type for exact signatures):
  *
  * ```ts
- * import type { Api } from "../.bffi/api.gen.ts";
+ * import type { Api } from "#bffi/.bffi/api.gen.ts";
  * const api: Api = await bffi();
  * ```
  */

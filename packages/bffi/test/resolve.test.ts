@@ -12,7 +12,7 @@ import {
   platformTriple,
   resolvePlatformBinary,
   tripleWithLibc,
-} from "../src/index.ts";
+} from "#bffi";
 
 /** The expected binary path, built with the SAME join the
  * implementation uses (dirname + "/" + file), so the assertions are

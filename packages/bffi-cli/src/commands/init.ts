@@ -7,8 +7,8 @@ import {
   defineConfig,
   joinOut,
 } from "@z2net/bffi";
-import { flagString, parseArgs } from "../args.ts";
-import { EXIT, writeErr, writeOut } from "../output.ts";
+import { flagString, parseArgs } from "#cli/args.ts";
+import { EXIT, writeErr, writeOut } from "#cli/output.ts";
 
 export const usage =
   `bffi init [--root <dir>] [--module <m>] [--crate-dir <d>] [--crate-name <n>] [--binary <b>]`;

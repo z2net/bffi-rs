@@ -190,6 +190,11 @@ const moduleJson = {
   "errors": []
 } as const satisfies ModuleJson;
 
+/**
+ * A geometric shape.
+ */
+export type Shape = TsOf<"Shape", typeof moduleJson>;
+
 /** The explicit low-level loader: opens the native library at
  * `libraryPath` and returns the typed API. Passing a raw binary
  * path is a trust decision - the pipeline resolves platform

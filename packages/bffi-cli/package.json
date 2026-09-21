@@ -21,6 +21,10 @@
   },
   "packageManager": "bun@1.4.2",
   "type": "module",
+  "imports": {
+    "#cli": "./src/index.ts",
+    "#cli/*": "./src/*"
+  },
   "bin": {
     "bffi": "./bin/bffi.ts"
   },

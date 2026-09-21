@@ -5,8 +5,8 @@
  * releases the slot (the copy-by-default policy, mirrored on the JS
  * side).
  */
-import type { FfiLib } from "./error.ts";
-import { readPointer, sym } from "./error.ts";
+import type { FfiLib } from "#bffi/runtime/error.ts";
+import { readPointer, sym } from "#bffi/runtime/error.ts";
 
 /**
  * Builds the `readBuffer()` accessor over `lib`: copies the bytes

@@ -11,7 +11,7 @@
  * over the canonical model.
  */
 
-import { validateModule } from "./schema.ts";
+import { validateModule } from "#bffi/codegen/schema.ts";
 
 /** One canonicalized schema object: fixed key order, no extras. */
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };

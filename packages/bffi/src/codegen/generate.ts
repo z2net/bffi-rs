@@ -17,9 +17,9 @@ import {
   type CanonClass,
   type CanonFn,
   type CanonModule,
-} from "./canonical.ts";
-import { isCompositeTs, tablesOf } from "../loader/composite.ts";
-import type { ModuleJson } from "../loader/loader.ts";
+} from "#bffi/codegen/canonical.ts";
+import { isCompositeTs, tablesOf } from "#bffi/loader/composite.ts";
+import type { ModuleJson } from "#bffi/loader/loader.ts";
 
 /** The default module specifier the generated file imports the
  * runtime from: the package ITSELF (generation happens inside
@@ -544,6 +544,34 @@ function renderFactory(m: CanonModule, needs: Needs, tables: ReturnType<typeof t
  * Throws [`SchemaValidationError`] (from the validator) on malformed
  * input; the render itself never fails and is deterministic.
  */
+/** Renders the named composite aliases: every record and enum entry
+ * exports its resolved type under its schema name (explicit
+ * instantiations included), so consumers import the exact type
+ * instead of digging through `Parameters<Api["fn"]>`. The aliases
+ * delegate to `TsOf` - one source of truth for the type mapping. */
+function renderNamedTypes(m: CanonModule): string {
+  const entries: { name: string; docs: string[] }[] = [
+    ...m.records.map((record) => ({ name: record.name, docs: record.docs })),
+    ...m.enums.map((enumeration) => ({ name: enumeration.name, docs: enumeration.docs })),
+  ];
+  if (entries.length === 0) {
+    return "";
+  }
+  let out = "";
+  for (const entry of entries) {
+    if (entry.docs.length > 0) {
+      out += `/**\n`;
+      for (const line of entry.docs) {
+        out += ` * ${line}\n`;
+      }
+      out += ` */\n`;
+    }
+    out += `export type ${entry.name} = TsOf<${JSON.stringify(entry.name)}, typeof moduleJson>;\n`;
+  }
+  out += `\n`;
+  return out;
+}
+
 export function renderModule(raw: unknown, runtime: string = DEFAULT_RUNTIME): string {
   const module = canonModule(raw);
   const m = module as unknown as CanonModule;
@@ -562,6 +590,7 @@ export function renderModule(raw: unknown, runtime: string = DEFAULT_RUNTIME): s
     `import {\n${imports}\n} from ${JSON.stringify(runtime)};\n\n`;
   const body =
     `const moduleJson = ${pretty(module, 0)} as const satisfies ModuleJson;\n\n` +
+    renderNamedTypes(m) +
     `/** The explicit low-level loader: opens the native library at\n` +
     ` * \`libraryPath\` and returns the typed API. Passing a raw binary\n` +
     ` * path is a trust decision - the pipeline resolves platform\n` +

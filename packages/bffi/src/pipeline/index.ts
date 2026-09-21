@@ -3,8 +3,8 @@
  * mode, the cargo build step, and the one-call orchestrator
  * (`bffi`, `bffiBuild`, `bffiGenerate`).
  */
-export * from "./paths.ts";
-export * from "./config.ts";
-export * from "./debug.ts";
-export * from "./build.ts";
-export * from "./pipeline.ts";
+export * from "#bffi/pipeline/paths.ts";
+export * from "#bffi/pipeline/config.ts";
+export * from "#bffi/pipeline/debug.ts";
+export * from "#bffi/pipeline/build.ts";
+export * from "#bffi/pipeline/pipeline.ts";

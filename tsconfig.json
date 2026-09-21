@@ -26,11 +26,15 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false,
 
-    // Monorepo resolution: generated files import "@z2net/bffi" by
-    // package name; until publication the name maps onto the local
-    // sources (Bun's runtime honors tsconfig paths too).
+    // Monorepo resolution: internal imports use the package names
+    // (`@z2net/bffi`, `@z2net/bffi/*`, ...) instead of relative hops;
+    // until publication the names map onto the local sources (Bun's
+    // runtime honors tsconfig paths too).
     "paths": {
-      "@z2net/bffi": ["./packages/bffi/src/index.ts"]
+      "@z2net/bffi": ["./packages/bffi/src/index.ts"],
+      "@z2net/bffi/*": ["./packages/bffi/src/*"],
+      "@z2net/bffi-cli": ["./packages/bffi-cli/src/index.ts"],
+      "@z2net/bffi-cli/*": ["./packages/bffi-cli/src/*"]
     }
   }
 }

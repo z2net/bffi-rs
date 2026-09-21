@@ -13,8 +13,8 @@ export {
   sym,
   type FfiLib,
   type FfiSymbol,
-} from "./runtime/index.ts";
-export { makeReadBuffer, decodeUtf8 } from "./runtime/index.ts";
+} from "#bffi/runtime/index.ts";
+export { makeReadBuffer, decodeUtf8 } from "#bffi/runtime/index.ts";
 export {
   TAG_UNIT,
   TAG_I32,
@@ -32,7 +32,7 @@ export {
   encodeArgs,
   encodeValue,
   type WireValue,
-} from "./runtime/index.ts";
+} from "#bffi/runtime/index.ts";
 export {
   SCHEMA_VERSION,
   BFFI_ABI_VERSION,
@@ -48,13 +48,13 @@ export {
   type RetAbiName,
   type RetJson,
   type TsName,
-} from "./loader/index.ts";
-export { pumpUntil, wrapTask, wrapStream, streamItemTs } from "./runtime/index.ts";
+} from "#bffi/loader/index.ts";
+export { pumpUntil, wrapTask, wrapStream, streamItemTs } from "#bffi/runtime/index.ts";
 export {
   disposeLib,
   installMemoryPressureGC,
   makeLibDisposer,
-} from "./runtime/index.ts";
+} from "#bffi/runtime/index.ts";
 export {
   createApi,
   createApiFromLib,
@@ -68,7 +68,7 @@ export {
   type FnOf,
   type ParamsOf,
   type TsOf,
-} from "./loader/index.ts";
+} from "#bffi/loader/index.ts";
 export {
   bindJsCallback,
   invokeCallback,
@@ -78,33 +78,33 @@ export {
   type CallbackSig,
   type CbType,
   type CbValue,
-} from "./runtime/index.ts";
-import { assertBunVersion } from "./runtime/index.ts";
+} from "#bffi/runtime/index.ts";
+import { assertBunVersion } from "#bffi/runtime/index.ts";
 export {
   assertBunVersion,
   bunVersionProblem,
   bunVersionSatisfies,
   MIN_BUN_VERSION,
-} from "./runtime/index.ts";
+} from "#bffi/runtime/index.ts";
 export {
   platformTriple,
   resolvePlatformBinary,
   tripleWithLibc,
   type ResolveOptions,
-} from "./loader/index.ts";
+} from "#bffi/loader/index.ts";
 export {
   joinOut,
   rootFromConfigPath,
   BFFI_DIR,
   CONFIG_FILE,
-} from "./pipeline/index.ts";
-export { DEFAULT_RUNTIME, renderModule } from "./codegen/index.ts";
+} from "#bffi/pipeline/index.ts";
+export { DEFAULT_RUNTIME, renderModule } from "#bffi/codegen/index.ts";
 export {
   validateModule,
   SchemaValidationError,
   type ModuleJsonLike,
   type SchemaIssue,
-} from "./codegen/index.ts";
+} from "#bffi/codegen/index.ts";
 export {
   defineConfig,
   loadConfigFile,
@@ -115,13 +115,13 @@ export {
   type BffiConfig,
   type CrateConfig,
   type ConfigIssue,
-} from "./pipeline/index.ts";
+} from "#bffi/pipeline/index.ts";
 export {
   applyDebug,
   debugLog,
   isDebug,
-} from "./pipeline/index.ts";
-export { buildCrate, type BuildOptions } from "./pipeline/index.ts";
+} from "#bffi/pipeline/index.ts";
+export { buildCrate, type BuildOptions } from "#bffi/pipeline/index.ts";
 export {
   bffi,
   bffiBuild,
@@ -129,7 +129,7 @@ export {
   localArtifactPath,
   type BffiOptions,
   type GenerateOptions,
-} from "./pipeline/index.ts";
+} from "#bffi/pipeline/index.ts";
 
 // Fail fast on unsupported runtimes: every public consumer (the
 // generated modules included) imports this entry.

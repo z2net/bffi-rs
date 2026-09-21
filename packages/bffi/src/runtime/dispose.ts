@@ -7,7 +7,7 @@
  * `using` contract (Bun 1.4 executes it natively): `await using api =
  * await bffi({...})` leaves no JSCallback trampoline behind.
  */
-import type { FfiLib } from "./error.ts";
+import type { FfiLib } from "#bffi/runtime/error.ts";
 
 /** The closer sets, keyed by the dlopen'ed symbol table object. */
 const REGISTRY = new WeakMap<FfiLib, Set<() => void>>();

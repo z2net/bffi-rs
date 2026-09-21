@@ -2,8 +2,8 @@
  * FULL pipeline (cargo build -> loader JSON -> api.gen -> binary
  * resolution -> dlopen probe) and prints the resolved artifact path. */
 import { bffi, localArtifactPath, loadConfigFile, rootFromConfigPath } from "@z2net/bffi";
-import { flagBool, flagString, parseArgs } from "../args.ts";
-import { EXIT, writeErr, writeOut } from "../output.ts";
+import { flagBool, flagString, parseArgs } from "#cli/args.ts";
+import { EXIT, writeErr, writeOut } from "#cli/output.ts";
 
 export const usage = `bffi build [--config <p>] [--skip-build] [--debug]`;
 

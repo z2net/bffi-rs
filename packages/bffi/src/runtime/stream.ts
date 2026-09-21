@@ -7,12 +7,12 @@
  * `AsyncIterableIterator` - `for await (const item of ...)` works -
  * with an adaptive chunk budget and a GC finalizer for the drop.
  */
-import type { FfiLib } from "./error.ts";
-import { ErrorCode, sym, symOptional } from "./error.ts";
-import { makeReadBuffer } from "./buffer.ts";
-import { decodeAt } from "./wire.ts";
-import { tablesOf, wireToJs, type CompositeTables } from "../loader/composite.ts";
-import type { ModuleJson } from "../loader/loader.ts";
+import type { FfiLib } from "#bffi/runtime/error.ts";
+import { ErrorCode, sym, symOptional } from "#bffi/runtime/error.ts";
+import { makeReadBuffer } from "#bffi/runtime/buffer.ts";
+import { decodeAt } from "#bffi/runtime/wire.ts";
+import { tablesOf, wireToJs, type CompositeTables } from "#bffi/loader/composite.ts";
+import type { ModuleJson } from "#bffi/loader/loader.ts";
 import { JSCallback } from "bun:ffi";
 
 /** The initial chunk budget; doubled on full chunks, capped here. */

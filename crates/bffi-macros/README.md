@@ -155,10 +155,16 @@ duplicates) is rejected with `E004`.
 | `Option<String>`                 | -     | yes    | `string \| null` |
 | `Option<Vec<u8>>`, `Option<CopiedBuf>` | - | yes   | `Uint8Array \| null` |
 | `Result<T, E>`                   | -     | yes    | `T`'s kind; `Err` -> code 13 |
+| derived record / unit enum       | yes   | yes    | named type |
+| `Vec<T>` of a supported item (incl. `Vec<Vec<u8>>`) | yes | yes | `T`'s array kind |
+| `Option<record>`, `Option<Vec<T>>` | -   | yes    | `T \| null` |
 
 Everything else is rejected at compile time - `E002` for parameters, `E003` for returns.
-Owned buffers (`String`/`Vec<u8>`) as parameters, structs and non-buffer `Option`/`Vec`
-are future work.
+Owned buffers (`String`/`Vec<u8>`) as parameters and `Option` parameters are future work.
+
+Record fields accept the scalar kinds, `String`, `Vec<u8>`, `Vec<T>` of the same
+supported sequence items, `Option<T>` (not nested), and nested records/enums -
+`E010` rejects the rest.
 
 Shape violations are rejected too (`E001`): `async`, generic, `unsafe`, method receivers
 (`self`), variadic, `extern`, and `const` functions are outside the rules.

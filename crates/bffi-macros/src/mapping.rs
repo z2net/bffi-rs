@@ -268,7 +268,7 @@ mod tests {
         let text = err.to_string();
         assert!(text.starts_with("bffi[E002]: unsupported type `Vec < u8 >` for parameter `data`"));
         assert!(text.contains(
-            "  = help: supported: i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|&str|&[u8]|()"
+            "  = help: supported: i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|&str|&[u8]|Option<&str|&[u8]|prim|i64|u64|record|Vec<T>>|()"
         ));
         assert!(text.contains("DESIGN.md"));
     }

@@ -84,6 +84,11 @@ pub enum ShimKind {
     /// An owned `Vec<T>` of a non-`u8` item: crosses as a `(ptr, len)`
     /// wire sequence the shim decodes item by item.
     Seq(SeqItem),
+    /// An `Option<T>` parameter over one supported inner kind (sync
+    /// paths only): `None` crosses as the documented nullable slot -
+    /// a NULL cstring (`&str`), a zero-length payload (records and
+    /// sequences), a clear flag byte (views and scalars).
+    Opt(Box<ShimKind>),
 }
 
 /// The item kind of a `Vec<T>` boundary sequence: which wire record

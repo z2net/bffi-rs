@@ -153,10 +153,20 @@ use proc_macro::TokenStream;
 /// | `i64` `u64`                                   | yes   | yes    | `bigint`  |
 /// | `bool`                                        | yes   | yes    | `boolean` |
 /// | `&str` (borrowed, not `mut`; lifetimes ok)    | yes   | -      | `string`  |
+/// | `Option<&str>`/`Option<&[u8]>`/`Option<prim>`/`Option<i64>`/`Option<u64>`/`Option<record>`/`Option<Vec<T>>` (sync only) | yes | - | `T \| null` |
 /// | `()`                                          | -     | yes    | `void`    |
+/// | `&[u8]` (borrowed view)                       | yes   | -      | `Uint8Array` |
 ///
-/// Everything else is rejected at compile time. Buffers, `Option`,
-/// structs and `Result` arrive with `bffi-build` (P2).
+/// Composites (`#[derive(BffiRecord)]` named-field structs,
+/// `#[derive(BffiEnum)]` unit enums, `Vec<T>` sequences, `Option` of a
+/// buffer payload, `Result<T, E>`) ride the same rule set with their
+/// own rows in the `derive` and `CALLING-CONVENTION.md` matrices. A
+/// record/enum parameter or return MUST carry its derive: an
+/// un-derived type fails to compile with the `BffiWire` trait bound
+/// (E0277, "is not a bffi boundary composite") instead of a bffi
+/// E-code.
+///
+/// Everything outside the matrix is rejected at compile time.
 ///
 /// # Diagnostics
 ///
@@ -175,8 +185,8 @@ use proc_macro::TokenStream;
 ///
 /// ```text
 /// error: bffi[E002]: unsupported type `Vec < u8 >` for parameter `data`
-///   = help: supported in P1: i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|&str|()
-///   = note: buffers, Option, structs and Result arrive with bffi-build (P2)
+///   = help: supported: i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|&str|&[u8]|()
+///   = note: borrowed `&[u8]` is the only buffer parameter; owned buffers are return-only (CALLING-CONVENTION.md)
 ///   = note: boundary rules: DESIGN.md (https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md)
 /// ```
 ///
@@ -316,10 +326,13 @@ pub fn bffi_record_derive(input: TokenStream) -> TokenStream {
     derive::record(input)
 }
 
-/// Marks a unit enum as a boundary-crossing choice type (B1): the
-/// value encodes as its variant name, the TS side sees a union of
-/// string literals. `E011` rejects data-carrying variants and
-/// generics.
+/// Marks an enum as a boundary-crossing choice type (B1): a
+/// unit-only enum encodes as its variant name and the TS side sees a
+/// union of string literals; a variant with a payload rides the kind
+/// envelope (a wire record of the variant name plus positional
+/// fields) and the TS side sees a discriminated union of
+/// `{ kind, ... }` objects. `E011` rejects generics; unsupported
+/// payload field types are rejected under `E010`.
 #[proc_macro_derive(BffiEnum)]
 pub fn bffi_enum_derive(input: TokenStream) -> TokenStream {
     derive::enumeration(input)

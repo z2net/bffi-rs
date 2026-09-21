@@ -373,6 +373,17 @@ pub enum AbiType {
     /// A borrowed byte view: one entry here, a `("ptr", "u64")`
     /// dlopen pair after expansion (borrowed `&[u8]`).
     PtrLen,
+    /// An optional number-ish primitive: a `(f64, "u8")` dlopen pair,
+    /// the flag byte clearing for `None` (`Option` of `i8`..`u32`,
+    /// `f32`/`f64`, `bool` - every width is exact in `f64`).
+    OptNumber,
+    /// An optional `i64`: an `("i64", "u8")` pair.
+    OptI64,
+    /// An optional `u64`: a `("u64", "u8")` pair.
+    OptU64,
+    /// An optional byte view: a `("ptr", "u64", "u8")` triple, the
+    /// flag clearing for `None` (`len == 0` stays `Some(&[])`).
+    OptPtrLen,
 }
 
 impl AbiType {
@@ -394,6 +405,10 @@ impl AbiType {
             Self::Bool => "bool",
             Self::Cstring => "cstring",
             Self::PtrLen => "ptr_len",
+            Self::OptNumber => "opt_number",
+            Self::OptI64 => "opt_i64",
+            Self::OptU64 => "opt_u64",
+            Self::OptPtrLen => "opt_ptr_len",
         }
     }
 }
@@ -527,18 +542,27 @@ pub struct RecordDef {
     pub fields: &'static [RecordFieldDef],
 }
 
-/// One variant of a unit enum: just its name.
+/// One variant of an enum: its name, docs and payload fields (empty
+/// for unit variants).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EnumVariantDef {
     /// The variant name as it appears in the generated union
-    /// (wire-encoded as a string of the same spelling).
+    /// (wire-encoded as a string of the same spelling; payload
+    /// variants ride it inside the kind envelope).
     pub name: &'static str,
     /// Doc comment lines, rendered as a JSDoc block.
     pub docs: &'static [&'static str],
+    /// The payload fields, in declaration order (empty for unit
+    /// variants; the wire rides them positionally right after the
+    /// variant name). Tuple variants name their fields `_0`..`_n`.
+    pub fields: &'static [RecordFieldDef],
 }
 
-/// A unit enum crossing the boundary as its variant name: the TS
-/// side sees a union of string literals.
+/// An enum crossing the boundary: unit-only enums ride the variant
+/// name string (the TS side sees a union of string literals); an
+/// enum with payload variants wraps every variant in a kind envelope
+/// (a `TAG_RECORD` whose first field is the variant name) and the TS
+/// side sees a discriminated union of `{ kind, ... }` objects.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EnumDef {
     /// The enum name as seen from JavaScript (the identifier used by
@@ -935,6 +959,7 @@ mod tests {
         static VARIANTS: &[EnumVariantDef] = &[EnumVariantDef {
             name: "Red",
             docs: &[],
+            fields: &[],
         }];
 
         let record = RecordDef {

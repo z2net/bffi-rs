@@ -157,7 +157,11 @@ impl StreamItem {
                 quote! { ::bffi::BffiStreamItem::encode_into(&#ident, &mut rec); }
             }
             Self::Record(path) => {
-                quote! { #path::bffi_wire_encode(&#ident, &mut rec); }
+                // Fully-qualified through the trait: a non-derived type
+                // fails with the `BffiWire` trait bound (E0277) instead
+                // of an orphaned missing-item lookup (and the adapter
+                // never depends on the trait being in scope).
+                quote! { <#path as #wire::BffiWire>::bffi_wire_encode(&#ident, &mut rec); }
             }
         }
     }

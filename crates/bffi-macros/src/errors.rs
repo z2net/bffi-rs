@@ -20,7 +20,7 @@ use quote::ToTokens;
 
 /// The accepted parameter set, listed in every type-rejection help
 /// line.
-const PARAM_TYPES: &str = "supported: i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|&str|&[u8]|()";
+const PARAM_TYPES: &str = "supported: i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|&str|&[u8]|Option<&str|&[u8]|prim|i64|u64|record|Vec<T>>|()";
 /// The accepted return set: parameters plus the P2 buffer payloads and
 /// the `Result` error channel.
 const RETURN_TYPES: &str = "supported returns: parameters|String|Vec<u8>|CopiedBuf|Option<buffer>|Result<T, E: Error + Send + Sync>";
@@ -70,6 +70,12 @@ pub(crate) fn param_type<T: ToTokens>(span: Span, ty_tokens: &T, name: &str) -> 
     .with_note(
         "borrowed `&[u8]` is the only buffer parameter; owned buffers are return-only (CALLING-CONVENTION.md)",
     )
+    .with_note(
+        "a bare path is a record/enum: it must derive `BffiRecord`/`BffiEnum` (otherwise the `BffiWire` trait bound fails)",
+    )
+    .with_note(
+        "`Option` parameters are sync-only; `None` crosses as a NULL cstring, a zero-length payload, or a clear flag byte",
+    )
     .with_note(DESIGN_NOTE)
     .to_compile_error(span)
 }
@@ -86,6 +92,9 @@ pub(crate) fn return_type<T: ToTokens>(span: Span, ty_tokens: &T) -> syn::Error 
     )
     .with_help(RETURN_TYPES)
     .with_note("Option covers buffer payloads only; `E` in `Result` must impl `std::error::Error + Send + Sync`")
+    .with_note(
+        "a bare path is a record/enum: it must derive `BffiRecord`/`BffiEnum` (otherwise the `BffiWire` trait bound fails)",
+    )
     .with_note(DESIGN_NOTE)
     .to_compile_error(span)
 }
@@ -159,10 +168,13 @@ mod tests {
         assert!(
             text.contains("bffi[E002]: unsupported type `Vec < u8 >` for parameter `data`")
                 && text.contains(
-                    "  = help: supported: i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|&str|&[u8]|()"
+                    "  = help: supported: i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|&str|&[u8]|Option<&str|&[u8]|prim|i64|u64|record|Vec<T>>|()"
                 )
                 && text.contains(
                     "  = note: borrowed `&[u8]` is the only buffer parameter; owned buffers are return-only (CALLING-CONVENTION.md)"
+                )
+                && text.contains(
+                    "  = note: `Option` parameters are sync-only; `None` crosses as a NULL cstring, a zero-length payload, or a clear flag byte"
                 )
                 && text.contains(
                     "  = note: boundary rules: DESIGN.md (https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md)"

@@ -166,6 +166,7 @@ Breaking changes must use `BREAKING CHANGE:` in the footer or `!` after the type
 - Features are developed in `dev/<feature>` branches (kebab-case), cut from and merged back into `dev/main`.
 - PR `dev/<feature>` → `dev/main` requires 1 approval and green CI (`.github/workflows/ci.yml`; `bun run ci` locally).
 - Release tags `v<semver>` (annotated) are placed only on `main`, only by the owner.
+- A release is blocked until the bookkeeping lands: a `CHANGELOG.md` entry for the version and updated documentation (the registry-rendered package/crate READMEs, plus `docs/DESIGN.md` / `crates/bffi/CALLING-CONVENTION.md` whenever behavior or the public surface changed). npm and crates.io freeze these pages at publish time - a doc fix afterwards needs a new version. If the changelog or the docs are not written, the release is not ready.
 
 Full rules: [docs/CONTRIBUTING.md](https://github.com/z2net/bffi-rs/blob/main/docs/CONTRIBUTING.md) → "Branching and releases".
 
@@ -190,6 +191,7 @@ When working on this repository an agent **must**:
 6. Preserve the safety model (copy by default, explicit unsafe zero-copy, generational handles).
 7. Run `cargo fmt`, `cargo clippy`, and tests when possible.
 8. Update `DESIGN.md` or docs if a decision changes.
+9. Before cutting (or asking for) a release: check that `CHANGELOG.md` has an entry for the version and that the documentation (package/crate READMEs, DESIGN.md, CALLING-CONVENTION.md) reflects every shipped change - if not, write them first; the registries freeze these pages at publish.
 
 When unsure about architecture, prefer asking (or opening a draft PR) instead of inventing a new pattern.
 

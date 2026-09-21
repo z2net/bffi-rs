@@ -13,33 +13,33 @@
     },
     "packages/bffi": {
       "name": "@z2net/bffi",
-      "version": "0.2.2",
+      "version": "0.2.3",
     },
     "packages/bffi-cli": {
       "name": "@z2net/bffi-cli",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "bin": {
         "bffi": "./bin/bffi.ts",
       },
       "dependencies": {
-        "@z2net/bffi": "0.2.1",
+        "@z2net/bffi": "0.2.3",
       },
     },
     "packages/native": {
       "name": "@z2net/bffi-native",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "dependencies": {
-        "@z2net/bffi": "0.2.1",
+        "@z2net/bffi": "0.2.3",
       },
       "optionalDependencies": {
-        "@z2net/bffi-native-darwin-aarch64": "0.2.1",
-        "@z2net/bffi-native-darwin-x64": "0.2.1",
-        "@z2net/bffi-native-linux-arm64-gnu": "0.2.1",
-        "@z2net/bffi-native-linux-arm64-musl": "0.2.1",
-        "@z2net/bffi-native-linux-x64-gnu": "0.2.1",
-        "@z2net/bffi-native-linux-x64-musl": "0.2.1",
-        "@z2net/bffi-native-win32-arm64-msvc": "0.2.1",
-        "@z2net/bffi-native-win32-x64-msvc": "0.2.1",
+        "@z2net/bffi-native-darwin-aarch64": "0.2.3",
+        "@z2net/bffi-native-darwin-x64": "0.2.3",
+        "@z2net/bffi-native-linux-arm64-gnu": "0.2.3",
+        "@z2net/bffi-native-linux-arm64-musl": "0.2.3",
+        "@z2net/bffi-native-linux-x64-gnu": "0.2.3",
+        "@z2net/bffi-native-linux-x64-musl": "0.2.3",
+        "@z2net/bffi-native-win32-arm64-msvc": "0.2.3",
+        "@z2net/bffi-native-win32-x64-msvc": "0.2.3",
       },
     },
   },
@@ -132,22 +132,6 @@
 
     "@z2net/bffi-native": ["@z2net/bffi-native@workspace:packages/native"],
 
-    "@z2net/bffi-native-darwin-aarch64": ["@z2net/bffi-native-darwin-aarch64@0.2.1", "", { "os": "darwin", "cpu": "arm64" }, "sha512-3VfNP5hbWu+5ntmk1c7brlGd7cB/xwUp/k1+LWMy42vplRRKkNG05KsCrkY1/OopObZxM2BSurxa+jIs3nz2jw=="],
-
-    "@z2net/bffi-native-darwin-x64": ["@z2net/bffi-native-darwin-x64@0.2.1", "", { "os": "darwin", "cpu": "x64" }, "sha512-DlWQC1Z2Msw/v/vV2zcBLuycFQ5cXcoB5bpSwVO/rIJQK3BTI94gbBtifmYj9eMpG1mYJqkXDJbG0YrWT+GDYA=="],
-
-    "@z2net/bffi-native-linux-arm64-gnu": ["@z2net/bffi-native-linux-arm64-gnu@0.2.1", "", { "os": "linux", "cpu": "arm64" }, "sha512-hP+RmxtD3zKdW0cyJVEEFkxZ++voxh+xuXchv3SqezkcDbPHn1D1p3q9xBsOHmG2La/WTSS4A4LRr39wqQHLZA=="],
-
-    "@z2net/bffi-native-linux-arm64-musl": ["@z2net/bffi-native-linux-arm64-musl@0.2.1", "", { "os": "linux", "cpu": "arm64" }, "sha512-FtkSs4c/JslU09m2BPagc5yDd9/pfnPZZRfNjfulBMO9M2Jdp1+vswgZ1Zv/CoAONozlDYAQAKU1bD3lbFFyTA=="],
-
-    "@z2net/bffi-native-linux-x64-gnu": ["@z2net/bffi-native-linux-x64-gnu@0.2.1", "", { "os": "linux", "cpu": "x64" }, "sha512-lws49EIz1jNP2fVtPNgukFqRdy2ebfjnkUuylkFYPIOySy5LpOlZbd+/8hH6nTcNCiHfhXHChftn/10lLi3RBQ=="],
-
-    "@z2net/bffi-native-linux-x64-musl": ["@z2net/bffi-native-linux-x64-musl@0.2.1", "", { "os": "linux", "cpu": "x64" }, "sha512-Lnybt0djEkK4jqUhv6DsOvnu/Z0j6FHSqpcpG/XLcemRG2uGNhohfcUMTKyRlRQoj4UKPRM0Eh6QTl6G+D1GEQ=="],
-
-    "@z2net/bffi-native-win32-arm64-msvc": ["@z2net/bffi-native-win32-arm64-msvc@0.2.1", "", { "os": "win32", "cpu": "arm64" }, "sha512-F4NwRLpXm4pJCs13fdFnx0wQsPMagtB/he2fMCHZIPp27l5TbTnm21QwRXineGN81sjjwQWewDUKcqvNuztibQ=="],
-
-    "@z2net/bffi-native-win32-x64-msvc": ["@z2net/bffi-native-win32-x64-msvc@0.2.1", "", { "os": "win32", "cpu": "x64" }, "sha512-pNXIhJktzrJJ5E/kZ76iyDVepJ8N64nTvBv4036Zhz4T48odsNvabhaOBQNjgULLCBh2+kWmgN7ICAz3BZluWg=="],
-
     "bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
 
     "lefthook": ["lefthook@2.1.12", "", { "optionalDependencies": { "lefthook-darwin-arm64": "2.1.12", "lefthook-darwin-x64": "2.1.12", "lefthook-freebsd-arm64": "2.1.12", "lefthook-freebsd-x64": "2.1.12", "lefthook-linux-arm64": "2.1.12", "lefthook-linux-x64": "2.1.12", "lefthook-openbsd-arm64": "2.1.12", "lefthook-openbsd-x64": "2.1.12", "lefthook-windows-arm64": "2.1.12", "lefthook-windows-x64": "2.1.12" }, "bin": { "lefthook": "bin/index.js" } }, "sha512-2uOexfsrrRhCiTUWdGyDySxVHHhOFJ8MQejs27dM3hugrQB48/z1ZVlaNoxpZ1SnzQ1GaDIbO5rAvicwyiknYQ=="],
@@ -177,9 +161,5 @@
     "typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 
     "undici-types": ["undici-types@8.3.0", "", {}, "sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ=="],
-
-    "@z2net/bffi-cli/@z2net/bffi": ["@z2net/bffi@0.2.1", "", {}, "sha512-xv9yJ+PFTuxBR9DI5KH4Db6XIilO0/dC1g0HbwhNvHRXuErSy2tBQi+9hCMv7p+by17UpRKerF/AhTR3jVmpBw=="],
-
-    "@z2net/bffi-native/@z2net/bffi": ["@z2net/bffi@0.2.1", "", {}, "sha512-xv9yJ+PFTuxBR9DI5KH4Db6XIilO0/dC1g0HbwhNvHRXuErSy2tBQi+9hCMv7p+by17UpRKerF/AhTR3jVmpBw=="],
   }
 }

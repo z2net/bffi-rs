@@ -77,6 +77,23 @@ pub fn abi_param(kind: ShimKind, ctx: &PathCtx) -> TokenStream {
         ShimKind::BufferView | ShimKind::Record(_) | ShimKind::Seq(_) => {
             quote! { #dts::AbiType::PtrLen }
         }
+        // Optional parameters keep the plain shapes where a nullable
+        // slot exists (cstring NULL, zero-length payload); the rest
+        // cross through the flag-pair shapes.
+        ShimKind::Opt(inner) => match inner.as_ref() {
+            ShimKind::Str => quote! { #dts::AbiType::Cstring },
+            ShimKind::BufferView => quote! { #dts::AbiType::OptPtrLen },
+            ShimKind::Prim(_) => quote! { #dts::AbiType::OptNumber },
+            ShimKind::BigInt(big) => match big {
+                BigIntTy::I64 => quote! { #dts::AbiType::OptI64 },
+                BigIntTy::U64 => quote! { #dts::AbiType::OptU64 },
+            },
+            ShimKind::Record(_) | ShimKind::Seq(_) => quote! { #dts::AbiType::PtrLen },
+            // Unreachable: `classify_param` rejects a nested `Option`
+            // before it can reach the descriptor; the arm exists for
+            // exhaustiveness.
+            ShimKind::Opt(_) => quote! { #dts::AbiType::Cstring },
+        },
     }
 }
 

@@ -37,7 +37,11 @@ export type AbiName =
   | "u64"
   | "bool"
   | "cstring"
-  | "ptr_len";
+  | "ptr_len"
+  | "opt_number"
+  | "opt_i64"
+  | "opt_u64"
+  | "opt_ptr_len";
 
 /** The out-slot name: a primitive width or the shared handle slot. */
 export type OutName =
@@ -93,6 +97,10 @@ export const ABI_NAMES: ReadonlySet<string> = new Set([
   "bool",
   "cstring",
   "ptr_len",
+  "opt_number",
+  "opt_i64",
+  "opt_u64",
+  "opt_ptr_len",
 ]);
 
 const OUT_NAMES_MUTABLE = new Set(ABI_NAMES);
@@ -317,6 +325,14 @@ function ffiArg(abi: AbiName): FfiType[] {
       return ["cstring"];
     case "ptr_len":
       return ["ptr", "u64"];
+    case "opt_number":
+      return ["f64", "u8"];
+    case "opt_i64":
+      return ["i64", "u8"];
+    case "opt_u64":
+      return ["u64", "u8"];
+    case "opt_ptr_len":
+      return ["ptr", "u64", "u8"];
   }
 }
 

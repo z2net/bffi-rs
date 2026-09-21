@@ -114,8 +114,13 @@ fn body(model: &FnModel) -> TokenStream {
                 quote! { &#view }
             }
             // Records and sequences decode into the owned local named
-            // `#name` in the conversion preamble.
-            ShimKind::Prim(_) | ShimKind::BigInt(_) | ShimKind::Record(_) | ShimKind::Seq(_) => {
+            // `#name` in the conversion preamble; optional parameters
+            // bind their `Option<..>` local the same way.
+            ShimKind::Prim(_)
+            | ShimKind::BigInt(_)
+            | ShimKind::Record(_)
+            | ShimKind::Seq(_)
+            | ShimKind::Opt(_) => {
                 quote! { #name }
             }
         }

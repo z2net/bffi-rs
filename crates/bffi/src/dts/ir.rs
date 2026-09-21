@@ -373,6 +373,17 @@ pub enum AbiType {
     /// A borrowed byte view: one entry here, a `("ptr", "u64")`
     /// dlopen pair after expansion (borrowed `&[u8]`).
     PtrLen,
+    /// An optional number-ish primitive: a `(f64, "u8")` dlopen pair,
+    /// the flag byte clearing for `None` (`Option` of `i8`..`u32`,
+    /// `f32`/`f64`, `bool` - every width is exact in `f64`).
+    OptNumber,
+    /// An optional `i64`: an `("i64", "u8")` pair.
+    OptI64,
+    /// An optional `u64`: a `("u64", "u8")` pair.
+    OptU64,
+    /// An optional byte view: a `("ptr", "u64", "u8")` triple, the
+    /// flag clearing for `None` (`len == 0` stays `Some(&[])`).
+    OptPtrLen,
 }
 
 impl AbiType {
@@ -394,6 +405,10 @@ impl AbiType {
             Self::Bool => "bool",
             Self::Cstring => "cstring",
             Self::PtrLen => "ptr_len",
+            Self::OptNumber => "opt_number",
+            Self::OptI64 => "opt_i64",
+            Self::OptU64 => "opt_u64",
+            Self::OptPtrLen => "opt_ptr_len",
         }
     }
 }

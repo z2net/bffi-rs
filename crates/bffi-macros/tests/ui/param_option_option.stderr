@@ -1,0 +1,9 @@
+error: bffi[E002]: unsupported type `Option < Option < Point > >` for parameter `p`
+         = help: supported: i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|bool|&str|&[u8]|Option<&str|&[u8]|prim|i64|u64|record|Vec<T>>|()
+         = note: borrowed `&[u8]` is the only buffer parameter; owned buffers are return-only (CALLING-CONVENTION.md)
+         = note: `Option` parameters are sync-only; `None` crosses as a NULL cstring, a zero-length payload, or a clear flag byte
+         = note: boundary rules: DESIGN.md (https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md)
+  --> tests/ui/param_option_option.rs:11:13
+   |
+11 | fn place(p: Option<Option<Point>>) {}
+   |             ^^^^^^

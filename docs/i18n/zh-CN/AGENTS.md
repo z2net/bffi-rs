@@ -217,6 +217,7 @@ chore: pin rust-toolchain to 1.98.0
 | 事件循环    | `run()` 阻塞式排空;`pump()` 非阻塞排空;`marshal` - 错误线程路径(代码 12) |
 | TS 类型 | IR（ModuleDef/FunctionDef/ClassDef）+ 确定性 render；export_name = bffi_ 前缀 |
 | 组合类型(B1+B4) | Records/enums/`Vec<T>`(含 `Vec<Vec<u8>>`)支持 sync + async;带数据的 enum 变体走 kind 包络(`TAG_RECORD`:变体名 + 位置式 payload;TS `{ kind, ... }` 可辨识联合,判别字段 `kind`,tuple 字段 `_0`..),仅 unit 变体的 enum 保持 `TAG_STR` 字符串联合;`Option<Record>`/`Option<Vec<T>>` = 通过空缓冲区 0 句柄约定的 `\| null`;更深的嵌套会被拒绝 |
+| Option 参数(sync) | `Option<&str>`(NULL cstring)、`Option<&[u8]>`(ptr+len+flag 三元组)、`Option<prim>`(`f64`+flag)、`Option<i64/u64>`(宽度+flag)、`Option<record/Vec<T>>`(`len == 0`);ABI 名 `opt_number`/`opt_i64`/`opt_u64`/`opt_ptr_len`;嵌套 `Option` 与 async 路径仍被拒绝 |
 | 类型化错误(B3) | `#[derive(BffiError)]`:用户码 0x1000-0xFFFF 替换状态 13;variant = JS `e.name`,字段 = `e.payload`(TAG_RECORD);rich 访问器 best-effort;loader JSON 的 `errors` 表 |
 | 流(B2)  | `#[bffi_stream]`:pull(`impl Iterator<Item = T> + Send`)或 push(`async fn(ctx: Ctx<T>, ...)`,bounded 256,背压)作为 JS `AsyncIterableIterator<T>`;`bffi_stream_next(handle, max)`(TAG_SEQ 缓冲,0 = 结束;14 = Pending 重试)+ `bffi_stream_drop` + `bffi_stream_set_wake`(经 event-loop 的唤醒 trampoline,best-effort);标签 0x0600;push 生产者交付 `Result` 项(`ctx.push(Ok/Err)`) |
 | 类宏 | 基于 ObjectWrap（标签 0x0100-0x01FF）的 `#[bffi_class]`/`#[bffi_impl]`:pub 原始字段的 getter、`&self` 方法、自动生成 release;元数据拆分为 bffi_meta_<name> + bffi_meta_<name>_impl::CLASS;E005-E008 |

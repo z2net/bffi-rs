@@ -303,9 +303,24 @@ pub fn run() -> u64 {
             // Wait for the next arrival under the slot mutex (all
             // wakeup sources notify this condvar - targeted jobs,
             // untargeted jobs, stop). The emptiness check and the
-            // wait share the lock, so an arrival in between cannot be
-            // missed.
+            // wait share the lock, so a SLOT arrival in between
+            // cannot be missed. A GLOBAL arrival between the drain
+            // above and this lock would notify a condvar nobody
+            // waits on yet (lost wakeup), so the global queue is
+            // re-checked under the held slot lock: an enqueue that
+            // lands afterwards blocks its `notify_slots` on this
+            // very mutex and delivers its wakeup only once the wait
+            // has begun.
             let mut queued = slot.0.lock().unwrap_or_else(PoisonError::into_inner);
+            if queued.is_empty()
+                && !queue()
+                    .0
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .is_empty()
+            {
+                continue;
+            }
             if queued.is_empty() {
                 queued = slot.1.wait(queued).unwrap_or_else(PoisonError::into_inner);
             }

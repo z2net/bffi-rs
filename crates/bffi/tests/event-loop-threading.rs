@@ -126,3 +126,28 @@ fn wrong_thread_invoke_outside_the_loop_maps_to_code_12() {
     assert_eq!(converted.code, bffi::bffi_core::ErrorCode::WrongThread);
     assert_eq!(converted.message, "callback invoked from a non-JS thread");
 }
+
+/// Regression coverage for the lost-wakeup window in the registered
+/// runner's park: an untargeted enqueue landing between the runner's
+/// global drain and its condvar wait notifies a condvar nobody waits
+/// on yet, and the job sat on the global queue until the next
+/// arrival. Each round-trip forces the runner through the
+/// drain-then-park cycle, so a regression turns into a timeout here
+/// (best-effort: the window is a few instructions wide, and the
+/// wall-clock bound keeps a starved CI runner honest).
+#[test]
+fn marshal_round_trips_survive_the_park_window() {
+    js_thread();
+
+    for round in 0..300 {
+        let (tx, rx) = std::sync::mpsc::channel();
+        marshal(Box::new(move || {
+            tx.send(round).expect("receiver alive");
+        }))
+        .expect("the helper runner is active");
+        let delivered = rx
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the loop executed every round-trip job");
+        assert_eq!(delivered, round);
+    }
+}

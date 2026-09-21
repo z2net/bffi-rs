@@ -67,6 +67,15 @@ Both variants are generated under `#[cfg(debug_assertions)]` /
 | record / enum / `Vec<T>` / `Vec<Vec<u8>>`, `Option` of a record or sequence | `-> u64` handle into the buffer table (wire-encoded payload) | the payload is one complete `[tag][payload]` wire record; `0` = `None` (the same empty-buffer convention) |
 | `Result<T, E>`                 | like `T`; on `Err` returns the converted error's `status_u32()` (a derived user code 0x1000-0xFFFF replaces 13) | `E: Into<BffiError>`; the rich error (variant/payload) drains through the last-error channel (§11) |
 
+Composite payloads (records and enums) are one `[tag][payload]`
+wire record each. A record is `TAG_RECORD` + a `u32` field count +
+one value record per field, positional. A unit-only enum is the bare
+`TAG_STR` variant name. An enum with payload variants wraps EVERY
+variant in the kind envelope: `TAG_RECORD` + a `u32` count of
+`1 + fields` + the `TAG_STR` variant name + the payload fields
+positionally (tuple variants are named `_0`.. in the descriptor).
+The per-variant fields are part of the exports hash.
+
 The out-parameter always comes **after** the regular parameters and is
 named `__ret` (`__`-prefix: reserved for generated code).
 

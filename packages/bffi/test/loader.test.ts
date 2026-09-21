@@ -157,6 +157,40 @@ const FIXTURE = {
       params: [{ name: "flag", ts: "boolean", abi: "bool" }],
       ret: { ts: "void", abi: "void" },
     },
+    {
+      name: "outline",
+      export: "bffi_outline",
+      docs: [],
+      params: [{ name: "shape", ts: "Shape", abi: "ptr_len" }],
+      ret: { ts: "number", abi: "f64" },
+      out: "f64",
+    },
+    {
+      name: "shapeOf",
+      export: "bffi_shape_of",
+      docs: [],
+      params: [{ name: "case", ts: "number", abi: "f64" }],
+      ret: { ts: "Shape", abi: "buffer" },
+      out: "handle",
+    },
+  ],
+  enums: [
+    {
+      name: "Shape",
+      docs: [],
+      variants: [
+        { name: "Circle", docs: [], fields: [{ name: "_0", docs: [], ts: "number" }] },
+        {
+          name: "Rect",
+          docs: [],
+          fields: [
+            { name: "w", docs: [], ts: "number" },
+            { name: "h", docs: [], ts: "number" },
+          ],
+        },
+        { name: "Nothing", docs: [] },
+      ],
+    },
   ],
   classes: [
     {
@@ -281,6 +315,25 @@ function mockLib() {
       }
       return 0;
     },
+    bffi_outline: (_data: unknown, len: bigint, out: Float64Array) => {
+      // Echoes the encoded payload length: the kind-envelope layout
+      // (TAG_RECORD + count + TAG_STR kind + fields) is byte-counted
+      // in the assertions.
+      out[0] = Number(len);
+      return 0;
+    },
+    bffi_shape_of: (selectedCase: number, out: BigUint64Array) => {
+      const bytes: number[] = [];
+      if (selectedCase === 0) {
+        encodeValue(bytes, { fields: ["Nothing"] });
+      } else if (selectedCase === 1) {
+        encodeValue(bytes, { fields: ["Circle", 2.5] });
+      } else {
+        encodeValue(bytes, { fields: ["Rect", 2, 3] });
+      }
+      out[0] = store(new Uint8Array(bytes));
+      return 0;
+    },
     bffi_greet: (who: string | null, out: BigUint64Array) => {
       out[0] = store(new TextEncoder().encode(who === null ? "none" : `hi ${who}`));
       return 0;
@@ -374,6 +427,30 @@ describe("createApiFromLib", () => {
 
   test("throws the drained error on a non-zero status", () => {
     expect(() => api.touch(true)).toThrow("bffi_touch failed: 11");
+  });
+
+  test("encodes payload enum values onto the kind envelope", () => {
+    // TAG_RECORD(1) + count(4) + TAG_STR(1) + len(4) + "Nothing"(7).
+    expect(api.outline({ kind: "Nothing" })).toBe(17);
+    // ... + TAG_F64(1) + f64(8), kind "Circle"(6); the fraction
+    // forces the f64 carrier (whole numbers ride i32).
+    expect(api.outline({ kind: "Circle", _0: 2.5 })).toBe(25);
+    // Two f64 fields, kind "Rect"(4).
+    expect(api.outline({ kind: "Rect", w: 2.5, h: 3.5 })).toBe(32);
+  });
+
+  test("rejects invalid enum values for a payload enum", () => {
+    // The static union type rejects these; the casts exercise the
+    // matching runtime guards.
+    expect(() => api.outline({ kind: "Box" } as never)).toThrow(/unknown Shape variant/);
+    expect(() => api.outline("Circle" as never)).toThrow(/a \{ kind, \.\.\. \} object/);
+    expect(() => api.outline({ circle: 1 } as never)).toThrow(/"kind" discriminant/);
+  });
+
+  test("decodes payload enum returns into { kind, ... } objects", () => {
+    expect(api.shapeOf(0)).toEqual({ kind: "Nothing" });
+    expect(api.shapeOf(1)).toEqual({ kind: "Circle", _0: 2.5 });
+    expect(api.shapeOf(2)).toEqual({ kind: "Rect", w: 2, h: 3 });
   });
 
   test("classes wrap the instance handle and release explicitly", () => {

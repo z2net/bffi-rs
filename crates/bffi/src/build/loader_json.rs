@@ -193,6 +193,12 @@ pub fn module_exports_hash(def: &ModuleDef) -> u64 {
         hash.feed_element(enumeration.js_name);
         for variant in enumeration.variants {
             hash.feed_element(variant.name);
+            // Payload fields are part of the wire contract: two
+            // shapes of one enum must never hash equal.
+            for field in variant.fields {
+                hash.feed_element(field.name);
+                hash.feed_element(&field.ty.as_str());
+            }
         }
     }
     for error in def.errors {
@@ -548,6 +554,36 @@ fn push_enum(enumeration: &bffi_dts::EnumDef, out: &mut String, last: bool) {
         push_key_string(out, 5, "name", variant.name);
         out.push_str(",\n");
         push_docs(out, 5, variant.docs);
+        // Payload fields ride the entry only when present: a
+        // unit-only enum stays byte-identical to the v1 schema.
+        if !variant.fields.is_empty() {
+            out.push_str(",\n");
+            push_indent(out, 5);
+            out.push_str("\"fields\": [");
+            for (field_index, field) in variant.fields.iter().enumerate() {
+                if field_index == 0 {
+                    out.push('\n');
+                }
+                push_indent(out, 6);
+                out.push_str("{\n");
+                push_key_string(out, 7, "name", field.name);
+                out.push_str(",\n");
+                push_docs(out, 7, field.docs);
+                out.push_str(",\n");
+                push_key_string(out, 7, "ts", &field.ty.as_str());
+                out.push('\n');
+                push_indent(out, 6);
+                out.push('}');
+                if field_index != variant.fields.len() - 1 {
+                    out.push(',');
+                }
+                out.push('\n');
+            }
+            if !variant.fields.is_empty() {
+                push_indent(out, 5);
+            }
+            out.push(']');
+        }
         out.push('\n');
         push_indent(out, 4);
         out.push('}');
@@ -870,10 +906,12 @@ mod tests {
                 EnumVariantDef {
                     name: "On",
                     docs: &[],
+                    fields: &[],
                 },
                 EnumVariantDef {
                     name: "Off",
                     docs: &[],
+                    fields: &[],
                 },
             ],
         }],

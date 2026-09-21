@@ -1,0 +1,5 @@
+error: bffi[E010]: unsupported field type `Vec < Option < u32 > >` on `_0`; supported sequence items: i8|i16|i32|u8|u16|u32|f32|f64|i64|u64|bool|String|Vec<u8>|records (B1 v1)
+ --> tests/ui/enum_variant_unsupported_field.rs:6:12
+  |
+6 |     Scores(Vec<Option<u32>>),
+  |            ^^^

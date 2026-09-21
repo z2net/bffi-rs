@@ -325,10 +325,13 @@ pub fn bffi_record_derive(input: TokenStream) -> TokenStream {
     derive::record(input)
 }
 
-/// Marks a unit enum as a boundary-crossing choice type (B1): the
-/// value encodes as its variant name, the TS side sees a union of
-/// string literals. `E011` rejects data-carrying variants and
-/// generics.
+/// Marks an enum as a boundary-crossing choice type (B1): a
+/// unit-only enum encodes as its variant name and the TS side sees a
+/// union of string literals; a variant with a payload rides the kind
+/// envelope (a wire record of the variant name plus positional
+/// fields) and the TS side sees a discriminated union of
+/// `{ kind, ... }` objects. `E011` rejects generics; unsupported
+/// payload field types are rejected under `E010`.
 #[proc_macro_derive(BffiEnum)]
 pub fn bffi_enum_derive(input: TokenStream) -> TokenStream {
     derive::enumeration(input)

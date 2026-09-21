@@ -155,6 +155,8 @@ duplicates) is rejected with `E004`.
 | `Option<String>`                 | -     | yes    | `string \| null` |
 | `Option<Vec<u8>>`, `Option<CopiedBuf>` | - | yes   | `Uint8Array \| null` |
 | `Result<T, E>`                   | -     | yes    | `T`'s kind; `Err` -> code 13 |
+| `Option<&str>` / `Option<&[u8]>` / `Option<prim>` / `Option<i64>` / `Option<u64>` / `Option<record>` / `Option<Vec<T>>` (sync only) | yes | - | `T \| null` |
+| generic instantiation (`bffi_impl_wire!`) | yes | yes | the alias's named type |
 | derived record / unit enum       | yes   | yes    | named type |
 | `Vec<T>` of a supported item (incl. `Vec<Vec<u8>>`) | yes | yes | `T`'s array kind |
 | `Option<record>`, `Option<Vec<T>>` | -   | yes    | `T \| null` |

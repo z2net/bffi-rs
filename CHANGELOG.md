@@ -5,6 +5,26 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 the versioning is [SemVer](https://semver.org/) (`0.x` may break at
 any minor).
 
+## [0.2.3] - 2026-09-21
+
+A release-pipeline hotfix: 0.2.2 shipped the loader and the CLI at
+0.2.2, but the platform binaries stayed at 0.2.1 and the registry
+pages froze before the new features reached the documentation.
+
+### Fixed
+
+- The release pipeline stamps the platform packages from the ROOT
+  `package.json` version (`bffi pack` reads the CWD manifest), and
+  the 0.2.2 bump missed it: all eight `@z2net/bffi-native-*` platform
+  packages skipped publishing and `@z2net/bffi-native@0.2.2` pinned
+  the 0.2.1 binaries. The bump now covers the root manifest, the
+  whole npm family and the native `optionalDependencies` pins.
+- The registry-rendered documentation caught up with 0.2.2: the
+  `@z2net/bffi` type table documents the Option parameters, the
+  sequence fields, the data-carrying enum `{ kind, ... }` objects and
+  the named TS aliases; the macros README matrix covers the Option
+  parameters and the generic instantiation.
+
 ## [0.2.2] - 2026-09-21
 
 The boundary type-system wave: five features closing the biggest gaps

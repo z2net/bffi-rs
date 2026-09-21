@@ -163,6 +163,7 @@ chore: pin rust-toolchain to 1.98.0
 - 功能在 `dev/<feature>` 分支(kebab-case)中开发,从 `dev/main` 切出并合并回 `dev/main`。
 - PR `dev/<feature>` → `dev/main` 需要 1 个批准以及绿色的 CI(`.github/workflows/ci.yml`;本地为 `bun run ci`)。
 - 发布标签 `v<semver>`(附注标签)仅放置在 `main` 上,且仅由所有者创建。
+- 在配套内容就绪之前,发布被阻塞:该版本的 `CHANGELOG.md` 条目以及更新的文档(渲染到 registry 的包/ crate README,以及当行为或公共接口变化时的 `docs/DESIGN.md` / `crates/bffi/CALLING-CONVENTION.md`)。npm 和 crates.io 在发布时冻结这些页面 - 发布后再改文档就需要新版本。如果 changelog 或文档尚未写好,发布就没有就绪。
 
 完整规则:[docs/CONTRIBUTING.md](https://github.com/z2net/bffi-rs/blob/main/docs/i18n/zh-CN/CONTRIBUTING.md) → “分支与发布”。
 
@@ -187,6 +188,7 @@ chore: pin rust-toolchain to 1.98.0
 6. 保持安全模型(默认复制、显式的 unsafe 零拷贝、代际句柄)。
 7. 在可能的情况下运行 `cargo fmt`、`cargo clippy` 和测试。
 8. 如果某项决策发生变化,更新 `DESIGN.md` 或相关文档。
+9. 发布(或请求发布)之前:确认 `CHANGELOG.md` 已有该版本的条目,且文档(包/ crate 的 README、DESIGN.md、CALLING-CONVENTION.md)已反映每一项变更 - 如果没有,先写好它们;registry 在发布时就会冻结这些页面。
 
 对架构拿不准时,优先选择询问(或打开一个 draft PR),而不是发明新模式。
 

@@ -70,6 +70,9 @@ pub(crate) fn param_type<T: ToTokens>(span: Span, ty_tokens: &T, name: &str) -> 
     .with_note(
         "borrowed `&[u8]` is the only buffer parameter; owned buffers are return-only (CALLING-CONVENTION.md)",
     )
+    .with_note(
+        "a bare path is a record/enum: it must derive `BffiRecord`/`BffiEnum` (otherwise the `BffiWire` trait bound fails)",
+    )
     .with_note(DESIGN_NOTE)
     .to_compile_error(span)
 }
@@ -86,6 +89,9 @@ pub(crate) fn return_type<T: ToTokens>(span: Span, ty_tokens: &T) -> syn::Error 
     )
     .with_help(RETURN_TYPES)
     .with_note("Option covers buffer payloads only; `E` in `Result` must impl `std::error::Error + Send + Sync`")
+    .with_note(
+        "a bare path is a record/enum: it must derive `BffiRecord`/`BffiEnum` (otherwise the `BffiWire` trait bound fails)",
+    )
     .with_note(DESIGN_NOTE)
     .to_compile_error(span)
 }

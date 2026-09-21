@@ -1,6 +1,7 @@
 error: bffi[E003]: unsupported type `Option < i32 >` for the return type
          = help: supported returns: parameters|String|Vec<u8>|CopiedBuf|Option<buffer>|Result<T, E: Error + Send + Sync>
          = note: Option covers buffer payloads only; `E` in `Result` must impl `std::error::Error + Send + Sync`
+         = note: a bare path is a record/enum: it must derive `BffiRecord`/`BffiEnum` (otherwise the `BffiWire` trait bound fails)
          = note: boundary rules: DESIGN.md (https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md)
  --> tests/ui/return_option_primitive.rs:5:11
   |

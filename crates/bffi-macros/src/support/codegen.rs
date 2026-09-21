@@ -170,8 +170,6 @@ pub fn value_tail(ctx: &PathCtx, ret: &RetKind) -> TokenStream {
             let types = &ctx.types;
             let encode = wire_encode_value(ctx, ret, format_ident!("__value"));
             quote! {
-                #[allow(unused_imports)]
-                use #types::wire::BffiWire as _;
                 let mut __buf = ::std::vec::Vec::<u8>::new();
                 #encode
                 match #build::runtime::store_bytes(#types::CopiedBuf::from_vec(__buf)) {
@@ -218,7 +216,10 @@ fn wire_encode_value(ctx: &PathCtx, ret: &RetKind, value: syn::Ident) -> TokenSt
     match ret {
         RetKind::Record(path) => {
             let path = &path.0;
-            quote! { #path::bffi_wire_encode(&#value, &mut __buf); }
+            // Fully-qualified through the trait: a non-derived type
+            // fails with the `BffiWire` trait bound (E0277) instead of
+            // an orphaned missing-item lookup.
+            quote! { <#path as #wire::BffiWire>::bffi_wire_encode(&#value, &mut __buf); }
         }
         RetKind::Seq(item) => {
             let push = seq_item_encode(&wire, item);
@@ -246,7 +247,8 @@ pub(crate) fn seq_item_encode(wire: &TokenStream, item: &SeqItem) -> TokenStream
         SeqItem::Bytes => quote! { #wire::encode_bytes(&mut __buf, __item); },
         SeqItem::Record(path) => {
             let path = &path.0;
-            quote! { #path::bffi_wire_encode(__item, &mut __buf); }
+            // Fully-qualified through the trait (see `wire_encode_value`).
+            quote! { <#path as #wire::BffiWire>::bffi_wire_encode(__item, &mut __buf); }
         }
     }
 }
@@ -340,8 +342,6 @@ where
                 let slice = format_ident!("{name}_wire");
                 let path = &path.0;
                 body.extend(quote! {
-                    #[allow(unused_imports)]
-                    use #types::wire::BffiWire as _;
                     if #len == 0_u64 || #ptr.is_null() {
                         let error = #core::BffiError::new(
                             #core::ErrorCode::NullPointer,
@@ -356,7 +356,11 @@ where
                     let #slice = unsafe {
                         ::std::slice::from_raw_parts(#ptr, #len as usize)
                     };
-                    let #name = match #path::bffi_wire_decode(#slice, 0) {
+                    // Fully-qualified through the trait: a non-derived
+                    // type fails with the `BffiWire` trait bound (E0277)
+                    // instead of an orphaned missing-item lookup.
+                    let #name = match <#path as #types::wire::BffiWire>::bffi_wire_decode(#slice, 0)
+                    {
                         ::std::result::Result::Ok((value, _)) => value,
                         ::std::result::Result::Err(error) => {
                             let code = error.status_u32();
@@ -373,8 +377,6 @@ where
                 let slice_ref = slice.clone();
                 let decode = seq_item_decode(ctx, &item, &slice_ref);
                 body.extend(quote! {
-                    #[allow(unused_imports)]
-                    use #types::wire::BffiWire as _;
                     if #len == 0_u64 || #ptr.is_null() {
                         let error = #core::BffiError::new(
                             #core::ErrorCode::NullPointer,
@@ -472,8 +474,9 @@ fn seq_item_decode(ctx: &PathCtx, item: &SeqItem, slice: &Ident) -> TokenStream 
         },
         SeqItem::Record(path) => {
             let path = &path.0;
+            // Fully-qualified through the trait (see `wire_encode_value`).
             quote! {
-                let (value, next) = #path::bffi_wire_decode(#slice, offset)?;
+                let (value, next) = <#path as #types::wire::BffiWire>::bffi_wire_decode(#slice, offset)?;
                 offset = next;
                 items.push(value);
             }

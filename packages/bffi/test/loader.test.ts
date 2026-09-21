@@ -24,7 +24,7 @@ import {
   decodeValue,
   encodeArgs,
   encodeValue,
-} from "../src/index.ts";
+} from "#bffi";
 import { ptr } from "bun:ffi";
 
 // ---------------------------------------------------------------------------
@@ -119,11 +119,77 @@ const FIXTURE = {
       out: "handle",
     },
     {
+      name: "greet",
+      export: "bffi_greet",
+      docs: [],
+      params: [{ name: "who", ts: "string | null", abi: "cstring" }],
+      ret: { ts: "string", abi: "buffer" },
+      out: "handle",
+    },
+    {
+      name: "scale",
+      export: "bffi_scale",
+      docs: [],
+      params: [{ name: "w", ts: "number | null", abi: "opt_number" }],
+      ret: { ts: "number", abi: "u32" },
+      out: "u32",
+    },
+    {
+      name: "bump",
+      export: "bffi_bump",
+      docs: [],
+      params: [{ name: "v", ts: "bigint | null", abi: "opt_u64" }],
+      ret: { ts: "bigint", abi: "u64" },
+      out: "u64",
+    },
+    {
+      name: "measure",
+      export: "bffi_measure",
+      docs: [],
+      params: [{ name: "data", ts: "Uint8Array | null", abi: "opt_ptr_len" }],
+      ret: { ts: "bigint", abi: "u64" },
+      out: "u64",
+    },
+    {
       name: "touch",
       export: "bffi_touch",
       docs: [],
       params: [{ name: "flag", ts: "boolean", abi: "bool" }],
       ret: { ts: "void", abi: "void" },
+    },
+    {
+      name: "outline",
+      export: "bffi_outline",
+      docs: [],
+      params: [{ name: "shape", ts: "Shape", abi: "ptr_len" }],
+      ret: { ts: "number", abi: "f64" },
+      out: "f64",
+    },
+    {
+      name: "shapeOf",
+      export: "bffi_shape_of",
+      docs: [],
+      params: [{ name: "case", ts: "number", abi: "f64" }],
+      ret: { ts: "Shape", abi: "buffer" },
+      out: "handle",
+    },
+  ],
+  enums: [
+    {
+      name: "Shape",
+      docs: [],
+      variants: [
+        { name: "Circle", docs: [], fields: [{ name: "_0", docs: [], ts: "number" }] },
+        {
+          name: "Rect",
+          docs: [],
+          fields: [
+            { name: "w", docs: [], ts: "number" },
+            { name: "h", docs: [], ts: "number" },
+          ],
+        },
+        { name: "Nothing", docs: [] },
+      ],
     },
   ],
   classes: [
@@ -181,6 +247,12 @@ describe("buildDeclarations", () => {
       returns: "u32",
     });
     expect(declarations.bffi_counter_release).toEqual({ args: ["u64"], returns: "u32" });
+    // The optional-parameter shapes expand through the same table.
+    expect(declarations.bffi_scale).toEqual({ args: ["f64", "u8", "pointer"], returns: "u32" });
+    expect(declarations.bffi_measure).toEqual({
+      args: ["ptr", "u64", "u8", "pointer"],
+      returns: "u32",
+    });
   });
 
   test("rejects unknown schema versions and duplicate exports", () => {
@@ -243,6 +315,42 @@ function mockLib() {
       }
       return 0;
     },
+    bffi_outline: (_data: unknown, len: bigint, out: Float64Array) => {
+      // Echoes the encoded payload length: the kind-envelope layout
+      // (TAG_RECORD + count + TAG_STR kind + fields) is byte-counted
+      // in the assertions.
+      out[0] = Number(len);
+      return 0;
+    },
+    bffi_shape_of: (selectedCase: number, out: BigUint64Array) => {
+      const bytes: number[] = [];
+      if (selectedCase === 0) {
+        encodeValue(bytes, { fields: ["Nothing"] });
+      } else if (selectedCase === 1) {
+        encodeValue(bytes, { fields: ["Circle", 2.5] });
+      } else {
+        encodeValue(bytes, { fields: ["Rect", 2, 3] });
+      }
+      out[0] = store(new Uint8Array(bytes));
+      return 0;
+    },
+    bffi_greet: (who: string | null, out: BigUint64Array) => {
+      out[0] = store(new TextEncoder().encode(who === null ? "none" : `hi ${who}`));
+      return 0;
+    },
+    bffi_scale: (val: number, flag: number, out: Uint32Array) => {
+      out[0] = flag === 0 ? 0 : (val as number) * 2;
+      return 0;
+    },
+    bffi_bump: (val: bigint, flag: number, out: BigUint64Array) => {
+      out[0] = flag === 0 ? 0n : (val as bigint) + 1n;
+      return 0;
+    },
+    bffi_measure: (data: unknown, len: bigint, flag: number, out: BigUint64Array) => {
+      void data;
+      out[0] = flag === 0 ? 18446744073709551615n : BigInt(len);
+      return 0;
+    },
     bffi_counter_new: (start: number, out: BigUint64Array) => {
       counter.value = start as number;
       alive = true;
@@ -270,8 +378,8 @@ function mockLib() {
 
 /** The concrete mock meets the FfiLib boundary through one explicit
  * cast (bun:ffi symbol tables are untyped at this seam). */
-const asLib = (lib: object): import("../src/runtime/error.ts").FfiLib =>
-  lib as unknown as import("../src/runtime/error.ts").FfiLib;
+const asLib = (lib: object): import("#bffi/runtime/error.ts").FfiLib =>
+  lib as unknown as import("#bffi/runtime/error.ts").FfiLib;
 
 describe("createApiFromLib", () => {
   const lib = asLib(mockLib());
@@ -290,8 +398,59 @@ describe("createApiFromLib", () => {
     expect(empty).toEqual(new Uint8Array(0));
   });
 
+  test("passes null cstrings for nullable string parameters", () => {
+    expect(api.greet(null)).toBe("none");
+    expect(api.greet("ada")).toBe("hi ada");
+  });
+
+  test("throws on null for a non-nullable cstring", () => {
+    // The static type is `string`; the runtime guard is what we test.
+    const bypass = null as unknown as string;
+    expect(() => api.shout(bypass)).toThrow(/expected string/);
+  });
+
+  test("encodes opt_number through the flag pair", () => {
+    expect(api.scale(null)).toBe(0);
+    expect(api.scale(21)).toBe(42);
+  });
+
+  test("encodes opt_u64 bigints through the flag pair", () => {
+    expect(api.bump(null)).toBe(0n);
+    expect(api.bump(41n)).toBe(42n);
+  });
+
+  test("distinguishes Some(empty) from None for opt_ptr_len", () => {
+    expect(api.measure(new Uint8Array(0))).toBe(0n);
+    expect(api.measure(null)).toBe(18446744073709551615n);
+    expect(api.measure(new Uint8Array([1, 2, 3]))).toBe(3n);
+  });
+
   test("throws the drained error on a non-zero status", () => {
     expect(() => api.touch(true)).toThrow("bffi_touch failed: 11");
+  });
+
+  test("encodes payload enum values onto the kind envelope", () => {
+    // TAG_RECORD(1) + count(4) + TAG_STR(1) + len(4) + "Nothing"(7).
+    expect(api.outline({ kind: "Nothing" })).toBe(17);
+    // ... + TAG_F64(1) + f64(8), kind "Circle"(6); the fraction
+    // forces the f64 carrier (whole numbers ride i32).
+    expect(api.outline({ kind: "Circle", _0: 2.5 })).toBe(25);
+    // Two f64 fields, kind "Rect"(4).
+    expect(api.outline({ kind: "Rect", w: 2.5, h: 3.5 })).toBe(32);
+  });
+
+  test("rejects invalid enum values for a payload enum", () => {
+    // The static union type rejects these; the casts exercise the
+    // matching runtime guards.
+    expect(() => api.outline({ kind: "Box" } as never)).toThrow(/unknown Shape variant/);
+    expect(() => api.outline("Circle" as never)).toThrow(/a \{ kind, \.\.\. \} object/);
+    expect(() => api.outline({ circle: 1 } as never)).toThrow(/"kind" discriminant/);
+  });
+
+  test("decodes payload enum returns into { kind, ... } objects", () => {
+    expect(api.shapeOf(0)).toEqual({ kind: "Nothing" });
+    expect(api.shapeOf(1)).toEqual({ kind: "Circle", _0: 2.5 });
+    expect(api.shapeOf(2)).toEqual({ kind: "Rect", w: 2, h: 3 });
   });
 
   test("classes wrap the instance handle and release explicitly", () => {

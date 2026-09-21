@@ -11,8 +11,8 @@
  */
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
-import { parseArgs } from "../src/args.ts";
-import { fetchCmd, resolveDigestPolicy } from "../src/commands/fetch.ts";
+import { parseArgs } from "#cli/args.ts";
+import { fetchCmd, resolveDigestPolicy } from "#cli/commands/fetch.ts";
 
 const ROOT = `${import.meta.dir}/tmp-fetch`;
 const ASSET = "libdemo.so";

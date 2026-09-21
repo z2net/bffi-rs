@@ -5,15 +5,15 @@
  * object literal) ships exact signatures without hand-written types.
  */
 import { dlopen, ptr } from "bun:ffi";
-import { ErrorCode, symOptional, type FfiLib, makeTakeError, sym } from "../runtime/error.ts";
-import { makeReadBuffer } from "../runtime/buffer.ts";
-import { assertSchema, BFFI_ABI_VERSION, buildDeclarations, type BuiltinFeatures, type FunctionJson, type ModuleJson, type TsName } from "./loader.ts";
-import { wrapTask } from "../runtime/async.ts";
-import { streamItemTs, wrapStream } from "../runtime/stream.ts";
-import { isCompositeTs, jsToWire, tablesOf, wireToJs } from "./composite.ts";
-import { decodeAt, encodeValue } from "../runtime/wire.ts";
-import { makeLibDisposer } from "../runtime/dispose.ts";
-import type { ApiOf } from "./api-types.ts";
+import { ErrorCode, symOptional, type FfiLib, makeTakeError, sym } from "#bffi/runtime/error.ts";
+import { makeReadBuffer } from "#bffi/runtime/buffer.ts";
+import { assertSchema, BFFI_ABI_VERSION, buildDeclarations, type BuiltinFeatures, type FunctionJson, type ModuleJson, type TsName } from "#bffi/loader/loader.ts";
+import { wrapTask } from "#bffi/runtime/async.ts";
+import { streamItemTs, wrapStream } from "#bffi/runtime/stream.ts";
+import { isCompositeTs, jsToWire, tablesOf, wireToJs } from "#bffi/loader/composite.ts";
+import { decodeAt, encodeValue } from "#bffi/runtime/wire.ts";
+import { makeLibDisposer } from "#bffi/runtime/dispose.ts";
+import type { ApiOf } from "#bffi/loader/api-types.ts";
 
 const decoder = new TextDecoder();
 
@@ -187,6 +187,12 @@ function encodeArgs(
   const args: unknown[] = [];
   for (const [index, param] of params.entries()) {
     const value = jsArgs[index];
+    /** Rejects `null` for a parameter whose TS type is not nullable. */
+    const rejectNull = (): void => {
+      if (!param.ts.endsWith("| null")) {
+        throw new TypeError(`${fnName}(${param.name}): expected ${String(param.ts)}`);
+      }
+    };
     switch (param.abi) {
       case "bool": {
         if (typeof value !== "boolean") {
@@ -195,7 +201,21 @@ function encodeArgs(
         args.push(value ? 1 : 0);
         break;
       }
+      case "cstring": {
+        if (value === null) {
+          rejectNull();
+          args.push(null);
+          break;
+        }
+        args.push(value);
+        break;
+      }
       case "ptr_len": {
+        if (value === null) {
+          rejectNull();
+          args.push(null, 0);
+          break;
+        }
         if (isCompositeTs(param.ts, tables)) {
           const wire = jsToWire(tables, param.ts, value, `${fnName}(${param.name})`);
           const out: number[] = [];
@@ -210,6 +230,47 @@ function encodeArgs(
         }
         args.push(value.length > 0 ? ptr(value) : null);
         args.push(value.length);
+        break;
+      }
+      case "opt_number": {
+        if (value === null) {
+          rejectNull();
+          args.push(0, 0);
+          break;
+        }
+        if (typeof value === "boolean") {
+          args.push(value ? 1 : 0, 1);
+          break;
+        }
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+          throw new TypeError(`${fnName}(${param.name}): expected ${String(param.ts)}`);
+        }
+        args.push(value, 1);
+        break;
+      }
+      case "opt_i64":
+      case "opt_u64": {
+        if (value === null) {
+          rejectNull();
+          args.push(0n, 0);
+          break;
+        }
+        if (typeof value !== "bigint") {
+          throw new TypeError(`${fnName}(${param.name}): expected ${String(param.ts)}`);
+        }
+        args.push(value, 1);
+        break;
+      }
+      case "opt_ptr_len": {
+        if (value === null) {
+          rejectNull();
+          args.push(null, 0, 0);
+          break;
+        }
+        if (!(value instanceof Uint8Array)) {
+          throw new TypeError(`${fnName}(${param.name}): expected ${String(param.ts)}`);
+        }
+        args.push(value.length > 0 ? ptr(value) : null, value.length, 1);
         break;
       }
       default:

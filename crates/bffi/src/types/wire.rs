@@ -243,6 +243,12 @@ fn wire_error(what: &str) -> BffiError {
 /// A type that crosses the boundary as one wire-encoded value: the
 /// `#[derive(BffiRecord)]` / `#[derive(BffiEnum)]` expansions
 /// implement this over the value-level helpers below.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a bffi boundary composite",
+    label = "`{Self}` cannot cross the bffi boundary as a record/enum",
+    note = "derive `BffiRecord` (named-field structs) or `BffiEnum` (unit enums) on `{Self}`, or implement `BffiWire` manually",
+    note = "the boundary type matrix: crates/bffi-macros (attribute docs)"
+)]
 pub trait BffiWire: Sized {
     /// Appends this value as one complete wire record.
     fn bffi_wire_encode(&self, out: &mut Vec<u8>);

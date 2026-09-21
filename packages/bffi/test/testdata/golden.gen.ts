@@ -3,7 +3,7 @@
 // Wrapper style: specialized (hoisted symbols and out slots,
 // inline argument encoding and return decoding per ABI kind).
 
-import { dlopen } from "bun:ffi";
+import { dlopen, ptr } from "bun:ffi";
 import {
   type ApiOf,
   ErrorCode,
@@ -13,9 +13,12 @@ import {
   type TsOf,
   buildDeclarations,
   decodeUtf8,
+  encodeValue,
+  jsToWire,
   makeReadBuffer,
   makeRelease,
   makeTakeError,
+  tablesOf,
   wrapTask,
 } from "@z2net/bffi";
 
@@ -83,6 +86,25 @@ const moduleJson = {
         "abi": "task"
       },
       "out": "handle"
+    },
+    {
+      "name": "describe",
+      "export": "bffi_describe",
+      "docs": [
+        "Names a shape."
+      ],
+      "params": [
+        {
+          "name": "shape",
+          "ts": "Shape",
+          "abi": "ptr_len"
+        }
+      ],
+      "ret": {
+        "ts": "string",
+        "abi": "buffer"
+      },
+      "out": "handle"
     }
   ],
   "classes": [
@@ -138,9 +160,40 @@ const moduleJson = {
     }
   ],
   "records": [],
-  "enums": [],
+  "enums": [
+    {
+      "name": "Shape",
+      "docs": [
+        "A geometric shape."
+      ],
+      "variants": [
+        {
+          "name": "Circle",
+          "docs": [
+            "A circle."
+          ],
+          "fields": [
+            {
+              "name": "_0",
+              "docs": [],
+              "ts": "number"
+            }
+          ]
+        },
+        {
+          "name": "Nothing",
+          "docs": []
+        }
+      ]
+    }
+  ],
   "errors": []
 } as const satisfies ModuleJson;
+
+/**
+ * A geometric shape.
+ */
+export type Shape = TsOf<"Shape", typeof moduleJson>;
 
 /** The explicit low-level loader: opens the native library at
  * `libraryPath` and returns the typed API. Passing a raw binary
@@ -156,6 +209,13 @@ export function createApiFromJson(libraryPath: string): ApiOf<typeof moduleJson>
       throw new Error("missing export: " + name);
     }
     return found;
+  };
+  const tables = tablesOf(moduleJson);
+  const wireBytes = (ts: string, value: unknown, ctx: string): Uint8Array => {
+    const record = jsToWire(tables, ts, value, ctx);
+    const bytes: number[] = [];
+    encodeValue(bytes, record);
+    return new Uint8Array(bytes);
   };
   const out_add = new Uint32Array(1);
   const sym_add = sym("bffi_add");
@@ -202,6 +262,24 @@ export function createApiFromJson(libraryPath: string): ApiOf<typeof moduleJson>
       throw new TypeError("compute: expected a task handle");
     }
     return wrapTask(lib, (out_compute[0] ?? 0n), "Promise<number>", moduleJson) as unknown as TsOf<"Promise<number>", typeof moduleJson>;
+  };
+  const out_describe = new BigUint64Array(1);
+  const sym_describe = sym("bffi_describe");
+  const fn_describe = function (a0: TsOf<"Shape", typeof moduleJson>): TsOf<"string", typeof moduleJson> {
+    if (arguments.length !== 1) {
+      throw new Error("describe: expected 1 argument(s), got " + arguments.length);
+    }
+    const wire_describe_shape = wireBytes("Shape", a0, "describe(shape)");
+    const status = Number(sym_describe(wire_describe_shape.length > 0 ? ptr(wire_describe_shape) : null, wire_describe_shape.length, out_describe));
+    if (status !== ErrorCode.Ok) {
+      const error = takeError(status);
+      throw error ?? new Error("bffi_describe failed: " + String(status));
+    }
+    if (typeof ((out_describe[0] ?? 0n)) !== "bigint") {
+      throw new TypeError("describe: expected a buffer handle");
+    }
+    const bytes_describe = readBuffer((out_describe[0] ?? 0n));
+    return decodeUtf8(bytes_describe);
   };
   const out_counter_constructor = new BigUint64Array(1);
   const sym_counter_constructor = sym("bffi_counter_new");
@@ -258,6 +336,7 @@ export function createApiFromJson(libraryPath: string): ApiOf<typeof moduleJson>
     "add": fn_add,
     "shout": fn_shout,
     "compute": fn_compute,
+    "describe": fn_describe,
     "counter": cls_counter,
   };
 }

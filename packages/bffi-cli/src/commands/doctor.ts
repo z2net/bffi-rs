@@ -3,10 +3,10 @@
  * generated file, artifact. No building. Exit 0 when everything
  * passes, 2 otherwise. */
 import { findProjectRoot, rootFromConfigPath } from "@z2net/bffi";
-import { flagString, parseArgs } from "../args.ts";
-import { runDoctorChecks } from "../checks.ts";
-import { printResults } from "./check.ts";
-import { EXIT, writeOut } from "../output.ts";
+import { flagString, parseArgs } from "#cli/args.ts";
+import { runDoctorChecks } from "#cli/checks.ts";
+import { printResults } from "#cli/commands/check.ts";
+import { EXIT, writeOut } from "#cli/output.ts";
 
 export const usage = `bffi doctor [--config <p>] [--root <d>]`;
 

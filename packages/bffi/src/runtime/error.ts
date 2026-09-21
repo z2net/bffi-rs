@@ -52,7 +52,7 @@ export function sym(lib: FfiLib, name: string): FfiSymbol {
 }
 
 import { toArrayBuffer } from "bun:ffi";
-import { decodeValue } from "./wire.ts";
+import { decodeValue } from "#bffi/runtime/wire.ts";
 
 const decoder = new TextDecoder();
 

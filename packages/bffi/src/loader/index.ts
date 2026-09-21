@@ -3,8 +3,8 @@
  * builder, the typed API factory (`ApiOf<>`), and platform-binary
  * resolution for platform-package distribution.
  */
-export * from "./loader.ts";
-export * from "./api-types.ts";
-export * from "./api.ts";
-export * from "./composite.ts";
-export * from "./resolve.ts";
+export * from "#bffi/loader/loader.ts";
+export * from "#bffi/loader/api-types.ts";
+export * from "#bffi/loader/api.ts";
+export * from "#bffi/loader/composite.ts";
+export * from "#bffi/loader/resolve.ts";

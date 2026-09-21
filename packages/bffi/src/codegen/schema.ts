@@ -9,7 +9,7 @@ import {
   OUT_NAMES,
   RET_ABI_NAMES,
   TS_NAMES,
-} from "../loader/loader.ts";
+} from "#bffi/loader/loader.ts";
 
 /** One validation failure: the JSON path plus the reason. */
 export interface SchemaIssue {
@@ -206,7 +206,12 @@ function checkRecords(issues: SchemaIssue[], path: string, value: unknown, named
   }
 }
 
-function checkEnums(issues: SchemaIssue[], path: string, value: unknown): void {
+function checkEnums(
+  issues: SchemaIssue[],
+  path: string,
+  value: unknown,
+  named: (ts: string) => boolean,
+): void {
   if (!Array.isArray(value)) {
     issues.push({ path, message: "expected an array of enum entries" });
     return;
@@ -230,6 +235,24 @@ function checkEnums(issues: SchemaIssue[], path: string, value: unknown): void {
         }
         checkString(issues, `${variantAt}.name`, variant.name);
         checkStringArray(issues, `${variantAt}.docs`, variant.docs);
+        // Payload fields are optional (unit variants omit the key);
+        // when present they validate like record fields.
+        if (variant.fields !== undefined) {
+          if (!Array.isArray(variant.fields)) {
+            issues.push({ path: `${variantAt}.fields`, message: "expected an array of fields" });
+          } else {
+            for (const [fieldIndex, field] of variant.fields.entries()) {
+              const fieldAt = `${variantAt}.fields[${fieldIndex}]`;
+              if (!isRecord(field)) {
+                issues.push({ path: fieldAt, message: "expected an object" });
+                continue;
+              }
+              checkString(issues, `${fieldAt}.name`, field.name);
+              checkStringArray(issues, `${fieldAt}.docs`, field.docs);
+              checkTs(issues, `${fieldAt}.ts`, field.ts, named);
+            }
+          }
+        }
       }
     }
   }
@@ -365,7 +388,7 @@ export function validateModule(raw: unknown): ModuleJsonLike {
     checkRecords(issues, "$.records", raw.records, named);
   }
   if (raw.enums !== undefined) {
-    checkEnums(issues, "$.enums", raw.enums);
+    checkEnums(issues, "$.enums", raw.enums, named);
   }
   if (raw.errors !== undefined) {
     checkErrors(issues, "$.errors", raw.errors);

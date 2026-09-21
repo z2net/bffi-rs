@@ -10,13 +10,16 @@
  * declared variants. Errors name the offending path.
  */
 
-import type { ModuleJson, RecordJson } from "./loader.ts";
-import type { WireValue } from "../runtime/wire.ts";
+import type { ModuleJson, RecordJson } from "#bffi/loader/loader.ts";
+import type { WireValue } from "#bffi/runtime/wire.ts";
 
 /** The module tables with the B1 optional keys normalized to arrays. */
 export interface CompositeTables {
   records: RecordJson[];
-  enums: { name: string; variants: { name: string }[] }[];
+  enums: {
+    name: string;
+    variants: { name: string; fields?: { name: string; ts: string }[] }[];
+  }[];
 }
 
 /** Reads the composite tables off a module JSON (missing keys read as
@@ -114,15 +117,47 @@ export function jsToWire(
   }
   const enumeration = tables.enums.find((entry) => entry.name === ts);
   if (enumeration) {
-    if (typeof value !== "string") {
-      throw fail(`enum ${ts} (a variant name string)`);
+    const hasPayload = enumeration.variants.some(
+      (variant) => (variant.fields?.length ?? 0) > 0,
+    );
+    // A unit-only enum rides the bare variant-name string.
+    if (!hasPayload) {
+      if (typeof value !== "string") {
+        throw fail(`enum ${ts} (a variant name string)`);
+      }
+      if (!enumeration.variants.some((variant) => variant.name === value)) {
+        throw new TypeError(
+          `${path}: unknown ${ts} variant ${value} (expected one of ${enumeration.variants.map((v) => v.name).join(", ")})`,
+        );
+      }
+      return value;
     }
-    if (!enumeration.variants.some((variant) => variant.name === value)) {
+    // A payload-carrying enum takes the `{ kind, ... }` object form
+    // onto the kind envelope: one wire record of the variant name
+    // and its positional fields.
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw fail(`enum ${ts} (a { kind, ... } object)`);
+    }
+    const source = value as Record<string, unknown>;
+    const kind = source.kind;
+    if (typeof kind !== "string") {
+      throw fail(`enum ${ts} (a string "kind" discriminant)`);
+    }
+    const variant = enumeration.variants.find((entry) => entry.name === kind);
+    if (!variant) {
       throw new TypeError(
-        `${path}: unknown ${ts} variant ${value} (expected one of ${enumeration.variants.map((v) => v.name).join(", ")})`,
+        `${path}: unknown ${ts} variant ${kind} (expected one of ${enumeration.variants.map((v) => v.name).join(", ")})`,
       );
     }
-    return value;
+    const fields = variant.fields ?? [];
+    return {
+      fields: [
+        kind,
+        ...fields.map((field) =>
+          jsToWire(tables, field.ts, source[field.name], `${path}.${field.name}`)
+        ),
+      ],
+    };
   }
   throw new Error(`${path}: unknown composite type ${ts}`);
 }
@@ -183,7 +218,37 @@ export function wireToJs(
   }
   const enumeration = tables.enums.find((entry) => entry.name === ts);
   if (enumeration) {
-    return value;
+    // A unit-only enum rides the bare variant-name string.
+    if (!enumeration.variants.some((variant) => (variant.fields?.length ?? 0) > 0)) {
+      return value;
+    }
+    // A payload-carrying enum decodes the kind envelope: field 0 is
+    // the variant name, the rest ride positionally.
+    if (typeof value !== "object" || value === null || Array.isArray(value) || !("fields" in value)) {
+      throw new Error(`${path}: expected a wire record for enum ${ts}`);
+    }
+    const fields = (value as { fields: WireValue[] }).fields;
+    const kind = fields[0];
+    if (typeof kind !== "string") {
+      throw new Error(`${path}: expected a string variant kind for enum ${ts}`);
+    }
+    const variant = enumeration.variants.find((entry) => entry.name === kind);
+    if (!variant) {
+      throw new Error(
+        `${path}: unknown ${ts} variant ${kind} (expected one of ${enumeration.variants.map((v) => v.name).join(", ")})`,
+      );
+    }
+    const payload = variant.fields ?? [];
+    if (fields.length !== payload.length + 1) {
+      throw new Error(
+        `${path}: enum ${ts} variant ${kind} field count mismatch (wire ${String(fields.length - 1)}, descriptor ${String(payload.length)})`,
+      );
+    }
+    const out: Record<string, unknown> = { kind };
+    payload.forEach((field, index) => {
+      out[field.name] = wireToJs(tables, field.ts, fields[index + 1], `${path}.${field.name}`);
+    });
+    return out;
   }
   throw new Error(`${path}: unknown composite type ${ts}`);
 }

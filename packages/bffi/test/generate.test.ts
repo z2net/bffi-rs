@@ -8,8 +8,8 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { renderModule } from "../src/codegen/generate.ts";
-import { SchemaValidationError } from "../src/codegen/schema.ts";
+import { renderModule } from "#bffi/codegen/generate.ts";
+import { SchemaValidationError } from "#bffi/codegen/schema.ts";
 const FIXTURE = {
   bffi: 1,
   module: "api",
@@ -40,6 +40,24 @@ const FIXTURE = {
       params: [{ name: "x", ts: "number", abi: "u32" }],
       ret: { ts: "Promise<number>", abi: "task" },
       out: "handle",
+    },
+    {
+      name: "describe",
+      export: "bffi_describe",
+      docs: ["Names a shape."],
+      params: [{ name: "shape", ts: "Shape", abi: "ptr_len" }],
+      ret: { ts: "string", abi: "buffer" },
+      out: "handle",
+    },
+  ],
+  enums: [
+    {
+      name: "Shape",
+      docs: ["A geometric shape."],
+      variants: [
+        { name: "Circle", docs: ["A circle."], fields: [{ name: "_0", docs: [], ts: "number" }] },
+        { name: "Nothing", docs: [] },
+      ],
     },
   ],
   classes: [
@@ -91,7 +109,11 @@ describe("renderModule", () => {
 
   test("embeds the schema and the runtime import", () => {
     const rendered = renderModule(FIXTURE);
-    expect(rendered).toContain('import { dlopen } from "bun:ffi";');
+    // The composite parameter of `describe` pulls in `ptr` and the
+    // wire helpers; the generated module imports the PUBLIC package
+    // name (the internal `#bffi` aliases are for this repo's own
+    // sources).
+    expect(rendered).toContain('import { dlopen, ptr } from "bun:ffi";');
     expect(rendered).toContain('} from "@z2net/bffi";');
     expect(rendered).toContain("const moduleJson = {");
     expect(rendered).toContain("as const satisfies ModuleJson;");
@@ -122,6 +144,7 @@ describe("renderModule", () => {
 
   test("canonicalizes key order", () => {
     const shuffled = {
+      enums: FIXTURE.enums,
       classes: FIXTURE.classes.map((cls) => ({
         methods: cls.methods,
         fields: cls.fields,
@@ -141,6 +164,7 @@ describe("renderModule", () => {
       module: shuffled.module,
       functions: shuffled.functions,
       classes: shuffled.classes,
+      enums: shuffled.enums,
     };
     expect(renderModule(shuffled)).toBe(renderModule(sameOrder));
   });
@@ -158,6 +182,40 @@ describe("renderModule", () => {
   test("documents createApiFromJson as the explicit low-level loader", () => {
     const rendered = renderModule(FIXTURE);
     expect(rendered).toContain("explicit low-level");
+  });
+
+  test("exports named type aliases for records and enums", () => {
+    const withComposites = renderModule({
+      ...FIXTURE,
+      records: [{ name: "Point", docs: ["A point."], fields: [] }],
+      enums: [
+        {
+          name: "Shape",
+          docs: ["A geometric shape."],
+          variants: [{ name: "Idle", docs: [] }],
+        },
+      ],
+    });
+    // Aliases ride their schema docs as JSDoc blocks, records first.
+    expect(withComposites).toContain(
+      '/**\n * A point.\n */\nexport type Point = TsOf<"Point", typeof moduleJson>;\n',
+    );
+    expect(withComposites).toContain(
+      '/**\n * A geometric shape.\n */\nexport type Shape = TsOf<"Shape", typeof moduleJson>;\n',
+    );
+    const pointAt = withComposites.indexOf('export type Point = ');
+    const shapeAt = withComposites.indexOf('export type Shape = ');
+    expect(shapeAt).toBeGreaterThan(pointAt);
+    // A module without composites emits no alias block (the Shape
+    // function goes with its table - the validator rejects the
+    // dangling reference otherwise).
+    const bare = renderModule({
+      ...FIXTURE,
+      records: [],
+      enums: [],
+      functions: FIXTURE.functions.filter((fn) => fn.name !== "describe"),
+    });
+    expect(bare).not.toContain("export type Point");
   });
 
   test("rejects unknown schema versions with a diagnostic", () => {

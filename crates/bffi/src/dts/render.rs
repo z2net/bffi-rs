@@ -103,24 +103,51 @@ fn push_record(record: &RecordDef, out: &mut String) {
     out.push_str("}\n");
 }
 
-/// Appends one enum block: JSDoc header and the string-literal union
-/// of variant names on a single line.
+/// Appends one enum block: a JSDoc header and either the
+/// string-literal union of variant names (unit-only enums, one line)
+/// or the discriminated union of `{ kind, ... }` objects (payload
+/// variants carry their fields positionally after the `kind`
+/// discriminant).
 fn push_enum(enumeration: &EnumDef, out: &mut String) {
     push_docs(enumeration.docs, out);
     out.push_str("export type ");
     out.push_str(&sanitize(enumeration.js_name));
-    out.push_str(" = ");
-    let mut first = true;
-    for variant in enumeration.variants {
-        if !first {
-            out.push_str(" | ");
+    let has_payload = enumeration
+        .variants
+        .iter()
+        .any(|variant| !variant.fields.is_empty());
+    if !has_payload {
+        out.push_str(" = ");
+        let mut first = true;
+        for variant in enumeration.variants {
+            if !first {
+                out.push_str(" | ");
+            }
+            first = false;
+            out.push('"');
+            out.push_str(&sanitize(variant.name));
+            out.push('"');
         }
-        first = false;
-        out.push('"');
+        out.push_str(";\n");
+        return;
+    }
+    out.push_str(" =\n");
+    for variant in enumeration.variants {
+        out.push_str("  | ");
+        out.push_str("{ kind: \"");
         out.push_str(&sanitize(variant.name));
         out.push('"');
+        for field in variant.fields {
+            out.push_str("; ");
+            out.push_str(&sanitize(field.name));
+            out.push_str(": ");
+            out.push_str(&field.ty.as_str());
+        }
+        out.push_str(" }");
+        out.push('\n');
     }
-    out.push_str(";\n");
+    out.push(';');
+    out.push('\n');
 }
 
 /// Appends one function block: JSDoc (when docs are present) followed

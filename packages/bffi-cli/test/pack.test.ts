@@ -6,7 +6,7 @@
  */
 import { afterAll, describe, expect, test } from "bun:test";
 
-import { pack } from "../src/commands/pack.ts";
+import { pack } from "#cli/commands/pack.ts";
 
 const ROOT = `${import.meta.dir}/tmp`;
 const SRC = `${ROOT}/fake.dll`;

@@ -1,0 +1,8 @@
+error: bffi[E016]: unsupported instantiation target `(u32, u32)`
+         = help: use a path type over a local generic struct: `Pair<u32> as PairU32 { first: u32, .. }`
+         = note: the target must be local to your crate: the generated `BffiWire` impl would break the orphan rule otherwise
+         = note: boundary rules: DESIGN.md (https://github.com/z2net/bffi-rs/blob/main/docs/DESIGN.md)
+ --> tests/ui/instantiation_bad_target.rs:5:5
+  |
+5 |     (u32, u32) as Tuple {
+  |     ^^^^^^^^^^

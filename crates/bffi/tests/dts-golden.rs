@@ -271,14 +271,17 @@ static B1: ModuleDef = ModuleDef {
             bffi::bffi_dts::EnumVariantDef {
                 name: "Idle",
                 docs: &[],
+                fields: &[],
             },
             bffi::bffi_dts::EnumVariantDef {
                 name: "Running",
                 docs: &[],
+                fields: &[],
             },
             bffi::bffi_dts::EnumVariantDef {
                 name: "Done",
                 docs: &[],
+                fields: &[],
             },
         ],
     }],

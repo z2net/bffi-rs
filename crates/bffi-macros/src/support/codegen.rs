@@ -46,6 +46,40 @@ pub fn shim_param(name: &str, kind: ShimKind, index: usize) -> TokenStream {
             let ty = bigint_ty(big);
             quote! { #name: #ty }
         }
+        // Optional parameters: the plain borrowed shapes where a
+        // nullable slot exists, otherwise the flag-pair shapes.
+        ShimKind::Opt(inner) => match inner.as_ref() {
+            ShimKind::Str => {
+                let ptr = format_ident!("{name}_ptr");
+                quote! { #ptr: *const ::std::os::raw::c_char }
+            }
+            ShimKind::BufferView => {
+                let ptr = format_ident!("{name}_ptr");
+                let len = format_ident!("{name}_len");
+                let flag = format_ident!("{name}_flag");
+                quote! { #ptr: *const u8, #len: u64, #flag: u8 }
+            }
+            ShimKind::Record(_) | ShimKind::Seq(_) => {
+                let ptr = format_ident!("{name}_ptr");
+                let len = format_ident!("{name}_len");
+                quote! { #ptr: *const u8, #len: u64 }
+            }
+            ShimKind::Prim(_) => {
+                let val = format_ident!("{name}_val");
+                let flag = format_ident!("{name}_flag");
+                quote! { #val: f64, #flag: u8 }
+            }
+            ShimKind::BigInt(big) => {
+                let ty = bigint_ty(*big);
+                let val = format_ident!("{name}_val");
+                let flag = format_ident!("{name}_flag");
+                quote! { #val: #ty, #flag: u8 }
+            }
+            // Unreachable: `classify_param` rejects a nested `Option`
+            // before it can reach the shim; the arm exists for
+            // exhaustiveness.
+            ShimKind::Opt(_) => quote! {},
+        },
     }
 }
 
@@ -170,8 +204,6 @@ pub fn value_tail(ctx: &PathCtx, ret: &RetKind) -> TokenStream {
             let types = &ctx.types;
             let encode = wire_encode_value(ctx, ret, format_ident!("__value"));
             quote! {
-                #[allow(unused_imports)]
-                use #types::wire::BffiWire as _;
                 let mut __buf = ::std::vec::Vec::<u8>::new();
                 #encode
                 match #build::runtime::store_bytes(#types::CopiedBuf::from_vec(__buf)) {
@@ -218,7 +250,10 @@ fn wire_encode_value(ctx: &PathCtx, ret: &RetKind, value: syn::Ident) -> TokenSt
     match ret {
         RetKind::Record(path) => {
             let path = &path.0;
-            quote! { #path::bffi_wire_encode(&#value, &mut __buf); }
+            // Fully-qualified through the trait: a non-derived type
+            // fails with the `BffiWire` trait bound (E0277) instead of
+            // an orphaned missing-item lookup.
+            quote! { <#path as #wire::BffiWire>::bffi_wire_encode(&#value, &mut __buf); }
         }
         RetKind::Seq(item) => {
             let push = seq_item_encode(&wire, item);
@@ -246,7 +281,8 @@ pub(crate) fn seq_item_encode(wire: &TokenStream, item: &SeqItem) -> TokenStream
         SeqItem::Bytes => quote! { #wire::encode_bytes(&mut __buf, __item); },
         SeqItem::Record(path) => {
             let path = &path.0;
-            quote! { #path::bffi_wire_encode(__item, &mut __buf); }
+            // Fully-qualified through the trait (see `wire_encode_value`).
+            quote! { <#path as #wire::BffiWire>::bffi_wire_encode(__item, &mut __buf); }
         }
     }
 }
@@ -340,8 +376,6 @@ where
                 let slice = format_ident!("{name}_wire");
                 let path = &path.0;
                 body.extend(quote! {
-                    #[allow(unused_imports)]
-                    use #types::wire::BffiWire as _;
                     if #len == 0_u64 || #ptr.is_null() {
                         let error = #core::BffiError::new(
                             #core::ErrorCode::NullPointer,
@@ -356,7 +390,11 @@ where
                     let #slice = unsafe {
                         ::std::slice::from_raw_parts(#ptr, #len as usize)
                     };
-                    let #name = match #path::bffi_wire_decode(#slice, 0) {
+                    // Fully-qualified through the trait: a non-derived
+                    // type fails with the `BffiWire` trait bound (E0277)
+                    // instead of an orphaned missing-item lookup.
+                    let #name = match <#path as #types::wire::BffiWire>::bffi_wire_decode(#slice, 0)
+                    {
                         ::std::result::Result::Ok((value, _)) => value,
                         ::std::result::Result::Err(error) => {
                             let code = error.status_u32();
@@ -373,8 +411,6 @@ where
                 let slice_ref = slice.clone();
                 let decode = seq_item_decode(ctx, &item, &slice_ref);
                 body.extend(quote! {
-                    #[allow(unused_imports)]
-                    use #types::wire::BffiWire as _;
                     if #len == 0_u64 || #ptr.is_null() {
                         let error = #core::BffiError::new(
                             #core::ErrorCode::NullPointer,
@@ -413,6 +449,177 @@ where
                 });
             }
             ShimKind::Prim(_) | ShimKind::BigInt(_) => {}
+            // Optional parameters: `None` is the documented nullable
+            // slot per inner kind (CALLING-CONVENTION.md §3).
+            ShimKind::Opt(inner) => match inner.as_ref() {
+                ShimKind::Str => {
+                    let ptr = format_ident!("{name}_ptr");
+                    let bytes = format_ident!("{name}_bytes");
+                    let view = format_ident!("{name}_view");
+                    body.extend(quote! {
+                        // The borrowed view lives for the whole shim
+                        // body; the option binding borrows it.
+                        let #view = if #ptr.is_null() {
+                            ::core::option::Option::None
+                        } else {
+                            // SAFETY: bun:ffi hands out NUL-terminated
+                            // cstrings for `&str` parameters; the
+                            // pointer is non-null on this branch.
+                            let #bytes =
+                                unsafe { ::std::ffi::CStr::from_ptr(#ptr) }.to_bytes();
+                            ::core::option::Option::Some(
+                                match #types::unsafe_zero_copy::str_view(#bytes) {
+                                    ::std::result::Result::Ok(v) => v,
+                                    ::std::result::Result::Err(e) => {
+                                        #core::set_last_error(e);
+                                        return #core::ErrorCode::InvalidUtf8.as_u32();
+                                    }
+                                },
+                            )
+                        };
+                        let #name = #view.as_ref().map(|__v| &**__v);
+                    });
+                }
+                ShimKind::BufferView => {
+                    let ptr = format_ident!("{name}_ptr");
+                    let len = format_ident!("{name}_len");
+                    let flag = format_ident!("{name}_flag");
+                    let view = format_ident!("{name}_view");
+                    body.extend(quote! {
+                        let #view = if #flag == 0_u8 {
+                            ::core::option::Option::None
+                        } else if #len == 0_u64 {
+                            // `Some(&[])`: the flag distinguishes it
+                            // from `None`; the empty slice never feeds
+                            // `from_raw_parts` a pointer.
+                            ::core::option::Option::Some(#types::buf_view(&[]))
+                        } else {
+                            if #ptr.is_null() {
+                                let error = #core::BffiError::new(
+                                    #core::ErrorCode::NullPointer,
+                                    "buffer argument pointer is null",
+                                );
+                                #core::set_last_error(error);
+                                return #core::ErrorCode::NullPointer.as_u32();
+                            }
+                            // SAFETY: the flag is set and the length is
+                            // non-zero, so the pointer is non-null
+                            // (checked above) and valid for `len` bytes.
+                            ::core::option::Option::Some(#types::buf_view(unsafe {
+                                ::std::slice::from_raw_parts(#ptr, #len as usize)
+                            }))
+                        };
+                        let #name = #view.as_ref().map(|__v| &**__v);
+                    });
+                }
+                ShimKind::Record(path) => {
+                    let ptr = format_ident!("{name}_ptr");
+                    let len = format_ident!("{name}_len");
+                    let slice = format_ident!("{name}_wire");
+                    let path = &path.0;
+                    body.extend(quote! {
+                        let #name = if #len == 0_u64 || #ptr.is_null() {
+                            ::core::option::Option::None
+                        } else {
+                            // SAFETY: bun:ffi keeps the TypedArray
+                            // pointer valid for the duration of the
+                            // call; the wire decode below only reads
+                            // and copies into owned data.
+                            let #slice = unsafe {
+                                ::std::slice::from_raw_parts(#ptr, #len as usize)
+                            };
+                            ::core::option::Option::Some(
+                                match <#path as #types::wire::BffiWire>::bffi_wire_decode(
+                                    #slice,
+                                    0,
+                                ) {
+                                    ::std::result::Result::Ok((value, _)) => value,
+                                    ::std::result::Result::Err(error) => {
+                                        let code = error.status_u32();
+                                        #core::set_last_error(error);
+                                        return code;
+                                    }
+                                },
+                            )
+                        };
+                    });
+                }
+                ShimKind::Seq(item) => {
+                    let ptr = format_ident!("{name}_ptr");
+                    let len = format_ident!("{name}_len");
+                    let slice = format_ident!("{name}_wire");
+                    let slice_ref = slice.clone();
+                    let decode = seq_item_decode(ctx, item, &slice_ref);
+                    body.extend(quote! {
+                        let #name = if #len == 0_u64 || #ptr.is_null() {
+                            ::core::option::Option::None
+                        } else {
+                            // SAFETY: bun:ffi keeps the TypedArray
+                            // pointer valid for the duration of the
+                            // call; the wire decode below only reads
+                            // and copies into owned data.
+                            let #slice = unsafe {
+                                ::std::slice::from_raw_parts(#ptr, #len as usize)
+                            };
+                            ::core::option::Option::Some(
+                                match (|| -> ::std::result::Result<
+                                    ::std::vec::Vec<_>,
+                                    #core::BffiError,
+                                > {
+                                    let (count, mut offset) =
+                                        #types::wire::decode_seq_header(#slice, 0)?;
+                                    let mut items = ::std::vec::Vec::with_capacity(
+                                        (count as usize).min(4096),
+                                    );
+                                    for _ in 0..count {
+                                        #decode
+                                    }
+                                    ::std::result::Result::Ok(items)
+                                })() {
+                                    ::std::result::Result::Ok(value) => value,
+                                    ::std::result::Result::Err(error) => {
+                                        let code = error.status_u32();
+                                        #core::set_last_error(error);
+                                        return code;
+                                    }
+                                },
+                            )
+                        };
+                    });
+                }
+                ShimKind::Prim(prim) => {
+                    let val = format_ident!("{name}_val");
+                    let flag = format_ident!("{name}_flag");
+                    let some = if *prim == PrimTy::Bool {
+                        quote! { ::core::option::Option::Some(#val != 0.0) }
+                    } else {
+                        let ty = prim_ty(*prim);
+                        quote! { ::core::option::Option::Some(#val as #ty) }
+                    };
+                    body.extend(quote! {
+                        let #name = if #flag == 0_u8 {
+                            ::core::option::Option::None
+                        } else {
+                            #some
+                        };
+                    });
+                }
+                ShimKind::BigInt(_) => {
+                    let val = format_ident!("{name}_val");
+                    let flag = format_ident!("{name}_flag");
+                    body.extend(quote! {
+                        let #name = if #flag == 0_u8 {
+                            ::core::option::Option::None
+                        } else {
+                            ::core::option::Option::Some(#val)
+                        };
+                    });
+                }
+                // Unreachable: `classify_param` rejects a nested
+                // `Option` before it can reach the shim; the arm
+                // exists for exhaustiveness.
+                ShimKind::Opt(_) => {}
+            },
         }
     }
     body
@@ -472,8 +679,9 @@ fn seq_item_decode(ctx: &PathCtx, item: &SeqItem, slice: &Ident) -> TokenStream 
         },
         SeqItem::Record(path) => {
             let path = &path.0;
+            // Fully-qualified through the trait (see `wire_encode_value`).
             quote! {
-                let (value, next) = #path::bffi_wire_decode(#slice, offset)?;
+                let (value, next) = <#path as #types::wire::BffiWire>::bffi_wire_decode(#slice, offset)?;
                 offset = next;
                 items.push(value);
             }

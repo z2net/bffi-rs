@@ -11,7 +11,7 @@
  * over the canonical model.
  */
 
-import { validateModule } from "./schema.ts";
+import { validateModule } from "#bffi/codegen/schema.ts";
 
 /** One canonicalized schema object: fixed key order, no extras. */
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
@@ -110,11 +110,26 @@ function canonRecord(entry: unknown): Json {
 }
 
 function canonVariant(variant: unknown): Json {
-  const record = variant as { name: string; docs: string[] };
-  return {
+  const record = variant as {
+    name: string;
+    docs: string[];
+    fields?: { name: string; docs: string[]; ts: string }[];
+  };
+  const out: Json = {
     name: record.name,
     docs: canonStringArray(record.docs),
   };
+  // Payload fields keep their declaration order after `docs`, the
+  // exact position the loader JSON writes them at (unit variants
+  // omit the key).
+  if (record.fields !== undefined) {
+    out.fields = record.fields.map((field) => ({
+      name: field.name,
+      docs: canonStringArray(field.docs),
+      ts: field.ts,
+    }));
+  }
+  return out;
 }
 
 function canonEnum(entry: unknown): Json {
@@ -237,6 +252,14 @@ export interface CanonModule {
   functions: CanonFn[];
   classes: CanonClass[];
   records: { name: string; docs: string[]; fields: { name: string; docs: string[]; ts: string }[] }[];
-  enums: { name: string; docs: string[]; variants: { name: string; docs: string[] }[] }[];
+  enums: {
+    name: string;
+    docs: string[];
+    variants: {
+      name: string;
+      docs: string[];
+      fields?: { name: string; docs: string[]; ts: string }[];
+    }[];
+  }[];
   errors: unknown[];
 }

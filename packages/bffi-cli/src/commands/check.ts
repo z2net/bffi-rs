@@ -2,9 +2,9 @@
  * WITHOUT building - config, loader JSON, generated file, artifact
  * presence. Exit 0 when everything passes, 2 otherwise. */
 import { findProjectRoot, rootFromConfigPath } from "@z2net/bffi";
-import { flagString, parseArgs } from "../args.ts";
-import { runProjectChecks, type CheckResult } from "../checks.ts";
-import { EXIT, writeOut } from "../output.ts";
+import { flagString, parseArgs } from "#cli/args.ts";
+import { runProjectChecks, type CheckResult } from "#cli/checks.ts";
+import { EXIT, writeOut } from "#cli/output.ts";
 
 export const usage = `bffi check [--config <p>] [--root <d>]`;
 

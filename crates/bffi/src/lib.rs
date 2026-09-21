@@ -156,7 +156,7 @@ pub use crate::bffi_types::{
 #[cfg(feature = "macros")]
 pub use bffi_macros::{
     BffiEnum, BffiError, BffiRecord, bffi, bffi_async, bffi_class, bffi_constructor, bffi_impl,
-    bffi_stream,
+    bffi_impl_wire, bffi_stream,
 };
 
 /// THE single zero-copy door (DESIGN §6.3). Zero-copy is allowed only

@@ -9,8 +9,9 @@
 > `AGENTS.md`.
 
 **Status:** P2. Covers function shims (P1), the runtime exports
-(P2), class method shims, and borrowed `&[u8]` buffer parameters.
-Structs-by-value and cstring _returns_ are future work (see
+(P2), class method shims, borrowed `&[u8]` buffer parameters, wire
+payloads (records/enums/sequences), and `Option` parameters (sync
+paths). Structs-by-value and cstring _returns_ are future work (see
 "Non-goals").
 
 ---
@@ -47,7 +48,14 @@ Both variants are generated under `#[cfg(debug_assertions)]` /
 | `Handle` (objects, buffers, callbacks) | `u64`                          | JS sees `bigint`; `0` = null |
 | `&str`                     | `*const c_char`                            | NUL-terminated UTF-8 ("cstring"); validated by `bffi_types::str_view`, invalid UTF-8 -> `ErrorCode::InvalidUtf8` + last error |
 | `&[u8]`                    | `ptr: *const u8` + `len: u64` pair (in parameter order) | borrowed view: bun:ffi keeps the `TypedArray` pointer valid for the duration of the call; null allowed iff `len == 0`; non-empty null -> `ErrorCode::NullPointer` + last error; the descriptor carries ONE `Uint8Array` parameter |
-| `String`, `Vec` (owned), `Option`, structs | **not supported as parameters** | see Non-goals |
+| record / enum              | `ptr: *const u8` + `len: u64` (wire payload) | decoded into owned data before the call; `len == 0` or null -> `ErrorCode::NullPointer` |
+| `Vec<T>` (supported items) | `ptr: *const u8` + `len: u64` (wire sequence) | same framing as records; `len == 0` or null -> `ErrorCode::NullPointer` |
+| `Option<&str>`             | `*const c_char`                            | NULL pointer = `None`; otherwise like `&str` |
+| `Option<&[u8]>`            | `ptr` + `len` + `flag: u8` triple          | `flag == 0` = `None`; `flag != 0` behaves like `&[u8]` (`len == 0` stays `Some(&[])`) |
+| `Option<prim>` / `Option<bool>` | `val: f64` + `flag: u8` pair          | `flag == 0` = `None`; every width is exact in `f64` |
+| `Option<i64>` / `Option<u64>` | `val: i64` / `u64` + `flag: u8` pair   | JS sees `bigint \| null` |
+| `Option<record>` / `Option<Vec<T>>` | `ptr` + `len` pair             | `len == 0` (or null) = `None` - the mirror of the `0`-handle return convention |
+| `String`, `Vec` (owned), `Option<Option<T>>` | **not supported as parameters** | owned buffers are return-only; nested `Option` is rejected (`Option` parameters are sync-only: `#[bffi_async]` keeps its own owned matrix) |
 
 ## 4. Returns
 
@@ -58,6 +66,15 @@ Both variants are generated under `#[cfg(debug_assertions)]` /
 | `String`, `Vec<u8>`, `CopiedBuf`, `Option` of these | `-> u64` handle into the buffer table | JS reads via `bffi_buffer` / `bffi_buffer_length`, releases via `bffi_types_free`; `0` = failure (`Option::None` or table error) |
 | record / enum / `Vec<T>` / `Vec<Vec<u8>>`, `Option` of a record or sequence | `-> u64` handle into the buffer table (wire-encoded payload) | the payload is one complete `[tag][payload]` wire record; `0` = `None` (the same empty-buffer convention) |
 | `Result<T, E>`                 | like `T`; on `Err` returns the converted error's `status_u32()` (a derived user code 0x1000-0xFFFF replaces 13) | `E: Into<BffiError>`; the rich error (variant/payload) drains through the last-error channel (§11) |
+
+Composite payloads (records and enums) are one `[tag][payload]`
+wire record each. A record is `TAG_RECORD` + a `u32` field count +
+one value record per field, positional. A unit-only enum is the bare
+`TAG_STR` variant name. An enum with payload variants wraps EVERY
+variant in the kind envelope: `TAG_RECORD` + a `u32` count of
+`1 + fields` + the `TAG_STR` variant name + the payload fields
+positionally (tuple variants are named `_0`.. in the descriptor).
+The per-variant fields are part of the exports hash.
 
 The out-parameter always comes **after** the regular parameters and is
 named `__ret` (`__`-prefix: reserved for generated code).

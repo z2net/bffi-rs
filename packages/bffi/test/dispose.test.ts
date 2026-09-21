@@ -6,8 +6,8 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { disposeLib, installMemoryPressureGC, makeLibDisposer, registerDisposer } from "../src/runtime/dispose.ts";
-import type { FfiLib } from "../src/runtime/error.ts";
+import { disposeLib, installMemoryPressureGC, makeLibDisposer, registerDisposer } from "#bffi/runtime/dispose.ts";
+import type { FfiLib } from "#bffi/runtime/error.ts";
 
 function fakeLib(): FfiLib {
   return {} as FfiLib;

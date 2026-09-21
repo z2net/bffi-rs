@@ -5,6 +5,53 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 the versioning is [SemVer](https://semver.org/) (`0.x` may break at
 any minor).
 
+## [0.2.2] - 2026-09-21
+
+The boundary type-system wave: five features closing the biggest gaps
+in the accepted type matrix, plus one event-loop robustness fix.
+
+### Added
+
+- **Data-carrying enum variants.** `#[derive(BffiEnum)]` accepts
+  tuple and named-field variants; every variant rides the kind
+  envelope (a `TAG_RECORD` of the variant name plus positional
+  payload fields) and the TS side sees a `{ kind, ... }`
+  discriminated union (`kind`, tuple fields `_0`..). Unit-only
+  enums keep the byte-identical string shape.
+- **`Option<T>` parameters** on the sync boundary paths: `NULL`
+  cstring for `Option<&str>`, `len == 0` payloads for records and
+  sequences, and the flag-pair ABI names `opt_number`/`opt_i64`/
+  `opt_u64`/`opt_ptr_len` for scalars and views (the
+  `bun:ffi` null-cstring delivery verified against the real
+  runtime).
+- **`Vec<T>` sequence fields** in derived records - the same item
+  matrix as function-level sequences; `Option<Vec<T>>` follows over
+  the `TAG_UNIT` convention.
+- **Explicit generic instantiation**: `bffi_impl_wire!`
+  (`Pair<u32> as PairU32 { .. }`) emits the alias, the descriptor
+  consts and the `BffiWire` impl - the same record-shape tokens the
+  derive emits (`E016` rejects non-path targets).
+- **Named TS type aliases**: the generated `api.gen.ts` exports a
+  type for every record and enum entry (`export type Shape =
+  TsOf<"Shape", typeof moduleJson>;`), instantiations included.
+- Internal imports across `packages/*` ride the package-alias
+  subpath form (`#bffi/*`, `#cli/*` via the package.json `imports`
+  map).
+
+### Fixed
+
+- **The event-loop lost wakeup**: an untargeted enqueue landing
+  between the registered runner's global drain and its condvar wait
+  notified a condvar nobody waited on yet, and the job sat on the
+  global queue until the next arrival (observed as a marshal timeout
+  on a starved macOS CI runner). The park re-checks the global queue
+  under the held slot mutex.
+- **Composite diagnostics**: a record/enum parameter or return
+  without its derive fails with the `BffiWire` trait bound (E0277,
+  custom `#[diagnostic::on_unimplemented]` guidance) instead of an
+  E0599 storm anchored in generated code; the expansions no longer
+  depend on the trait being imported.
+
 ## [0.2.1] - 2026-09-20
 
 A documentation and release-infrastructure patch - no API changes. The

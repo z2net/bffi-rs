@@ -19,10 +19,10 @@
  * the domain source).
  */
 import { JSCallback, ptr } from "bun:ffi";
-import { ErrorCode, type FfiLib, makeTakeError, sym } from "./error.ts";
-import { makeReadBuffer } from "./buffer.ts";
-import { decodeValue, encodeValue, TAG_BOOL, TAG_F64, TAG_I32, TAG_I64, TAG_STR, TAG_U64, type WireValue } from "./wire.ts";
-import { registerDisposer } from "./dispose.ts";
+import { ErrorCode, type FfiLib, makeTakeError, sym } from "#bffi/runtime/error.ts";
+import { makeReadBuffer } from "#bffi/runtime/buffer.ts";
+import { decodeValue, encodeValue, TAG_BOOL, TAG_F64, TAG_I32, TAG_I64, TAG_STR, TAG_U64, type WireValue } from "#bffi/runtime/wire.ts";
+import { registerDisposer } from "#bffi/runtime/dispose.ts";
 
 /**
  * A callback value type (the `bffi-callback` `ValueType` matrix).

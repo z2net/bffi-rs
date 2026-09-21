@@ -185,9 +185,22 @@ Type mapping table (schema `ts`/`abi` -> JS):
 | `bool` | `boolean` | `bool` (`u8` on the wire) | `boolean` |
 | `&str`, `String` | `string` | `cstring` / `buffer` | `string` |
 | `&[u8]`, `Vec<u8>`, `CopiedBuf` | `Uint8Array` | `ptr_len` / `buffer` | `Uint8Array` |
+| `Vec<T>` (supported items), records, enums | named / `T[]` | `ptr_len` / `buffer` | array / object / variant |
+| data-carrying enum variant | `{ kind, ... }` union member | `ptr_len` / `buffer` | `{ kind: "Name", ... }` |
 | `Option<String>` / `Option<CopiedBuf>` | `string \| null` / `Uint8Array \| null` | `buffer` | `string \| null` / `Uint8Array \| null` |
+| `Option<&str>` | `string \| null` | `cstring` (NULL = `None`) | `string \| null` |
+| `Option<&[u8]>` | `Uint8Array \| null` | `opt_ptr_len` (`ptr`+`len`+flag) | `Uint8Array \| null` |
+| `Option<prim>` / `Option<bool>` | `number \| null` / `boolean \| null` | `opt_number` (`f64`+flag) | `number \| null` / `boolean \| null` |
+| `Option<i64>` / `Option<u64>` | `bigint \| null` | `opt_i64` / `opt_u64` (width+flag) | `bigint \| null` |
+| `Option<record>` / `Option<Vec<T>>` | `T \| null` | `ptr_len` (`len == 0` = `None`) | `T \| null` |
+| generic instantiation (`bffi_impl_wire!`) | named alias (like a record) | `ptr_len` / `buffer` | object |
 | async fns | `Promise<T>` | `task` | `Promise<T>` |
 | classes | - | - | constructor + methods + `release()` (a `FinalizationRegistry` releases the native handle on GC; `release()` releases early and unregisters) |
+
+The generated `api.gen.ts` also exports a NAMED type for every record
+and enum entry (explicit instantiations included):
+`export type Shape = TsOf<"Shape", typeof moduleJson>;` - import the
+exact type instead of digging through parameter introspection.
 
 ## 5. The runtime exports every crate must expand
 

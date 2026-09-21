@@ -122,6 +122,7 @@ Accepted decisions, one line each:
 | Diagnostics | Stable E-codes for macro errors. |
 | Native-thread callbacks | `invoke_wait` marshals a callback onto the JS thread and waits with a mandatory timeout (`Timeout = 15`); the JS thread must pump. |
 | Option values | `Option` crosses the wire as `TAG_UNIT` (fields, returns, async); nested `Option<Option<T>>` is rejected. |
+| Generic types | No monomorphization magic: a concrete instantiation registers explicitly via `bffi_impl_wire!` (`Pair<u32> as PairU32` - alias, descriptor consts and the `BffiWire` impl, the same record-shape tokens the derive emits) under a distinct wire name. |
 | License | MIT. |
 
 ## 10. Non-goals

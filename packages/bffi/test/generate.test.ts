@@ -8,8 +8,8 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { renderModule } from "../src/codegen/generate.ts";
-import { SchemaValidationError } from "../src/codegen/schema.ts";
+import { renderModule } from "#bffi/codegen/generate.ts";
+import { SchemaValidationError } from "#bffi/codegen/schema.ts";
 const FIXTURE = {
   bffi: 1,
   module: "api",
@@ -92,6 +92,8 @@ describe("renderModule", () => {
   test("embeds the schema and the runtime import", () => {
     const rendered = renderModule(FIXTURE);
     expect(rendered).toContain('import { dlopen } from "bun:ffi";');
+    // The generated module imports the PUBLIC package name (the
+    // internal `#bffi` aliases are for this repo's own sources).
     expect(rendered).toContain('} from "@z2net/bffi";');
     expect(rendered).toContain("const moduleJson = {");
     expect(rendered).toContain("as const satisfies ModuleJson;");
@@ -158,6 +160,33 @@ describe("renderModule", () => {
   test("documents createApiFromJson as the explicit low-level loader", () => {
     const rendered = renderModule(FIXTURE);
     expect(rendered).toContain("explicit low-level");
+  });
+
+  test("exports named type aliases for records and enums", () => {
+    const withComposites = renderModule({
+      ...FIXTURE,
+      records: [{ name: "Point", docs: ["A point."], fields: [] }],
+      enums: [
+        {
+          name: "Shape",
+          docs: ["A geometric shape."],
+          variants: [{ name: "Idle", docs: [] }],
+        },
+      ],
+    });
+    // Aliases ride their schema docs as JSDoc blocks, records first.
+    expect(withComposites).toContain(
+      '/**\n * A point.\n */\nexport type Point = TsOf<"Point", typeof moduleJson>;\n',
+    );
+    expect(withComposites).toContain(
+      '/**\n * A geometric shape.\n */\nexport type Shape = TsOf<"Shape", typeof moduleJson>;\n',
+    );
+    const pointAt = withComposites.indexOf('export type Point = ');
+    const shapeAt = withComposites.indexOf('export type Shape = ');
+    expect(shapeAt).toBeGreaterThan(pointAt);
+    // A module without composites emits no alias block.
+    const bare = renderModule({ ...FIXTURE, records: [], enums: [] });
+    expect(bare).not.toContain("export type Point");
   });
 
   test("rejects unknown schema versions with a diagnostic", () => {

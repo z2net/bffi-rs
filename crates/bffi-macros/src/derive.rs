@@ -73,26 +73,51 @@ fn expand_record(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
         ));
     };
 
-    let mut field_defs = Vec::new();
-    let mut encode_stmts = Vec::new();
-    let mut decode_stmts = Vec::new();
-    let mut construct_fields = Vec::new();
-
+    let mut fields = Vec::new();
     for field in &named.named {
         // Unreachable for named fields; the shape match above
         // guarantees the ident.
         let Some(ident) = field.ident.as_ref() else {
             continue;
         };
-        let field_name = ident.to_string();
         let kind = FieldKind::classify(&field.ty, ident)?;
-        let docs = extract_docs(&field.attrs);
+        fields.push((ident.clone(), kind, extract_docs(&field.attrs)));
+    }
+
+    let self_ty = quote! { #name };
+    let docs = extract_docs(&item.attrs);
+    Ok(record_shape_tokens(
+        &self_ty,
+        &name.to_string(),
+        &docs,
+        &fields,
+    ))
+}
+
+/// The shared record-shape expansion: the descriptor consts plus the
+/// `BffiWire` impl over `self_ty`. The derive passes the plain struct
+/// name; [`crate::instantiation`] passes a concrete generic
+/// instantiation (`Pair<u32>`), which resolves through the public
+/// alias the macro emits beside the impls.
+pub(crate) fn record_shape_tokens(
+    self_ty: &TokenStream2,
+    js_name: &str,
+    docs: &[String],
+    fields: &[(syn::Ident, FieldKind, Vec<String>)],
+) -> TokenStream2 {
+    let mut field_defs = Vec::new();
+    let mut encode_stmts = Vec::new();
+    let mut decode_stmts = Vec::new();
+    let mut construct_fields = Vec::new();
+
+    for (ident, kind, field_docs) in fields {
+        let field_name = ident.to_string();
         let ty_expr = kind.ts_expr();
 
         field_defs.push(quote! {
             ::bffi::dts::RecordFieldDef {
                 name: #field_name,
-                docs: &[#(#docs),*],
+                docs: &[#(#field_docs),*],
                 ty: #ty_expr,
             }
         });
@@ -101,13 +126,11 @@ fn expand_record(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
         construct_fields.push(kind.construct_field(ident));
     }
 
-    let js_name = name.to_string();
-    let docs = extract_docs(&item.attrs);
-    let field_count = named.named.len();
+    let field_count = fields.len();
 
-    Ok(quote! {
+    quote! {
         #[automatically_derived]
-        impl #name {
+        impl #self_ty {
             /// The TS-facing reference to this record.
             pub const BFFI_TS_TYPE: ::bffi::dts::TsType =
                 ::bffi::dts::TsType::Record(#js_name);
@@ -122,7 +145,7 @@ fn expand_record(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
         }
 
         #[automatically_derived]
-        impl ::bffi::types::wire::BffiWire for #name {
+        impl ::bffi::types::wire::BffiWire for #self_ty {
             /// Appends this value as one complete wire record.
             fn bffi_wire_encode(&self, out: &mut ::std::vec::Vec<u8>) {
                 use ::bffi::types::wire as __w;
@@ -153,7 +176,7 @@ fn expand_record(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
                 ))
             }
         }
-    })
+    }
 }
 
 /// One supported field type of a record.

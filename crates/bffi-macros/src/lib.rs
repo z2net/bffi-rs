@@ -61,6 +61,7 @@ mod class;
 mod derive;
 mod error_derive;
 mod errors;
+mod instantiation;
 mod mapping;
 mod meta;
 mod model;
@@ -332,6 +333,35 @@ pub fn bffi_enum_derive(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(BffiError, attributes(bffi))]
 pub fn bffi_error_derive(input: TokenStream) -> TokenStream {
     error_derive::error(input)
+}
+
+/// Registers one concrete instantiation of a local generic struct as
+/// a boundary record:
+///
+/// ```ignore
+/// /// A pair of unsigned 32-bit values.
+/// bffi_impl_wire! {
+///     Pair<u32> as PairU32 {
+///         first: u32,
+///         second: u32,
+///     }
+/// }
+/// ```
+///
+/// The expansion emits the `pub type PairU32 = Pair<u32>;` alias
+/// (the name `#[bffi]` parameters and the TS surface reference), the
+/// `BFFI_TS_TYPE`/`BFFI_RECORD_DEF` consts and the `BffiWire` impl
+/// for the instantiation - the exact record-shape tokens the derive
+/// emits, so the two paths cannot drift. Field types ride the record
+/// matrix (`E010`); a non-path target is rejected with `E016`. The
+/// target must be local to your crate (orphan rule); declare one
+/// instantiation per wire name (`Pair<u32> as PairU32`,
+/// `Pair<f64> as PairF64`, ...). The TS codegen mirrors the alias:
+/// the generated module exports a named `PairU32` type for every
+/// record and enum entry.
+#[proc_macro]
+pub fn bffi_impl_wire(input: TokenStream) -> TokenStream {
+    instantiation::expand(input)
 }
 
 /// Marks a plain fn returning `impl Iterator<Item = T> + Send` as a

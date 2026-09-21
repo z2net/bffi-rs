@@ -35,6 +35,7 @@ those) and `Result<T, E>` through the err channel. Class declarations (`#[bffi_c
 | [`src/async_fn.rs`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/async_fn.rs) | `#[bffi_async]` - async fn parsing and the spawn shim returning a task handle |
 | [`src/stream_fn.rs`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/stream_fn.rs) | `#[bffi_stream]` - pull/push stream model and spawn shims (stream-table registration) |
 | [`src/derive.rs`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/derive.rs)   | `#[derive(BffiRecord)]` / `#[derive(BffiEnum)]` - descriptors and wire encode/decode pairs |
+| [`src/instantiation.rs`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/instantiation.rs) | `bffi_impl_wire!` - explicit instantiation of a local generic struct under a distinct wire name (`E016`) |
 | [`src/error_derive.rs`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/error_derive.rs) | `#[derive(BffiError)]` - typed domain error enums with stable user codes (`E013`..`E014`) |
 | [`src/support/`](https://github.com/z2net/bffi-rs/blob/main/crates/bffi-macros/src/support)     | Shared internals - `kind`, `classify`, `codegen`, `diagnostics`, `abi`, `paths`, `util` |
 
@@ -162,6 +163,34 @@ are future work.
 Shape violations are rejected too (`E001`): `async`, generic, `unsafe`, method receivers
 (`self`), variadic, `extern`, and `const` functions are outside the rules.
 
+## Generic types
+
+A generic struct cannot derive the wire impl directly (the wire identity is a
+const string; a proc-macro cannot see monomorphization sites). One concrete
+instantiation registers explicitly:
+
+```rust
+/// A pair of unsigned 32-bit values.
+bffi_impl_wire! {
+    Pair<u32> as PairU32 {
+        first: u32,
+        second: u32,
+    }
+}
+
+#[bffi]
+fn swap(p: PairU32) -> PairU32 { /* ... */ }
+```
+
+The macro emits the `pub type PairU32 = Pair<u32>;` alias, the descriptor
+consts and the `BffiWire` impl - the same record-shape tokens as the derive,
+sharing the same field matrix (`E010`). Non-path targets are rejected with
+`E016`; the target must be local to your crate (orphan rule). One
+instantiation per wire name: `Pair<u32> as PairU32`, `Pair<f64> as PairF64`,
+and so on. The TS side mirrors the alias: the generated `api.gen.ts` exports
+`export type PairU32 = TsOf<"PairU32", typeof moduleJson>;` (one named alias
+per record and enum entry), so consumers import the exact type directly.
+
 ## Diagnostics
 
 Rejections carry stable codes - do not renumber, the golden `.stderr` files in
@@ -173,6 +202,7 @@ Rejections carry stable codes - do not renumber, the golden `.stderr` files in
 | `E002` | unsupported parameter type                                       |
 | `E003` | unsupported return type                                          |
 | `E004` | unknown option; only `crate = "..."` is supported                |
+| `E016` | unsupported `bffi_impl_wire!` instantiation target (non-path)    |
 
 Format - `bffi[<code>]: <message>` first line, then `  = help: ` and `  = note: ` lines:
 

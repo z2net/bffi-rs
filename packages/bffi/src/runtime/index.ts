@@ -4,11 +4,11 @@
  * Bun version gate. Everything generated modules (and hand-rolled
  * loaders) compose at runtime.
  */
-export * from "./error.ts";
-export * from "./buffer.ts";
-export * from "./wire.ts";
-export * from "./callbacks.ts";
-export * from "./async.ts";
-export * from "./stream.ts";
-export * from "./dispose.ts";
-export * from "./version.ts";
+export * from "#bffi/runtime/error.ts";
+export * from "#bffi/runtime/buffer.ts";
+export * from "#bffi/runtime/wire.ts";
+export * from "#bffi/runtime/callbacks.ts";
+export * from "#bffi/runtime/async.ts";
+export * from "#bffi/runtime/stream.ts";
+export * from "#bffi/runtime/dispose.ts";
+export * from "#bffi/runtime/version.ts";

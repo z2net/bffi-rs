@@ -6,7 +6,7 @@
  */
 import { afterAll, describe, expect, test } from "bun:test";
 
-import { init } from "../src/commands/init.ts";
+import { init } from "#cli/commands/init.ts";
 
 const ROOT = `${import.meta.dir}/tmp`;
 

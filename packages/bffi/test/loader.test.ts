@@ -24,7 +24,7 @@ import {
   decodeValue,
   encodeArgs,
   encodeValue,
-} from "../src/index.ts";
+} from "#bffi";
 import { ptr } from "bun:ffi";
 
 // ---------------------------------------------------------------------------
@@ -270,8 +270,8 @@ function mockLib() {
 
 /** The concrete mock meets the FfiLib boundary through one explicit
  * cast (bun:ffi symbol tables are untyped at this seam). */
-const asLib = (lib: object): import("../src/runtime/error.ts").FfiLib =>
-  lib as unknown as import("../src/runtime/error.ts").FfiLib;
+const asLib = (lib: object): import("#bffi/runtime/error.ts").FfiLib =>
+  lib as unknown as import("#bffi/runtime/error.ts").FfiLib;
 
 describe("createApiFromLib", () => {
   const lib = asLib(mockLib());

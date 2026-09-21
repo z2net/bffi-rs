@@ -9,7 +9,7 @@ import {
   OUT_NAMES,
   RET_ABI_NAMES,
   TS_NAMES,
-} from "../loader/loader.ts";
+} from "#bffi/loader/loader.ts";
 
 /** One validation failure: the JSON path plus the reason. */
 export interface SchemaIssue {

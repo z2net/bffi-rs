@@ -5,7 +5,7 @@
  * The config is the ONLY thing a consumer maintains - everything else
  * (pipeline, generation, binary resolution) is derived from it.
  */
-import { BFFI_DIR, CONFIG_FILE } from "./paths.ts";
+import { BFFI_DIR, CONFIG_FILE } from "#bffi/pipeline/paths.ts";
 
 /** The config schema version this package understands. */
 export const CONFIG_VERSION = 1;

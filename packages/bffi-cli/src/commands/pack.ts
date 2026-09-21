@@ -8,8 +8,8 @@
  * (`Bun.write` copies from a `BunFile` and creates the parent
  * directories itself - no `node:` module imports). */
 import { joinOut, platformTriple } from "@z2net/bffi";
-import { flagString, parseArgs } from "../args.ts";
-import { EXIT, writeErr, writeOut } from "../output.ts";
+import { flagString, parseArgs } from "#cli/args.ts";
+import { EXIT, writeErr, writeOut } from "#cli/output.ts";
 
 export const usage =
   `bffi pack --src <binary> --triple <t> [--name <base>] [--binary <b>] [--out <dir>]`;

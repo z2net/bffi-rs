@@ -9,7 +9,7 @@
  * runtime.
  */
 
-import type { FunctionJson, ModuleJson, TsName } from "./loader.ts";
+import type { FunctionJson, ModuleJson, TsName } from "#bffi/loader/loader.ts";
 
 /** The record table entry named `N` (`never` when absent). */
 type NamedRecord<M extends ModuleJson, N extends string> = Extract<

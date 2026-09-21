@@ -13,7 +13,7 @@ import {
   bunVersionProblem,
   bunVersionSatisfies,
   MIN_BUN_VERSION,
-} from "../src/index.ts";
+} from "#bffi";
 
 describe("bunVersionSatisfies", () => {
   test("the minimum itself satisfies", () => {

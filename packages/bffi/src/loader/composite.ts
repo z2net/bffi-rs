@@ -10,8 +10,8 @@
  * declared variants. Errors name the offending path.
  */
 
-import type { ModuleJson, RecordJson } from "./loader.ts";
-import type { WireValue } from "../runtime/wire.ts";
+import type { ModuleJson, RecordJson } from "#bffi/loader/loader.ts";
+import type { WireValue } from "#bffi/runtime/wire.ts";
 
 /** The module tables with the B1 optional keys normalized to arrays. */
 export interface CompositeTables {

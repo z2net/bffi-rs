@@ -24,8 +24,8 @@ import {
   TAG_STR,
   TAG_U64,
   type WireValue,
-} from "../src/index.ts";
-import type { FfiLib } from "../src/runtime/error.ts";
+} from "#bffi";
+import type { FfiLib } from "#bffi/runtime/error.ts";
 
 /** Mock-side wire encoder: a `WireValue` into the transient buffer
  * bytes, mirroring the Rust `bffi_callback::abi` encoding for the

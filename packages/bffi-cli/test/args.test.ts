@@ -6,7 +6,7 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { flagBool, flagString, parseArgs } from "../src/args.ts";
+import { flagBool, flagString, parseArgs } from "#cli/args.ts";
 
 describe("parseArgs", () => {
   test("collects positionals", () => {

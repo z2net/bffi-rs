@@ -6,12 +6,12 @@
  * until the promise settles; `pumpUntil` exists for exactly that).
  */
 import { JSCallback } from "bun:ffi";
-import type { FfiLib } from "./error.ts";
-import { ErrorCode, makeTakeError, sym } from "./error.ts";
-import { makeReadBuffer } from "./buffer.ts";
-import { decodeValue, type WireValue } from "./wire.ts";
-import { isCompositeTs, tablesOf, wireToJs } from "../loader/composite.ts";
-import type { ModuleJson } from "../loader/loader.ts";
+import type { FfiLib } from "#bffi/runtime/error.ts";
+import { ErrorCode, makeTakeError, sym } from "#bffi/runtime/error.ts";
+import { makeReadBuffer } from "#bffi/runtime/buffer.ts";
+import { decodeValue, type WireValue } from "#bffi/runtime/wire.ts";
+import { isCompositeTs, tablesOf, wireToJs } from "#bffi/loader/composite.ts";
+import type { ModuleJson } from "#bffi/loader/loader.ts";
 
 /**
  * Wraps a bffi-async task handle into a JS `Promise`. The

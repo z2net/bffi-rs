@@ -3,9 +3,9 @@
  * executable against the configured crate. The crate's own `build.rs`
  * is responsible for writing the loader JSON into `.bffi/`.
  */
-import { debugLog } from "./debug.ts";
-import { joinOut } from "./paths.ts";
-import type { BffiConfig } from "./config.ts";
+import { debugLog } from "#bffi/pipeline/debug.ts";
+import { joinOut } from "#bffi/pipeline/paths.ts";
+import type { BffiConfig } from "#bffi/pipeline/config.ts";
 
 /** Options of [`buildCrate`]. */
 export interface BuildOptions {

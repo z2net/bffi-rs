@@ -5,8 +5,8 @@
  * sidecar next to the release asset; `--allow-unsigned` is the
  * explicit escape hatch that skips integrity verification. */
 import { joinOut } from "@z2net/bffi";
-import { flagBool, flagString, parseArgs, type ParsedArgs } from "../args.ts";
-import { EXIT, writeErr, writeOut } from "../output.ts";
+import { flagBool, flagString, parseArgs, type ParsedArgs } from "#cli/args.ts";
+import { EXIT, writeErr, writeOut } from "#cli/output.ts";
 
 export const usage =
   `bffi fetch --repo <owner/repo> --tag <v> --asset <file> [--sha256 <hex>] [--allow-unsigned] [--out <dir>]`;

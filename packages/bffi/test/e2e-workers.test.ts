@@ -38,7 +38,7 @@ import {
   setJsThread,
   sym,
   type FfiLib,
-} from "../src/index.ts";
+} from "#bffi";
 
 /** The release cdylib name of the `bffi-native` reference crate. */
 const CDYLIB_NAME =

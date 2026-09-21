@@ -2,8 +2,8 @@
  * renders a typed TS module from a loader JSON. Deterministic - the
  * same input yields a byte-identical file (safe to commit). */
 import { renderModule, SchemaValidationError } from "@z2net/bffi";
-import { flagString, parseArgs } from "../args.ts";
-import { EXIT, writeErr } from "../output.ts";
+import { flagString, parseArgs } from "#cli/args.ts";
+import { EXIT, writeErr } from "#cli/output.ts";
 
 export const usage = `bffi codegen <input.json> -o <out.ts> [--runtime <module>]`;
 

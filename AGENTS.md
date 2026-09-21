@@ -234,6 +234,7 @@ When unsure about architecture, prefer asking (or opening a draft PR) instead of
 | Descriptor ABI | `AbiSig` (exact C widths + out slot) on `FunctionDef`/`MethodDef`; getter `export_name` + out on `FieldDef`; `release_export` on `ClassDef` |
 | Wire codec | `bffi::types::wire`: one `[tag][payload]` table for async payloads and callback sigs/args/results |
 | Composites (B1+B4) | Records/enums/`Vec<T>` (incl. `Vec<Vec<u8>>`) sync + async; `Option<Record>`/`Option<Vec<T>>` returns = `| null` over the 0-handle empty-buffer convention; item/field matrix rejects deeper nesting |
+| Generic types | Explicit instantiation via `bffi_impl_wire!` (`Pair<u32> as PairU32 { .. }`): emits the pub alias, descriptor consts and the `BffiWire` impl (the derive's record-shape tokens; E016 for non-path targets); parameters reference the alias, a bare `Pair<u32>` param stays rejected |
 | Typed errors | `#[derive(BffiError)]`: user codes 0x1000-0xFFFF replace status 13; variant = JS `e.name`, fields = `e.payload` (TAG_RECORD); rich accessors best-effort; loader JSON `errors` table |
 | Callback ABI | Generic exports via `bffi_callback_abi!()` (`bffi_callback_set_thread`/`_bind`/`_invoke`/`_revoke`) in the user crate; wire-encoded; CALLING-CONVENTION.md §9 |
 | Loader JSON | `bffi::build::loader_json`: canonical deterministic schema v1 from the aggregated `ModuleDef` |

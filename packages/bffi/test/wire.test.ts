@@ -14,7 +14,7 @@ import {
   encodeValue,
   setMaxWirePayload,
   type WireValue,
-} from "../src/index.ts";
+} from "#bffi";
 import {
   TAG_BYTES,
   TAG_ERROR,
@@ -22,7 +22,7 @@ import {
   TAG_SEQ,
   TAG_STR,
   TAG_UNIT,
-} from "../src/runtime/wire.ts";
+} from "#bffi/runtime/wire.ts";
 
 /** u32 LE bytes for `n`. */
 function u32(n: number): number[] {

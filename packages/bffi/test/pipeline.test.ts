@@ -9,7 +9,7 @@
  */
 import { describe, expect, test } from "bun:test";
 
-import { bffi } from "../src/index.ts";
+import { bffi } from "#bffi";
 
 const MISSING = "Z:/bffi-pipeline-test-missing/.bffi/bffi.json";
 

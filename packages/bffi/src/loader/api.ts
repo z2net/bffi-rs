@@ -5,15 +5,15 @@
  * object literal) ships exact signatures without hand-written types.
  */
 import { dlopen, ptr } from "bun:ffi";
-import { ErrorCode, symOptional, type FfiLib, makeTakeError, sym } from "../runtime/error.ts";
-import { makeReadBuffer } from "../runtime/buffer.ts";
-import { assertSchema, BFFI_ABI_VERSION, buildDeclarations, type BuiltinFeatures, type FunctionJson, type ModuleJson, type TsName } from "./loader.ts";
-import { wrapTask } from "../runtime/async.ts";
-import { streamItemTs, wrapStream } from "../runtime/stream.ts";
-import { isCompositeTs, jsToWire, tablesOf, wireToJs } from "./composite.ts";
-import { decodeAt, encodeValue } from "../runtime/wire.ts";
-import { makeLibDisposer } from "../runtime/dispose.ts";
-import type { ApiOf } from "./api-types.ts";
+import { ErrorCode, symOptional, type FfiLib, makeTakeError, sym } from "#bffi/runtime/error.ts";
+import { makeReadBuffer } from "#bffi/runtime/buffer.ts";
+import { assertSchema, BFFI_ABI_VERSION, buildDeclarations, type BuiltinFeatures, type FunctionJson, type ModuleJson, type TsName } from "#bffi/loader/loader.ts";
+import { wrapTask } from "#bffi/runtime/async.ts";
+import { streamItemTs, wrapStream } from "#bffi/runtime/stream.ts";
+import { isCompositeTs, jsToWire, tablesOf, wireToJs } from "#bffi/loader/composite.ts";
+import { decodeAt, encodeValue } from "#bffi/runtime/wire.ts";
+import { makeLibDisposer } from "#bffi/runtime/dispose.ts";
+import type { ApiOf } from "#bffi/loader/api-types.ts";
 
 const decoder = new TextDecoder();
 

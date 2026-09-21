@@ -143,9 +143,11 @@ pub fn generic_args(ty: &syn::Type) -> Vec<&syn::Type> {
 }
 
 /// Names that look like bare user types but are rejected: they are
-/// either unsized/unsupported scalars or owned-buffer channels with
-/// dedicated rules. Their rejection texts are locked by the ui
-/// goldens, so they must not fall into the `Record` classification.
+/// either unsized/unsupported scalars, owned-buffer channels with
+/// dedicated rules, or the nullable wrapper itself (an `Option`
+/// parameter must carry its inner type). Their rejection texts are
+/// locked by the ui goldens, so they must not fall into the `Record`
+/// classification.
 const DENIED_BARE_NAMES: &[&str] = &[
     "str",
     "char",
@@ -155,6 +157,7 @@ const DENIED_BARE_NAMES: &[&str] = &[
     "usize",
     "String",
     "CopiedBuf",
+    "Option",
 ];
 
 /// The plain `syn::Path` of a type when it is argument-free on its
@@ -233,6 +236,24 @@ pub fn classify_param(ty: &syn::Type) -> Result<ShimKind, Unsupported<'_>> {
         if is_u8_slice(&reference.elem) {
             return Ok(ShimKind::BufferView);
         }
+    }
+    // `Option<T>` parameters (sync paths): the inner rides the same
+    // matrix; a bare `Option` or a nested `Option<Option<T>>` stays
+    // rejected.
+    if let Some((name, true)) = path_ident(ty)
+        && name == "Option"
+    {
+        let args = generic_args(ty);
+        if let [inner] = args.as_slice()
+            && !is_option(inner)
+            && let Some(kind) = option_param_inner(inner)
+        {
+            return Ok(ShimKind::Opt(Box::new(kind)));
+        }
+        return Err(Unsupported {
+            span: ty.span(),
+            ty,
+        });
     }
     if let Some((name, true)) = path_ident(ty)
         && name == "Vec"
@@ -375,6 +396,59 @@ fn nullable_wire(ty: &syn::Type) -> Option<RetKind> {
     None
 }
 
+/// Whether the type is syntactically a single-segment `Option<_>`.
+pub fn is_option(ty: &syn::Type) -> bool {
+    let syn::Type::Path(syn::TypePath { qself: None, path }) = ty else {
+        return false;
+    };
+    path.segments.len() == 1
+        && path.segments[0].ident == "Option"
+        && !path.segments[0].arguments.is_none()
+}
+
+/// Classifies the inner of an `Option` parameter; `None` rejects
+/// (owned byte buffers stay return-only, denied bare names included).
+fn option_param_inner(inner: &syn::Type) -> Option<ShimKind> {
+    if let syn::Type::Reference(reference) = inner
+        && reference.mutability.is_none()
+    {
+        if is_str_type(&reference.elem) {
+            return Some(ShimKind::Str);
+        }
+        if is_u8_slice(&reference.elem) {
+            return Some(ShimKind::BufferView);
+        }
+        return None;
+    }
+    if let Some(kind) = path_kind(inner) {
+        return Some(match kind {
+            PathKind::Prim(prim) => ShimKind::Prim(prim),
+            PathKind::BigInt(bigint) => ShimKind::BigInt(bigint),
+        });
+    }
+    if let Some((name, true)) = path_ident(inner)
+        && name == "Vec"
+    {
+        let args = generic_args(inner);
+        if let [item] = args.as_slice()
+            && !is_u8(item)
+            && let Some(item) = seq_item(item)
+        {
+            return Some(ShimKind::Seq(item));
+        }
+        return None;
+    }
+    if let Some(path) = plain_path(inner) {
+        if let Some(name) = path.segments.last().map(|seg| seg.ident.to_string())
+            && DENIED_BARE_NAMES.contains(&name.as_str())
+        {
+            return None;
+        }
+        return Some(ShimKind::Record(KindPath(path.clone())));
+    }
+    None
+}
+
 /// TypeScript kind of a small primitive: every numeric type is
 /// [`TsKind::Number`], `bool` is [`TsKind::Boolean`].
 pub fn ts_prim(prim: PrimTy) -> TsKind {
@@ -425,6 +499,29 @@ pub fn ts_type(kind: &ShimKind) -> TsKind {
             TsKind::Expr(quote! { #p::BFFI_TS_TYPE })
         }
         ShimKind::Seq(item) => ts_seq_item(item),
+        ShimKind::Opt(inner) => match inner.as_ref() {
+            ShimKind::Str => TsKind::NullableString,
+            ShimKind::BufferView => TsKind::NullableUint8Array,
+            ShimKind::Prim(prim) => match ts_prim(*prim) {
+                TsKind::Boolean => TsKind::NullableBoolean,
+                _ => TsKind::NullableNumber,
+            },
+            ShimKind::BigInt(_) => TsKind::NullableBigInt,
+            ShimKind::Record(path) => {
+                let name = path
+                    .0
+                    .segments
+                    .last()
+                    .map(|seg| seg.ident.to_string())
+                    .unwrap_or_default();
+                TsKind::NullableRecord(name)
+            }
+            ShimKind::Seq(item) => nullable_seq_kind(item),
+            // Unreachable: `classify_param` rejects a nested `Option`
+            // before it can reach the descriptor; the arm exists for
+            // exhaustiveness.
+            ShimKind::Opt(_) => TsKind::Void,
+        },
     }
 }
 

@@ -152,6 +152,7 @@ use proc_macro::TokenStream;
 /// | `i64` `u64`                                   | yes   | yes    | `bigint`  |
 /// | `bool`                                        | yes   | yes    | `boolean` |
 /// | `&str` (borrowed, not `mut`; lifetimes ok)    | yes   | -      | `string`  |
+/// | `Option<&str>`/`Option<&[u8]>`/`Option<prim>`/`Option<i64>`/`Option<u64>`/`Option<record>`/`Option<Vec<T>>` (sync only) | yes | - | `T \| null` |
 /// | `()`                                          | -     | yes    | `void`    |
 ///
 /// Everything else is rejected at compile time. Buffers, `Option`,

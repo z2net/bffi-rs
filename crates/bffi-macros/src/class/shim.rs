@@ -210,7 +210,7 @@ fn constructor_shim(model: &ImplModel) -> TokenStream {
                 quote! { &#view }
             }
             ShimKind::Prim(_) | ShimKind::BigInt(_) => quote! { #name },
-            ShimKind::Record(_) | ShimKind::Seq(_) => quote! { #name },
+            ShimKind::Record(_) | ShimKind::Seq(_) | ShimKind::Opt(_) => quote! { #name },
         }
     });
     let conversion = param_conversions(
@@ -286,7 +286,7 @@ fn method_shim(model: &ImplModel, method: &MethodModel) -> TokenStream {
                 quote! { &#view }
             }
             ShimKind::Prim(_) | ShimKind::BigInt(_) => quote! { #name },
-            ShimKind::Record(_) | ShimKind::Seq(_) => quote! { #name },
+            ShimKind::Record(_) | ShimKind::Seq(_) | ShimKind::Opt(_) => quote! { #name },
         }
     });
     let conversion = param_conversions(

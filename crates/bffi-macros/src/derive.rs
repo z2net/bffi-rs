@@ -352,7 +352,10 @@ impl FieldKind {
                 }
             }
             Self::Named(path) => {
-                quote! { #path::bffi_wire_encode(&#access, out); }
+                // Fully-qualified through the trait: the expansion never
+                // depends on `BffiWire` being in scope, and a non-derived
+                // nested type fails with the trait bound (E0277).
+                quote! { <#path as ::bffi::types::wire::BffiWire>::bffi_wire_encode(&#access, out); }
             }
             Self::Opt(inner) => {
                 let some = Self::encode_access_ref(inner);
@@ -387,7 +390,8 @@ impl FieldKind {
                 }
             }
             Self::Named(path) => {
-                quote! { #path::bffi_wire_encode(__v, out); }
+                // Fully-qualified through the trait (see `encode_access`).
+                quote! { <#path as ::bffi::types::wire::BffiWire>::bffi_wire_encode(__v, out); }
             }
             // Unreachable: `classify` rejects nested options before
             // an `Opt` can wrap one; the arm exists for
@@ -464,7 +468,9 @@ impl FieldKind {
                 }
             }
             Self::Named(path) => quote! {
-                let (#ident, __off) = #path::bffi_wire_decode(bytes, __off)?;
+                // Fully-qualified through the trait (see `encode_access`).
+                let (#ident, __off) =
+                    <#path as ::bffi::types::wire::BffiWire>::bffi_wire_decode(bytes, __off)?;
             },
         }
     }

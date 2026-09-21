@@ -41,6 +41,24 @@ const FIXTURE = {
       ret: { ts: "Promise<number>", abi: "task" },
       out: "handle",
     },
+    {
+      name: "describe",
+      export: "bffi_describe",
+      docs: ["Names a shape."],
+      params: [{ name: "shape", ts: "Shape", abi: "ptr_len" }],
+      ret: { ts: "string", abi: "buffer" },
+      out: "handle",
+    },
+  ],
+  enums: [
+    {
+      name: "Shape",
+      docs: ["A geometric shape."],
+      variants: [
+        { name: "Circle", docs: ["A circle."], fields: [{ name: "_0", docs: [], ts: "number" }] },
+        { name: "Nothing", docs: [] },
+      ],
+    },
   ],
   classes: [
     {
@@ -91,7 +109,9 @@ describe("renderModule", () => {
 
   test("embeds the schema and the runtime import", () => {
     const rendered = renderModule(FIXTURE);
-    expect(rendered).toContain('import { dlopen } from "bun:ffi";');
+    // The composite parameter of `describe` pulls in `ptr` and the
+    // wire helpers.
+    expect(rendered).toContain('import { dlopen, ptr } from "bun:ffi";');
     expect(rendered).toContain('} from "@z2net/bffi";');
     expect(rendered).toContain("const moduleJson = {");
     expect(rendered).toContain("as const satisfies ModuleJson;");
@@ -122,6 +142,7 @@ describe("renderModule", () => {
 
   test("canonicalizes key order", () => {
     const shuffled = {
+      enums: FIXTURE.enums,
       classes: FIXTURE.classes.map((cls) => ({
         methods: cls.methods,
         fields: cls.fields,
@@ -141,6 +162,7 @@ describe("renderModule", () => {
       module: shuffled.module,
       functions: shuffled.functions,
       classes: shuffled.classes,
+      enums: shuffled.enums,
     };
     expect(renderModule(shuffled)).toBe(renderModule(sameOrder));
   });

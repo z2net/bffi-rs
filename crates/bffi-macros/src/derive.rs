@@ -6,9 +6,13 @@
 //! codec pair `bffi_wire_encode` / `bffi_wire_decode` over the
 //! value-level helpers of `bffi::types::wire`. `Option<T>` fields
 //! encode `None` as the `TAG_UNIT` byte and `Some(v)` as the inner
-//! value record. A derived unit enum
-//! gains the same shape with `TsType::Enum("Name")`, encoding as its
-//! variant name.
+//! value record. A derived enum
+//! gains the same shape with `TsType::Enum("Name")`: a unit-only
+//! enum encodes as its variant name string; an enum with payload
+//! variants wraps every variant in a kind envelope (a `TAG_RECORD`
+//! whose first field is the variant name, followed by the payload
+//! fields positionally through the same `FieldKind` matrix - tuple
+//! fields are named `_0`..).
 //!
 //! The expansions name the facade paths (`::bffi::types::wire`,
 //! `::bffi::dts`, `::bffi::core`) unconditionally: the published
@@ -20,8 +24,8 @@
 //! | Code  | Meaning                                               |
 //! | ----- | ----------------------------------------------------- |
 //! | `E009` | unsupported record shape (tuple/unit struct, generics) |
-//! | `E010` | unsupported record field type                          |
-//! | `E011` | unsupported enum shape (data-carrying variants, generics) |
+//! | `E010` | unsupported record/variant field type                 |
+//! | `E011` | unsupported enum shape (generics)                     |
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
@@ -438,6 +442,12 @@ fn is_u8(ty: &syn::Type) -> bool {
 }
 
 /// The enum expansion.
+///
+/// Unit-only enums keep the byte-identical variant-name string shape.
+/// An enum with payload variants wraps EVERY variant in a kind
+/// envelope: a `TAG_RECORD` whose first field is the variant name,
+/// followed by the payload fields positionally (the same
+/// `FieldKind` matrix as records; tuple fields are named `_0`..).
 fn expand_enum(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
     let name = &item.ident;
     if !item.generics.params.is_empty() || item.generics.where_clause.is_some() {
@@ -455,44 +465,224 @@ fn expand_enum(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
         ));
     };
 
-    let mut variant_names: Vec<String> = Vec::new();
     let mut variant_defs = Vec::new();
+    let mut has_payload = false;
+    // The unit-only shape (below) needs the bare name list; the
+    // mixed shape carries per-variant codegen.
+    let mut variant_names: Vec<String> = Vec::new();
+    let mut encode_arms = Vec::new();
+    let mut decode_arms = Vec::new();
+
     for variant in variants {
-        if !variant.fields.is_empty() {
-            return Err(syn::Error::new(
-                variant.span(),
-                format!(
-                    "bffi[E011]: enum `{name}`: only unit variants are supported \
-                     (B1 v1); `{}` carries data",
-                    variant.ident
-                ),
-            ));
-        }
         let vname = variant.ident.to_string();
         let docs = extract_docs(&variant.attrs);
+        // One payload field: its wire name, its binding ident and
+        // the classified kind.
+        let mut fields: Vec<(String, syn::Ident, FieldKind, Vec<String>)> = Vec::new();
+        match &variant.fields {
+            syn::Fields::Named(named) => {
+                for field in &named.named {
+                    let Some(ident) = field.ident.as_ref() else {
+                        continue;
+                    };
+                    let kind = FieldKind::classify(&field.ty, ident)?;
+                    fields.push((
+                        ident.to_string(),
+                        ident.clone(),
+                        kind,
+                        extract_docs(&field.attrs),
+                    ));
+                }
+            }
+            syn::Fields::Unnamed(unnamed) => {
+                for (index, field) in unnamed.unnamed.iter().enumerate() {
+                    let ident = syn::Ident::new(&format!("_{index}"), field.span());
+                    let kind = FieldKind::classify(&field.ty, &ident)?;
+                    fields.push((ident.to_string(), ident, kind, Vec::new()));
+                }
+            }
+            syn::Fields::Unit => {}
+        }
+        has_payload |= !fields.is_empty();
+
+        let field_defs = fields.iter().map(|(fname, _, kind, fdocs)| {
+            let ty_expr = kind.ts_expr();
+            quote! {
+                ::bffi::dts::RecordFieldDef {
+                    name: #fname,
+                    docs: &[#(#fdocs),*],
+                    ty: #ty_expr,
+                }
+            }
+        });
         variant_defs.push(quote! {
             ::bffi::dts::EnumVariantDef {
                 name: #vname,
                 docs: &[#(#docs),*],
+                fields: &[#(#field_defs),*],
             }
         });
-        variant_names.push(vname);
+        variant_names.push(vname.clone());
+
+        // Only the mixed shape needs match arms; keep building them
+        // unconditionally (the unit-only path ignores them).
+        let ident = &variant.ident;
+        let count = 1 + fields.len();
+        let pattern = match &variant.fields {
+            syn::Fields::Named(_) => {
+                let idents = fields.iter().map(|(_, ident, _, _)| ident);
+                quote! { { #(#idents),* } }
+            }
+            syn::Fields::Unnamed(_) => {
+                let idents = fields.iter().map(|(_, ident, _, _)| ident);
+                quote! { (#(#idents),*) }
+            }
+            syn::Fields::Unit => quote! {},
+        };
+        let field_encodes = fields.iter().map(|(_, ident, kind, _)| {
+            // Matching on `&Self` binds each field by reference; the
+            // place expression `(*#ident)` lets every kind encode as
+            // if it held the value.
+            kind.encode_access(quote! { (*#ident) })
+        });
+        encode_arms.push(quote! {
+            Self::#ident #pattern => {
+                __w::encode_record_header(out, #count);
+                __w::encode_str(out, #vname);
+                #(#field_encodes)*
+            }
+        });
+
+        let field_decodes = fields
+            .iter()
+            .map(|(_, ident, kind, _)| kind.decode_stmt(ident));
+        // The construction of one decoded field: the value-only form
+        // for tuple variants, the `name:`-prefixed form for named
+        // ones (narrow widths narrow back from the wire carrier).
+        let named_fields = matches!(&variant.fields, syn::Fields::Named(_));
+        let constructed = fields.iter().map(|(_, ident, kind, _)| {
+            let value = match kind {
+                FieldKind::NarrowInt | FieldKind::WideNumber => quote! { #ident as _ },
+                FieldKind::Opt(inner)
+                    if matches!(**inner, FieldKind::NarrowInt | FieldKind::WideNumber) =>
+                {
+                    quote! { #ident.map(|__v| __v as _) }
+                }
+                _ => quote! { #ident },
+            };
+            if named_fields {
+                quote! { #ident: #value }
+            } else {
+                value
+            }
+        });
+        let construct = match &variant.fields {
+            syn::Fields::Named(_) => quote! { Self::#ident { #(#constructed),* } },
+            syn::Fields::Unnamed(_) => quote! { Self::#ident(#(#constructed),*) },
+            syn::Fields::Unit => quote! { Self::#ident },
+        };
+        decode_arms.push(quote! {
+            #vname => {
+                if count != #count {
+                    return ::core::result::Result::Err(
+                        ::bffi::core::BffiError::new(
+                            ::bffi::core::ErrorCode::InvalidArgument,
+                            "wire: variant field count mismatch",
+                        ),
+                    );
+                }
+                #(#field_decodes)*
+                ::core::result::Result::Ok((#construct, __off))
+            }
+        });
     }
 
     let js_name = name.to_string();
     let docs = extract_docs(&item.attrs);
 
-    let match_encode_arms = variants.iter().map(|variant| {
-        let ident = &variant.ident;
-        let vname = variant.ident.to_string();
-        quote! { Self::#ident => #vname, }
-    });
-    let match_decode_arms = variants.iter().map(|variant| {
-        let ident = &variant.ident;
-        let vname = variant.ident.to_string();
-        quote! { #vname => Self::#ident, }
-    });
-    let variant_list = quote! { &[#(#variant_names),*] };
+    let wire_impl = if has_payload {
+        quote! {
+            #[automatically_derived]
+            impl ::bffi::types::wire::BffiWire for #name {
+                /// Appends this value as one complete wire record (the
+                /// kind envelope: variant name + positional payload).
+                fn bffi_wire_encode(&self, out: &mut ::std::vec::Vec<u8>) {
+                    use ::bffi::types::wire as __w;
+                    match self {
+                        #(#encode_arms)*
+                    }
+                }
+
+                /// Decodes one wire record at `offset`; returns the value
+                /// and the offset past it.
+                fn bffi_wire_decode(
+                    bytes: &[u8],
+                    offset: usize,
+                ) -> ::core::result::Result<(Self, usize), ::bffi::core::BffiError> {
+                    use ::bffi::types::wire as __w;
+                    let (count, __off) = __w::decode_record_header(bytes, offset)?;
+                    let (__kind, __off) = __w::decode_str(bytes, __off)?;
+                    match __kind {
+                        #(#decode_arms)*
+                        // The kind string is arbitrary input: unknown
+                        // names are an error, not a panic.
+                        _ => ::core::result::Result::Err(
+                            ::bffi::core::BffiError::new(
+                                ::bffi::core::ErrorCode::InvalidArgument,
+                                "wire: unknown variant",
+                            ),
+                        ),
+                    }
+                }
+            }
+        }
+    } else {
+        let match_encode_arms = variants.iter().map(|variant| {
+            let ident = &variant.ident;
+            let vname = variant.ident.to_string();
+            quote! { Self::#ident => #vname, }
+        });
+        let match_decode_arms = variants.iter().map(|variant| {
+            let ident = &variant.ident;
+            let vname = variant.ident.to_string();
+            quote! { #vname => Self::#ident, }
+        });
+        let variant_list = quote! { &[#(#variant_names),*] };
+        quote! {
+            #[automatically_derived]
+            impl ::bffi::types::wire::BffiWire for #name {
+                /// Appends this value as one complete wire record (its
+                /// variant name).
+                fn bffi_wire_encode(&self, out: &mut ::std::vec::Vec<u8>) {
+                    use ::bffi::types::wire as __w;
+                    let __name = match self { #(#match_encode_arms)* };
+                    __w::encode_str(out, __name);
+                }
+
+                /// Decodes one wire record at `offset`; returns the value
+                /// and the offset past it.
+                fn bffi_wire_decode(
+                    bytes: &[u8],
+                    offset: usize,
+                ) -> ::core::result::Result<(Self, usize), ::bffi::core::BffiError> {
+                    use ::bffi::types::wire as __w;
+                    let (name, __off) = __w::decode_variant(bytes, offset, #variant_list)?;
+                    let value = match name {
+                        #(#match_decode_arms)*
+                        // decode_variant guarantees the name is one of the
+                        // declared variants; the arm exists for exhaustiveness.
+                        _ => return ::core::result::Result::Err(
+                            ::bffi::core::BffiError::new(
+                                ::bffi::core::ErrorCode::InvalidArgument,
+                                "wire: unknown variant",
+                            ),
+                        ),
+                    };
+                    ::core::result::Result::Ok((value, __off))
+                }
+            }
+        }
+    };
 
     Ok(quote! {
         #[automatically_derived]
@@ -510,38 +700,7 @@ fn expand_enum(item: &syn::DeriveInput) -> syn::Result<TokenStream2> {
                 };
         }
 
-        #[automatically_derived]
-        impl ::bffi::types::wire::BffiWire for #name {
-            /// Appends this value as one complete wire record (its
-            /// variant name).
-            fn bffi_wire_encode(&self, out: &mut ::std::vec::Vec<u8>) {
-                use ::bffi::types::wire as __w;
-                let __name = match self { #(#match_encode_arms)* };
-                __w::encode_str(out, __name);
-            }
-
-            /// Decodes one wire record at `offset`; returns the value
-            /// and the offset past it.
-            fn bffi_wire_decode(
-                bytes: &[u8],
-                offset: usize,
-            ) -> ::core::result::Result<(Self, usize), ::bffi::core::BffiError> {
-                use ::bffi::types::wire as __w;
-                let (name, __off) = __w::decode_variant(bytes, offset, #variant_list)?;
-                let value = match name {
-                    #(#match_decode_arms)*
-                    // decode_variant guarantees the name is one of the
-                    // declared variants; the arm exists for exhaustiveness.
-                    _ => return ::core::result::Result::Err(
-                        ::bffi::core::BffiError::new(
-                            ::bffi::core::ErrorCode::InvalidArgument,
-                            "wire: unknown variant",
-                        ),
-                    ),
-                };
-                ::core::result::Result::Ok((value, __off))
-            }
-        }
+        #wire_impl
     })
 }
 

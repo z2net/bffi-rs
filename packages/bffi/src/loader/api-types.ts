@@ -30,9 +30,48 @@ type RecordShape<R extends { fields: { name: string; ts: TsName }[] }, M extends
   [F in R["fields"][number] as F["name"]]: TsOf<F["ts"], M>;
 };
 
-/** The string-literal union of one enum entry's variants. */
-type EnumUnion<E extends { variants: { name: string }[] }> =
-  E["variants"][number]["name"];
+/** One variant entry as embedded in the schema literal (the payload
+ * `fields` key is written only for variants that carry a payload). */
+type SchemaVariant = {
+  name: string;
+  fields?: readonly { name: string; ts: TsName }[];
+};
+
+/** The payload object of one variant's fields, resolved through
+ * `TsOf` (the inferred tuple keeps the positional order; the mapped
+ * type remaps the numeric indices onto the field names - array-level
+ * keys like `length` or the number index are remapped away). */
+type VariantShape<F, M extends ModuleJson> = F extends readonly {
+  name: string;
+  ts: TsName;
+}[]
+  ? {
+      [K in keyof F as K extends `${number}`
+        ? F[K] extends { name: string }
+          ? F[K]["name"]
+          : never
+        : never]: F[K] extends { ts: TsName } ? TsOf<F[K]["ts"], M> : never;
+    }
+  : never;
+
+/** One member of a payload-carrying enum's union: every variant
+ * (unit ones included) renders as a uniform `{ kind, ... }` object. */
+type DiscriminatedVariant<V, M extends ModuleJson> = V extends unknown
+  ? V extends { name: infer N; fields: infer F }
+    ? { kind: N & string } & VariantShape<F, M>
+    : V extends { name: infer N }
+      ? { kind: N & string }
+      : never
+  : never;
+
+/** The union of one enum entry's variants: a plain string-literal
+ * union for unit-only enums (v1 compatibility - no variant carries
+ * the `fields` key), a discriminated union of `{ kind, ... }`
+ * objects once any variant carries a payload. */
+type EnumUnion<E extends { variants: readonly SchemaVariant[] }, M extends ModuleJson> =
+  E["variants"][number] extends { fields?: undefined }
+    ? E["variants"][number]["name"]
+    : DiscriminatedVariant<E["variants"][number], M>;
 
 /**
  * The TypeScript type for one `ts` name in the schema. The Promise
@@ -87,7 +126,7 @@ export type TsOf<S extends TsName, M extends ModuleJson = ModuleJson> =
                                                  ? S
                                                  : NamedEnum<M, P> extends infer E
                                                    ? E extends { variants: { name: string }[] }
-                                                     ? Promise<EnumUnion<E> | null>
+                                                     ? Promise<EnumUnion<E, M> | null>
                                                      : S
                                                    : S
                                                : NamedRecord<M, P> extends infer Rec
@@ -103,7 +142,7 @@ export type TsOf<S extends TsName, M extends ModuleJson = ModuleJson> =
                                  ? S
                                  : NamedEnum<M, P> extends infer E
                                    ? E extends { variants: { name: string }[] }
-                                     ? Promise<EnumUnion<E>>
+                                     ? Promise<EnumUnion<E, M>>
                                      : S
                                    : S
                                : NamedRecord<M, P> extends infer Rec
@@ -149,7 +188,7 @@ export type TsOf<S extends TsName, M extends ModuleJson = ModuleJson> =
                                         ? S
                                         : NamedEnum<M, N> extends infer E
                                           ? E extends { variants: { name: string }[] }
-                                            ? EnumUnion<E> | null
+                                            ? EnumUnion<E, M> | null
                                             : S
                                           : S
                                       : NamedRecord<M, N> extends infer Rec
@@ -197,7 +236,7 @@ export type TsOf<S extends TsName, M extends ModuleJson = ModuleJson> =
                                             : S
                                 : NamedEnum<M, S & string> extends infer E
                                   ? E extends { variants: { name: string }[] }
-                                    ? EnumUnion<E>
+                                    ? EnumUnion<E, M>
                                     : S
                                   : S
                               : NamedRecord<M, S & string> extends infer Rec

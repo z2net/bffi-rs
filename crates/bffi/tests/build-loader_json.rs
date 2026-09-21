@@ -259,10 +259,12 @@ fn fixture_module() -> ModuleDef {
             bffi::bffi_dts::EnumVariantDef {
                 name: "Horizontal",
                 docs: &[],
+                fields: &[],
             },
             bffi::bffi_dts::EnumVariantDef {
                 name: "Vertical",
                 docs: &[],
+                fields: &[],
             },
         ],
     }];

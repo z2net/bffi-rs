@@ -191,12 +191,27 @@ export interface RecordJson {
 }
 
 /** One unit-enum variant (wire-encoded as its name). */
+/** One payload field of an enum variant (absent for unit variants:
+ * the v1 schema carried unit enums only, and the emitter writes the
+ * key only when the variant carries a payload). */
+export interface EnumFieldJson {
+  name: string;
+  docs: string[];
+  ts: string;
+}
+
+/** One variant of a `#[derive(BffiEnum)]` type. */
 export interface EnumVariantJson {
   name: string;
   docs: string[];
+  /** The payload fields (positionally after the variant name in the
+   * kind envelope). Absent for unit variants. */
+  fields?: EnumFieldJson[];
 }
 
-/** A `#[derive(BffiEnum)]` type of the module. */
+/** A `#[derive(BffiEnum)]` type of the module. Unit-only enums ride
+ * the variant-name string; enums with payload variants use the
+ * `{ kind, ... }` object form. */
 export interface EnumJson {
   name: string;
   docs: string[];
